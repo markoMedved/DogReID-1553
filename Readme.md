@@ -3,5 +3,5 @@
 **Project Puppies** builds the very first *publicly available* dog re-identification video dataset by crowdsourcing short clips via a dedicated website. Our goal is to kick-start and accelerate research on re-identifying individual dogs in videos—a technology that promises real impact in reuniting lost pets, improving animal safety, and enabling new applications like dog tracking and monitoring.
 
 **Reproducing the project**
-1) Download the dataset from **TODO insert link**
+1) Download the dataset from **TODO insert link** and un-zip-it into the root folder of the repository
 **TODO**
