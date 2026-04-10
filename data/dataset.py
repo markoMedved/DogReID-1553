@@ -27,14 +27,21 @@ class DOGVideoREIDDataset(Dataset):
         if world == "closed":
             WORLD = "SPLIT_CLOSED_SET"
         
+        df = pd.read_csv(split_file)
+
         if split == "train":
-            df = df[df[WORLD] == "train"]
-        
+            df = df[df["SPLIT_CLOSED_SET"] == "train"]
+
         elif split == "query":
-            df = df[df[WORLD] == "query"]
+            df = df[df["SPLIT_CLOSED_SET"] == "query"]
 
         elif split == "gallery":
-            df = df[df[WORLD] == "gallery"]
+            df = df[df["SPLIT_CLOSED_SET"] == "gallery"]
+
+        # remove identities with only one sample
+        counts = df["DOG_ID"].value_counts()
+        valid_ids = counts[counts > 1].index
+        df = df[df["DOG_ID"].isin(valid_ids)]
 
         self.df = df.reset_index(drop=True)
 
