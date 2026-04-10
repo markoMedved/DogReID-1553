@@ -7,28 +7,33 @@ from engine.trainer import Trainer
 from losses.triplet_loss import TripletLoss
 
 
-cfg = Config()
-print(f"Using device: {cfg.device}")
+def main():
 
-train_loader, query_loader, gallery_loader = build_dataloaders(cfg)
+    cfg = Config()
 
-model = build_model(cfg)
+    train_loader, query_loader, gallery_loader = build_dataloaders(cfg)
 
-optimizer = torch.optim.Adam(
-    model.parameters(),
-    lr=cfg.lr,
-    weight_decay=cfg.weight_decay
-)
+    model = build_model(cfg)
 
-loss_fn = TripletLoss(margin=0.3)
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=cfg.lr,
+        weight_decay=cfg.weight_decay
+    )
 
-trainer = Trainer(
-    model=model,
-    train_loader=train_loader,
-    optimizer=optimizer,
-    loss_fn=loss_fn,
-    device=cfg.device,
-    cfg=cfg
-)
+    loss_fn = TripletLoss(margin=0.3)
 
-trainer.train()
+    trainer = Trainer(
+        model=model,
+        train_loader=train_loader,
+        optimizer=optimizer,
+        loss_fn=loss_fn,
+        device=cfg.device,
+        cfg=cfg
+    )
+
+    trainer.train()
+
+
+if __name__ == "__main__":
+    main()

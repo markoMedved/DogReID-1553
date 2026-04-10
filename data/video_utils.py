@@ -13,7 +13,7 @@ def load_video_clip(path, clip_len):
     for i in range(clip_len):
         cap.set(cv2.CAP_PROP_POS_FRAMES, i*step)
 
-        ret,rame = cap.read()
+        ret, frame = cap.read()
 
         if not ret:
             break

@@ -5,6 +5,8 @@ class Config:
     data_root = "C:/Users/marko/Desktop/DogReID-1553"
     split_file = "C:/Users/marko/Desktop/DogReID-1553/splits.csv"
 
+    output_dir = "trained_models"
+
     world = "closed"
 
     batch_size = 8
@@ -16,7 +18,7 @@ class Config:
     embedding_dim = 512
 
 
-    epochs = 1
+    epochs = 5
     lr = 3e-4
     weight_decay = 1e-5
 
