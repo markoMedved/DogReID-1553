@@ -1,5 +1,5 @@
-import torchvision.transforms as T
 import torch
+import torchvision.transforms as T
 
 class VideoTransforms:
 
@@ -15,9 +15,15 @@ class VideoTransforms:
 
     def __call__(self, clip):
 
+        # clip shape: [C, T, H, W]
+
         frames = []
 
-        for frame in clip:
-            frames.append(self.frame_tf(frame))
+        for t in range(clip.shape[1]):
+            frame = clip[:, t]  # [C, H, W]
+            frame = self.frame_tf(frame)
+            frames.append(frame)
 
-        return torch.stack(frames)
+        clip = torch.stack(frames, dim=1)  # [C, T, H, W]
+
+        return clip
