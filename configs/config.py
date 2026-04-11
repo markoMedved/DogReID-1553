@@ -27,6 +27,7 @@ class Config:
     epochs = 1
     lr = 3e-4
     weight_decay = 1e-5
+    eval_period = 5
 
     eval_freq = 5
     device = "cuda" if torch.cuda.is_available() else "cpu"

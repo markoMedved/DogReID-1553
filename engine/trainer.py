@@ -41,14 +41,17 @@ class Trainer:
 
             print(f"\nEpoch {epoch} | Avg Loss: {loss:.4f}")
 
-            rank1, rank5, mAP = self.evaluate()
+            if epoch % self.cfg.eval_period == 0:
+                
 
-            print(
-                f"Evaluation → "
-                f"Rank-1: {rank1:.4f} "
-                f"Rank-5: {rank5:.4f} "
-                f"mAP: {mAP:.4f}"
-            )
+                rank1, rank5, mAP = self.evaluate()
+
+                print(
+                    f"Evaluation → "
+                    f"Rank-1: {rank1:.4f} "
+                    f"Rank-5: {rank5:.4f} "
+                    f"mAP: {mAP:.4f}"
+                )
 
             self.save_checkpoint(epoch, loss, "last_model.pth")
 
