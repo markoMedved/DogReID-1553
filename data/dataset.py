@@ -68,7 +68,6 @@ class DOGVideoREIDDataset(Dataset):
         video_id = row["VIDEO_ID"]
 
         path = self._get_path(dog_id, video_id)
-        print(f"Video: {path}")
 
         clip = load_video_clip(path, self.clip_len)
 

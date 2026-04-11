@@ -26,6 +26,8 @@ def main():
     trainer = Trainer(
         model=model,
         train_loader=train_loader,
+        query_loader=query_loader,
+        gallery_loader=gallery_loader,
         optimizer=optimizer,
         loss_fn=loss_fn,
         device=cfg.device,
