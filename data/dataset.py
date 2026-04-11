@@ -4,7 +4,9 @@ import torch
 from torch.utils.data import Dataset
 from .video_utils import load_video_clip
 
+
 class DOGVideoREIDDataset(Dataset):
+
     def __init__(
             self,
             root_dir,
@@ -23,36 +25,29 @@ class DOGVideoREIDDataset(Dataset):
 
         df = pd.read_csv(split_file)
 
-        WOLRD = "SPLIT_OPEN_SET"
         if world == "closed":
-            WORLD = "SPLIT_CLOSED_SET"
-        
-        df = pd.read_csv(split_file)
+            split_col = "SPLIT_CLOSED_SET"
+        else:
+            split_col = "SPLIT_OPEN_SET"
 
-        if split == "train":
-            df = df[df["SPLIT_CLOSED_SET"] == "train"]
+  
+        df = df[df[split_col] == split]
 
-        elif split == "query":
-            df = df[df["SPLIT_CLOSED_SET"] == "query"]
 
-        elif split == "gallery":
-            df = df[df["SPLIT_CLOSED_SET"] == "gallery"]
-
-        # remove identities with only one sample
         counts = df["DOG_ID"].value_counts()
         valid_ids = counts[counts > 1].index
         df = df[df["DOG_ID"].isin(valid_ids)]
 
         self.df = df.reset_index(drop=True)
 
-        dog_ids = sorted(df["DOG_ID"].unique())
+ 
+        dog_ids = sorted(self.df["DOG_ID"].unique())
         self.id_map = {dog_id: i for i, dog_id in enumerate(dog_ids)}
 
     def __len__(self):
         return len(self.df)
-    
-    def _get_path(self, dog_id, video_id):
 
+    def _get_path(self, dog_id, video_id):
         folder = "Videos" if self.use_videos else "Images"
 
         return os.path.join(
@@ -62,14 +57,18 @@ class DOGVideoREIDDataset(Dataset):
             video_id
         )
     
+    def get_label(self, idx):
+     return self.id_map[self.df.iloc[idx]["DOG_ID"]]
+
     def __getitem__(self, idx):
 
         row = self.df.iloc[idx]
 
         dog_id = row["DOG_ID"]
-        video_id  = row["VIDEO_ID"]
+        video_id = row["VIDEO_ID"]
 
         path = self._get_path(dog_id, video_id)
+        print(f"Video: {path}")
 
         clip = load_video_clip(path, self.clip_len)
 

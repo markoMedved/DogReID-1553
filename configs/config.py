@@ -1,15 +1,21 @@
 import torch
+from pathlib import Path
 
 class Config:
 
-    data_root = "C:/Users/marko/Desktop/DogReID-1553"
-    split_file = "C:/Users/marko/Desktop/DogReID-1553/splits.csv"
+
+    data_root =  Path(__file__).resolve().parent.parent
+    split_file = data_root / "splits.csv"
 
     output_dir = "trained_models"
 
     world = "closed"
 
     batch_size = 8
+
+    num_ids = 4
+    num_instances = 2
+    
     num_workers = 4
     clip_len = 16
 

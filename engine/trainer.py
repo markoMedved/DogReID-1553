@@ -49,7 +49,12 @@ class Trainer:
 
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
 
-        for clips, labels, _, _ in pbar:
+        for batch_idx, (clips, labels, dog_ids, video_names) in enumerate(pbar):
+
+            print(f"\nBatch {batch_idx}")
+            print("Videos:", video_names)
+
+            # print("Current videos:", video_names)
 
             clips = clips.to(self.device)
             labels = labels.to(self.device)
