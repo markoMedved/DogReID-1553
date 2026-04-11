@@ -19,7 +19,7 @@ class Config:
     num_workers = 4
     clip_len = 16
 
-    model = "resnet"
+    model = "vit"
     backbone = "resnet50"
     embedding_dim = 512
 

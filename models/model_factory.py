@@ -1,5 +1,5 @@
 from .video_resnet_reid import VideoResNetReID
-
+from models.video_vit_reid import VideoViTReID
 
 def build_model(cfg):
 
@@ -7,6 +7,10 @@ def build_model(cfg):
 
         model = VideoResNetReID(
             backbone=cfg.backbone,
+            embedding_dim=cfg.embedding_dim
+        )
+    elif cfg.model == "vit":
+        model = VideoViTReID(
             embedding_dim=cfg.embedding_dim
         )
 
