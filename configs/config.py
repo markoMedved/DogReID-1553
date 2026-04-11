@@ -24,7 +24,7 @@ class Config:
     embedding_dim = 512
 
 
-    epochs = 1
+    epochs = 50
     lr = 3e-4
     weight_decay = 1e-5
     eval_period = 5
