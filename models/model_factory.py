@@ -1,18 +1,11 @@
-from .video_resnet_reid import VideoResNetReID
-from models.video_vit_reid import VideoViTReID
+# from .video_resnet_reid import VideoResNetReID
+from .vit_builder import VideoViT
 
 def build_model(cfg):
 
-    if cfg.model == "resnet":
+    if cfg.model == "vit":
 
-        model = VideoResNetReID(
-            backbone=cfg.backbone,
-            embedding_dim=cfg.embedding_dim
-        )
-    elif cfg.model == "vit":
-        model = VideoViTReID(
-            embedding_dim=cfg.embedding_dim
-        )
+        model = VideoViT(embedding_dim=cfg.embedding_dim)
 
     else:
 

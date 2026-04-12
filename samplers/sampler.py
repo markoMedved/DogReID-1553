@@ -13,8 +13,7 @@ class RandomIdentitySampler(Sampler):
 
         self.index_dic = defaultdict(list)
 
-        # ❌ NO dataset[idx]
-        # ✔ only metadata
+
         for idx in range(len(dataset)):
             label = dataset.get_label(idx)
             self.index_dic[label].append(idx)
