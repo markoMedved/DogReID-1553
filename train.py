@@ -11,6 +11,8 @@ def main():
 
     cfg = Config()
 
+    print(f"Training with model: {cfg.model}")
+
     train_loader, query_loader, gallery_loader = build_dataloaders(cfg)
 
     model = build_model(cfg)
