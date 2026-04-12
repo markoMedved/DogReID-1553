@@ -5,3 +5,8 @@ Videos.zip
 trained_models
 *.pth
 logs
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
