@@ -7,7 +7,7 @@ class Config:
     data_root =  Path(__file__).resolve().parent.parent
     split_file = data_root / "splits.csv"
 
-    output_dir = "trained_models"
+    output_dir = "trained_models" # Change if change model
 
     world = "closed"
 
@@ -19,10 +19,9 @@ class Config:
     num_workers = 4
     clip_len = 16
 
-    model = "resnet"
+    model = "resnet" # Change if change model
     backbone = "resnet50"
     embedding_dim = 512
-
 
     epochs = 50
     lr = 3e-4
