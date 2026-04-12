@@ -142,47 +142,47 @@ class Trainer:
 
         return cmc[0], cmc[4], mAP
     
-def compute_distance_matrix(self, qf, gf):
+    def compute_distance_matrix(self, qf, gf):
 
-    qf = torch.nn.functional.normalize(qf, dim=1)
-    gf = torch.nn.functional.normalize(gf, dim=1)
+        qf = torch.nn.functional.normalize(qf, dim=1)
+        gf = torch.nn.functional.normalize(gf, dim=1)
 
-    dist = 1 - torch.mm(qf, gf.t())
+        dist = 1 - torch.mm(qf, gf.t())
 
-    return dist.cpu().numpy()
+        return dist.cpu().numpy()
 
 
-def compute_metrics(self, distmat, q_ids, g_ids):
+    def compute_metrics(self, distmat, q_ids, g_ids):
 
-    q_ids = np.asarray(q_ids)
-    g_ids = np.asarray(g_ids)
+        q_ids = np.asarray(q_ids)
+        g_ids = np.asarray(g_ids)
 
-    indices = np.argsort(distmat, axis=1)
-    matches = (g_ids[indices] == q_ids[:, None])
+        indices = np.argsort(distmat, axis=1)
+        matches = (g_ids[indices] == q_ids[:, None])
 
-    all_cmc = []
-    all_AP = []
+        all_cmc = []
+        all_AP = []
 
-    for i in range(len(q_ids)):
+        for i in range(len(q_ids)):
 
-        match = matches[i]
+            match = matches[i]
 
-        if not np.any(match):
-            continue
+            if not np.any(match):
+                continue
 
-        cmc = match.cumsum()
-        cmc[cmc > 1] = 1
-        all_cmc.append(cmc)
+            cmc = match.cumsum()
+            cmc[cmc > 1] = 1
+            all_cmc.append(cmc)
 
-        num_rel = match.sum()
+            num_rel = match.sum()
 
-        tmp_cmc = match.cumsum()
-        precision = tmp_cmc / (np.arange(len(match)) + 1)
+            tmp_cmc = match.cumsum()
+            precision = tmp_cmc / (np.arange(len(match)) + 1)
 
-        AP = (precision * match).sum() / num_rel
-        all_AP.append(AP)
+            AP = (precision * match).sum() / num_rel
+            all_AP.append(AP)
 
-    cmc = np.mean(all_cmc, axis=0)
-    mAP = np.mean(all_AP)
+        cmc = np.mean(all_cmc, axis=0)
+        mAP = np.mean(all_AP)
 
-    return cmc, mAP
+        return cmc, mAP
