@@ -14,6 +14,9 @@ def build_model(cfg):
             embedding_dim=cfg.embedding_dim
         )
 
-        return model
+    else:
 
-    raise ValueError("Unknown model")
+        raise ValueError("Unknown model")
+
+
+    return model
