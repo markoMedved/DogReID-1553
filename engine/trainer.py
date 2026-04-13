@@ -142,47 +142,50 @@ class Trainer:
 
         return cmc[0], cmc[4], mAP
     
-    def compute_distance_matrix(self, qf, gf):
+    def compute_similarity_matrix(self, qf, gf):
 
         qf = torch.nn.functional.normalize(qf, dim=1)
         gf = torch.nn.functional.normalize(gf, dim=1)
 
-        dist = 1 - torch.mm(qf, gf.t())
+        sim_mat = qf @ gf.T
 
-        return dist.cpu().numpy()
+        return sim_mat.cpu().numpy()
 
 
-    def compute_metrics(self, distmat, q_ids, g_ids):
+    def compute_metrics(self, similarity_mat, query_labels, gallery_labels):
+        # Number of query and gallery feature vectors
+        num_queris =  len(query_labels)
+        num_gallery = len(gallery_labels)
 
         q_ids = np.asarray(q_ids)
         g_ids = np.asarray(g_ids)
 
-        indices = np.argsort(distmat, axis=1)
-        matches = (g_ids[indices] == q_ids[:, None])
+        # Average precision list
+        ap_list = []
 
-        all_cmc = []
-        all_AP = []
+        for query_label, similarity_row in zip(query_labels, similarity_mat):
 
-        for i in range(len(q_ids)):
+            # Get the sorted indices by similarity for the current row
+            sorted_indices = torch.argsort(similarity_row, descending=True)
 
-            match = matches[i]
+            # Find where the gallery labels match the query label
+            matches = (gallery_labels[sorted_indices] == query_label).float()
+            num_rel = matches.sum()
 
-            if not np.any(match):
-                continue
+            # CMC
+            # Rank is the lowest non-zero index in the matches
+            rank = matches.nonzero(as_tuple=False)[0].item()
+            cmc_curve[rank:] += 1
 
-            cmc = match.cumsum()
-            cmc[cmc > 1] = 1
-            all_cmc.append(cmc)
+            # Average precision
+            # Cumulative matches up to each rank
+            cum_matches = matches.cumsum(0)
+            # Devide each sum with the rank - precision at k
+            precision_at_k = cum_matches / (torch.arange(1, num_gallery + 1).float())
+            # Average it
+            ap = (precision_at_k * matches).sum() / num_rel
+            ap_list.append(ap)
 
-            num_rel = match.sum()
-
-            tmp_cmc = match.cumsum()
-            precision = tmp_cmc / (np.arange(len(match)) + 1)
-
-            AP = (precision * match).sum() / num_rel
-            all_AP.append(AP)
-
-        cmc = np.mean(all_cmc, axis=0)
-        mAP = np.mean(all_AP)
-
-        return cmc, mAP
+        cmc_curve = cmc_curve / num_queris
+        mAP = sum(ap_list) / len(ap_list)
+        return cmc_curve, mAP
