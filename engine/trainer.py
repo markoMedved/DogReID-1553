@@ -4,7 +4,7 @@ from tqdm import tqdm
 import numpy as np
 from pytorch_metric_learning.losses import TripletMarginLoss
 from pytorch_metric_learning.miners import BatchHardMiner
-
+import torch.nn.functional as F
 
 
 class Trainer:
@@ -79,6 +79,7 @@ class Trainer:
             labels = labels.to(self.device)
 
             embeddings = self.model(clips)
+            embeddings = F.normalize(embeddings, dim=1)
 
             hard_pairs = self.miner(embeddings, labels)
             loss = self.loss_fn(embeddings, labels, hard_pairs)

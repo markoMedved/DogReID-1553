@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader
 from .dataset import DOGVideoREIDDataset
 from .transforms import ViTVideoTransform
-from samplers.sampler import RandomIdentitySampler
+from pytorch_metric_learning.samplers import MPerClassSampler
 
 def build_dataloaders(cfg):
 
@@ -33,23 +33,23 @@ def build_dataloaders(cfg):
         transform=transform
     )
 
-    sampler = RandomIdentitySampler(
-        train_dataset,
-        num_ids=cfg.num_ids,          # e.g. 4
-        num_instances=cfg.num_instances  # e.g. 2
+    sampler = MPerClassSampler(
+        labels=train_dataset.labels,  
+        m=2
+        # length_before_new_iter=5000                         
     )
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=cfg.batch_size,   # must = num_ids * num_instances
-        sampler=sampler, 
-        num_workers=4,
-        drop_last=True
+        batch_size=4 * 2,  # P × K
+        batch_sampler=sampler,
+        drop_last=True,
+        num_workers=4
     )
 
     query_loader = DataLoader(
         query_dataset,
-        batch_size=1,
+        batch_size=1,       
         shuffle=False
     )
     

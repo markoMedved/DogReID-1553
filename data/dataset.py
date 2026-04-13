@@ -23,6 +23,7 @@ class DOGVideoREIDDataset(Dataset):
         self.use_videos = use_videos
         self.world = world
 
+
         df = pd.read_csv(split_file)
 
         if world == "closed":
@@ -30,19 +31,21 @@ class DOGVideoREIDDataset(Dataset):
         else:
             split_col = "SPLIT_OPEN_SET"
 
-  
         df = df[df[split_col] == split]
 
-
+        # IMPORTANT: filter FIRST
         counts = df["DOG_ID"].value_counts()
         valid_ids = counts[counts > 1].index
         df = df[df["DOG_ID"].isin(valid_ids)]
 
         self.df = df.reset_index(drop=True)
 
- 
+        # THEN build id_map
         dog_ids = sorted(self.df["DOG_ID"].unique())
         self.id_map = {dog_id: i for i, dog_id in enumerate(dog_ids)}
+
+        # # THEN build labels_list
+        # self.labels_list = self.df["DOG_ID"].map(self.id_map).tolist()
 
     def __len__(self):
         return len(self.df)
@@ -77,3 +80,8 @@ class DOGVideoREIDDataset(Dataset):
         label = self.id_map[dog_id]
 
         return clip, label, dog_id, video_id
+
+
+    @property
+    def labels(self):
+        return [self.id_map[self.df.iloc[i]["DOG_ID"]] for i in range(len(self.df))]

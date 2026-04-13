@@ -46,10 +46,6 @@ class VideoViT(nn.Module):
 
         feat_bn = self.bn(feat)
 
-        if self.training:
-            # training embedding
-            return feat_bn
-
         # inference embedding
         return F.normalize(feat_bn, dim=1)
     
