@@ -1,11 +1,11 @@
 from torch.utils.data import DataLoader
 from .dataset import DOGVideoREIDDataset
-from .transforms import VideoTransforms
+from .transforms import ViTVideoTransform
 from samplers.sampler import RandomIdentitySampler
 
 def build_dataloaders(cfg):
 
-    transform = VideoTransforms()
+    transform = ViTVideoTransform()
 
     train_dataset = DOGVideoREIDDataset(
         root_dir=cfg.data_root,

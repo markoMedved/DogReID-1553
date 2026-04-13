@@ -18,7 +18,7 @@ class Config:
     num_instances = 2
     
     num_workers = 4
-    clip_len = 16
+    clip_len = 1 # TODO CHANGE after debugging
 
     embedding_dim = 512
 

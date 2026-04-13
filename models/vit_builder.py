@@ -15,16 +15,6 @@ def build_vit():
 
     return model
 
-
-def get_transforms_vit():
-    """
-    Returns the image transforms for ViT-B/16
-    """
-    weights = ViT_B_16_Weights.DEFAULT
-    return weights.transforms()
-
-
-
 class VideoViT(nn.Module):
 
     def __init__(self, embedding_dim=512):
