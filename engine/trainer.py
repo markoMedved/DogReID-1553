@@ -2,6 +2,9 @@ import torch
 import os
 from tqdm import tqdm
 import numpy as np
+from pytorch_metric_learning.losses import TripletMarginLoss
+from pytorch_metric_learning.miners import BatchHardMiner
+
 
 
 class Trainer:
@@ -13,7 +16,7 @@ class Trainer:
         query_loader,
         gallery_loader,
         optimizer,
-        loss_fn,
+        #loss_fn,
         device,
         cfg
     ):
@@ -23,11 +26,14 @@ class Trainer:
         self.gallery_loader = gallery_loader
 
         self.optimizer = optimizer
-        self.loss_fn = loss_fn
+        #self.loss_fn = loss_fn
         self.device = device
         self.cfg = cfg
 
         self.model.to(device)
+
+        self.miner = BatchHardMiner()
+        self.loss_fn = TripletMarginLoss(margin=0.3)
 
         os.makedirs(cfg.output_dir, exist_ok=True)
 
@@ -74,7 +80,8 @@ class Trainer:
 
             embeddings = self.model(clips)
 
-            loss = self.loss_fn(embeddings, labels)
+            hard_pairs = self.miner(embeddings, labels)
+            loss = self.loss_fn(embeddings, labels, hard_pairs)
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -148,6 +155,7 @@ class Trainer:
         gf = torch.nn.functional.normalize(gf, dim=1)
 
         sim_mat = qf @ gf.T
+        print(sim_mat)
 
         return sim_mat
 
@@ -163,6 +171,9 @@ class Trainer:
         cmc_curve = torch.zeros(num_gallery)
 
         ap_list = []
+
+        print(similarity_mat.shape)
+        print(len(query_labels), len(gallery_labels))
 
         for query_label, similarity_row in zip(query_labels, similarity_mat):
 

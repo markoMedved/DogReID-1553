@@ -42,20 +42,20 @@ def build_dataloaders(cfg):
     train_loader = DataLoader(
         train_dataset,
         batch_size=cfg.batch_size,   # must = num_ids * num_instances
-        sampler=sampler,
+        sampler=sampler, 
         num_workers=4,
         drop_last=True
     )
 
     query_loader = DataLoader(
         query_dataset,
-        batch_size=cfg.batch_size,
+        batch_size=1,
         shuffle=False
     )
     
     gallery_loader = DataLoader(
         gallery_dataset,
-        batch_size=cfg.batch_size,
+        batch_size=1,
         shuffle=False
     )
 

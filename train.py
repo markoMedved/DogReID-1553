@@ -4,7 +4,7 @@ from configs.config import Config
 from data.dataloader import build_dataloaders
 from models.model_factory import build_model
 from engine.trainer import Trainer
-from losses.triplet_loss import TripletLoss
+import torch.nn as nn 
 
 
 def main():
@@ -23,7 +23,8 @@ def main():
         weight_decay=cfg.weight_decay
     )
 
-    loss_fn = TripletLoss(margin=0.3)
+
+    # loss_fn = nn.TripletMarginLoss(margin=0.3, p=2)
 
     trainer = Trainer(
         model=model,
@@ -31,7 +32,7 @@ def main():
         query_loader=query_loader,
         gallery_loader=gallery_loader,
         optimizer=optimizer,
-        loss_fn=loss_fn,
+        # loss_fn=loss_fn,
         device=cfg.device,
         cfg=cfg
     )
