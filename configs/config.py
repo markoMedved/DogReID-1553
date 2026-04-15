@@ -11,7 +11,7 @@ class Config:
 
     world = "closed"
 
-    batch_size = 4
+    batch_size = 8
 
     num_ids = 4
     num_instances = 2
