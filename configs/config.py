@@ -12,7 +12,7 @@ class Config:
 
     world = "closed"
 
-    batch_size = 8
+    batch_size = 4
 
     num_ids = 4
     num_instances = 2
@@ -28,3 +28,8 @@ class Config:
     eval_period = 5
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        
+    # ---- evaluation mode ----
+    eval_only = True
+    checkpoint_path = "output/best_model.pth"

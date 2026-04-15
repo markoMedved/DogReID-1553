@@ -53,11 +53,16 @@ class DOGVideoREIDDataset(Dataset):
     def _get_path(self, dog_id, video_id):
         folder = "Videos" if self.use_videos else "Images"
 
+        if self.use_videos:
+            filename = f"{dog_id}-{video_id}.mp4"
+        else:
+            filename = f"{dog_id}-{video_id}.jpg"
+
         return os.path.join(
             self.root_dir,
             folder,
             dog_id,
-            video_id
+            filename
         )
     
     def get_label(self, idx):

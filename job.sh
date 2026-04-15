@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=doggy_mega_infer
-#SBATCH --output=logs/infer_%j.out
-#SBATCH --error=logs/infer_%j.err
+#SBATCH --job-name=train_vit
+#SBATCH --output=logs/train_%j.out
+#SBATCH --error=logs/train_%j.err
 #SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1

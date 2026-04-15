@@ -35,14 +35,14 @@ def build_dataloaders(cfg):
 
     sampler = MPerClassSampler(
         labels=train_dataset.labels,  
-        m=2
-        # length_before_new_iter=5000                         
+        m=2,
+        length_before_new_iter=1000            
     )
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=4 * 2,  # P × K
-        batch_sampler=sampler,
+        batch_size=8,     # P*K
+        sampler=sampler,
         drop_last=True,
         num_workers=4
     )

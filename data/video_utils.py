@@ -15,7 +15,6 @@ def load_video_clip(path, clip_len):
         ret, frame = cap.read()
 
         if not ret:
-            # 🔥 pad with last frame or black frame
             if len(frames) > 0:
                 frame = frames[-1].clone()
             else:

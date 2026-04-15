@@ -48,7 +48,6 @@ class Trainer:
             print(f"\nEpoch {epoch} | Avg Loss: {loss:.4f}")
 
             if epoch % self.cfg.eval_period == 0:
-                
 
                 rank1, rank5, mAP = self.evaluate()
 
@@ -75,10 +74,23 @@ class Trainer:
 
         for batch_idx, (clips, labels, dog_ids, video_names) in enumerate(pbar):
 
-            clips = clips.to(self.device)
+            clips = clips.to(self.device)      # (B, T, C, H, W)
             labels = labels.to(self.device)
 
-            embeddings = self.model(clips)
+            B, T, C, H, W = clips.shape
+
+            # flatten frames
+            frames = clips.view(B * T, C, H, W)
+
+            # frame embeddings
+            frame_embeddings = self.model(frames)   # (B*T, D)
+
+            # restore video structure
+            frame_embeddings = frame_embeddings.view(B, T, -1)
+
+            # temporal average
+            embeddings = frame_embeddings.mean(dim=1)   # (B, D)
+
             embeddings = F.normalize(embeddings, dim=1)
 
             hard_pairs = self.miner(embeddings, labels)
@@ -108,7 +120,9 @@ class Trainer:
             "loss": loss
         }, path)
 
+
     def evaluate(self):
+        print("evaluating")
 
         self.model.eval()
 
@@ -121,31 +135,50 @@ class Trainer:
         with torch.no_grad():
 
             # ----- QUERY -----
-            for clips, labels, dog_ids, video_names in self.query_loader:
+            for clips, labels, dog_ids, video_names in tqdm(
+                self.query_loader, desc="Extracting query features"
+            ):
 
                 clips = clips.to(self.device)
 
-                feats = self.model(clips)
+                B, T, C, H, W = clips.shape
+                frames = clips.view(B * T, C, H, W)
+
+                frame_feats = self.model(frames)
+                frame_feats = frame_feats.view(B, T, -1)
+
+                feats = frame_feats.mean(dim=1)
+                feats = F.normalize(feats, dim=1)
 
                 query_feats.append(feats.cpu())
                 query_ids.extend(labels.cpu().numpy())
-    
 
             # ----- GALLERY -----
-            for clips, labels, dog_ids, video_names in self.gallery_loader:
+            for clips, labels, dog_ids, video_names in tqdm(
+                self.gallery_loader, desc="Extracting gallery features"
+            ):
 
                 clips = clips.to(self.device)
 
-                feats = self.model(clips)
+                B, T, C, H, W = clips.shape
+                frames = clips.view(B * T, C, H, W)
+
+                frame_feats = self.model(frames)
+                frame_feats = frame_feats.view(B, T, -1)
+
+                feats = frame_feats.mean(dim=1)
+                feats = F.normalize(feats, dim=1)
 
                 gallery_feats.append(feats.cpu())
-                gallery_ids.extend(labels.numpy())
+                gallery_ids.extend(labels.cpu().numpy())
 
         query_feats = torch.cat(query_feats)
         gallery_feats = torch.cat(gallery_feats)
 
+        print("Computing similarity matrix...")
         sim_mat = self.compute_similarity_matrix(query_feats, gallery_feats)
 
+        print("Computing metrics...")
         cmc, mAP = self.compute_metrics(sim_mat, query_ids, gallery_ids)
 
         return cmc[0], cmc[4], mAP
