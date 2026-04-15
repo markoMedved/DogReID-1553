@@ -15,7 +15,8 @@ class DOGVideoREIDDataset(Dataset):
             clip_len=16,
             transform=None,
             use_videos=True,
-            world="closed"
+            world="closed",
+            label_map = None
     ):
         self.root_dir = root_dir
         self.clip_len = clip_len
@@ -41,8 +42,11 @@ class DOGVideoREIDDataset(Dataset):
         self.df = df.reset_index(drop=True)
 
         # THEN build id_map
-        dog_ids = sorted(self.df["DOG_ID"].unique())
-        self.id_map = {dog_id: i for i, dog_id in enumerate(dog_ids)}
+        if label_map is None:
+            dog_ids = sorted(self.df["DOG_ID"].unique())
+            self.id_map = {dog_id: i for i, dog_id in enumerate(dog_ids)}
+        else:
+            self.id_map = label_map
 
         # # THEN build labels_list
         # self.labels_list = self.df["DOG_ID"].map(self.id_map).tolist()

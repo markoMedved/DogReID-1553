@@ -16,7 +16,6 @@ class Trainer:
         query_loader,
         gallery_loader,
         optimizer,
-        #loss_fn,
         device,
         cfg
     ):
@@ -80,7 +79,7 @@ class Trainer:
             B, T, C, H, W = clips.shape
 
             # flatten frames
-            frames = clips.view(B * T, C, H, W)
+            frames = clips.reshape(B * T, C, H, W)
 
             # frame embeddings
             frame_embeddings = self.model(frames)   # (B*T, D)
@@ -122,15 +121,13 @@ class Trainer:
 
 
     def evaluate(self):
+
         print("evaluating")
 
         self.model.eval()
 
-        query_feats = []
-        gallery_feats = []
-
-        query_ids = []
-        gallery_ids = []
+        query_feats, gallery_feats = [], []
+        query_ids, gallery_ids = [], []
 
         with torch.no_grad():
 
@@ -139,41 +136,31 @@ class Trainer:
                 self.query_loader, desc="Extracting query features"
             ):
 
-                clips = clips.to(self.device)
+                x = clips[0].to(self.device, non_blocking=True)   # (T,C,H,W)
+                y = labels[0].item()
 
-                B, T, C, H, W = clips.shape
-                frames = clips.view(B * T, C, H, W)
-
-                frame_feats = self.model(frames)
-                frame_feats = frame_feats.view(B, T, -1)
-
-                feats = frame_feats.mean(dim=1)
-                feats = F.normalize(feats, dim=1)
+                frame_feats = self.model(x)    # (T,D)
+                feats = frame_feats.mean(dim=0)
 
                 query_feats.append(feats.cpu())
-                query_ids.extend(labels.cpu().numpy())
+                query_ids.append(y)
 
             # ----- GALLERY -----
             for clips, labels, dog_ids, video_names in tqdm(
                 self.gallery_loader, desc="Extracting gallery features"
             ):
 
-                clips = clips.to(self.device)
+                x = clips[0].to(self.device, non_blocking=True)
+                y = labels[0].item()
 
-                B, T, C, H, W = clips.shape
-                frames = clips.view(B * T, C, H, W)
-
-                frame_feats = self.model(frames)
-                frame_feats = frame_feats.view(B, T, -1)
-
-                feats = frame_feats.mean(dim=1)
-                feats = F.normalize(feats, dim=1)
+                frame_feats = self.model(x)
+                feats = frame_feats.mean(dim=0)
 
                 gallery_feats.append(feats.cpu())
-                gallery_ids.extend(labels.cpu().numpy())
+                gallery_ids.append(y)
 
-        query_feats = torch.cat(query_feats)
-        gallery_feats = torch.cat(gallery_feats)
+        query_feats = torch.stack(query_feats)
+        gallery_feats = torch.stack(gallery_feats)
 
         print("Computing similarity matrix...")
         sim_mat = self.compute_similarity_matrix(query_feats, gallery_feats)
@@ -189,8 +176,7 @@ class Trainer:
         gf = torch.nn.functional.normalize(gf, dim=1)
 
         sim_mat = qf @ gf.T
-        print(sim_mat)
-
+        
         return sim_mat
 
 

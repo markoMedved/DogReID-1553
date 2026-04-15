@@ -5,7 +5,7 @@ def build_model(cfg):
 
     if cfg.model == "vit":
 
-        model = VideoViT(embedding_dim=cfg.embedding_dim)
+        model = VideoViT()
 
     else:
 

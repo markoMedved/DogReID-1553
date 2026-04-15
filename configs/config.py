@@ -3,7 +3,6 @@ from pathlib import Path
 
 class Config:
 
-
     data_root =  Path(__file__).resolve().parent.parent
     split_file = data_root / "splits.csv"
 
@@ -18,7 +17,7 @@ class Config:
     num_instances = 2
     
     num_workers = 4
-    clip_len = 1 # TODO CHANGE after debugging
+    clip_len = 16 # TODO CHANGE after debugging
 
     embedding_dim = 512
 
@@ -29,7 +28,7 @@ class Config:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        
+    
     # ---- evaluation mode ----
     eval_only = True
     checkpoint_path = "output/best_model.pth"

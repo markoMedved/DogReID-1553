@@ -23,16 +23,12 @@ def main():
         weight_decay=cfg.weight_decay
     )
 
-
-    # loss_fn = nn.TripletMarginLoss(margin=0.3, p=2)
-
     trainer = Trainer(
         model=model,
         train_loader=train_loader,
         query_loader=query_loader,
         gallery_loader=gallery_loader,
         optimizer=optimizer,
-        # loss_fn=loss_fn,
         device=cfg.device,
         cfg=cfg
     )
