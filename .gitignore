@@ -11,6 +11,4 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-tests.ipynb
-test.py
 test_job.sh
