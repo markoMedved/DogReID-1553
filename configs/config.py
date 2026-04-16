@@ -3,18 +3,16 @@ from pathlib import Path
 
 class Config:
     # --- Paths ---
-    # Using .resolve() is great. Ensure data_root actually points to the 
-    # folder containing "Videos" and "splits.csv"
     data_root = Path(__file__).resolve().parent.parent
     split_file = data_root / "splits.csv"
 
-    output_dir = "trained_models_vit" # Change if change model
-    model = "vit" # Change if change model
-
+    # FIX: Wrap the string in Path() so the / operator works below
+    output_dir = Path("trained_models_vit") 
+    
+    model = "vit"
     world = "closed"
 
     batch_size = 8
-
     num_ids = 4
     num_instances = 2
     
@@ -32,8 +30,10 @@ class Config:
 
     # ---- Evaluation / Resume ----
     eval_only = False 
+    
+    # Now that output_dir is a Path object, this line will work perfectly
     checkpoint_path = output_dir / "best_model.pth"
 
     def __init__(self):
-        # Create output directory automatically
+        # Ensure the directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
