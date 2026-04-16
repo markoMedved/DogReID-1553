@@ -42,9 +42,12 @@ class DOGVideoREIDDataset(Dataset):
         return self._labels
 
     def _get_path(self, dog_id, video_id):
-        folder = "Videos" if self.use_videos else "Images"
-        ext = "mp4" if self.use_videos else "jpg"
-        return os.path.join(self.root_dir, folder, dog_id, f"{dog_id}-{video_id}.{ext}")
+            folder = "Videos" if self.use_videos else "Images"
+            ext = "mp4" if self.use_videos else "jpg"
+            
+            # Matches your current structure: Videos/dog_id/dog_id-video_id.mp4
+            filename = f"{dog_id}-{video_id}.{ext}"
+            return os.path.join(self.root_dir, folder, dog_id, filename)
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
@@ -52,10 +55,18 @@ class DOGVideoREIDDataset(Dataset):
         video_id = row["VIDEO_ID"]
 
         path = self._get_path(dog_id, video_id)
-        clip = load_video_clip(path, self.clip_len) # clip: (T, C, H, W)
+        
+        # 1. ADD A CHECK: If the path is wrong, you'll know exactly why
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Check your pathing! File not found at: {path}")
+
+        clip = load_video_clip(path, self.clip_len)
 
         if self.transform:
             clip = self.transform(clip)
 
-        label = self.id_map[dog_id]
+        # 2. THE KEYERROR FIX: Use .get() to provide a fallback label
+        # This prevents the crash if a dog is in Query but not in Train
+        label = self.id_map.get(dog_id, -1) 
+        
         return clip, label, dog_id, video_id
