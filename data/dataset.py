@@ -3,6 +3,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from .video_utils import load_video_clip
+import numpy as np
 
 
 class DOGVideoREIDDataset(Dataset):

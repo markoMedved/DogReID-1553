@@ -17,7 +17,24 @@ class ViTVideoTransform:
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
             )
+        ])# data/transforms.py
+from torchvision import transforms
+
+class ViTVideoTransform:
+    def __init__(self):
+        self.frame_tf = transforms.Compose([
+            transforms.ToPILImage(),         # 1. Convert NumPy array to PIL
+            transforms.Resize((224, 224)),   # 2. Resize PIL image
+            transforms.ToTensor(),           # 3. Convert PIL to Tensor (0-1)
+            transforms.Normalize(            # 4. Standardize
+                mean=[0.485, 0.456, 0.406], 
+                std=[0.229, 0.224, 0.225]
+            )
         ])
+
+    def __call__(self, clip):
+        # clip is a list or array of NumPy frames
+        return torch.stack([self.frame_tf(frame) for frame in clip])
 
     def __call__(self, clip):
 

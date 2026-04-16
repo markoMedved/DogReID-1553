@@ -3,6 +3,7 @@ import torch
 from tqdm import tqdm
 from pytorch_metric_learning.losses import TripletMarginLoss
 from pytorch_metric_learning.miners import BatchHardMiner
+import torch.nn.functional as F
 
 class Trainer:
     def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, device, cfg):
@@ -62,30 +63,43 @@ class Trainer:
         return total_loss / len(self.train_loader)
 
     def evaluate(self):
-        self.model.eval()
-        query_feats, query_ids = [], []
-        gallery_feats, gallery_ids = [], []
-
-        with torch.no_grad():
-            # Helper to extract features from a loader
-            def extract(loader, desc):
-                feats_list, ids_list = [], []
-                for clips, labels, _, _ in tqdm(loader, desc=desc):
-                    clips = clips.to(self.device)
-                    # Forward pass + normalization
-                    feat = self.model(clips) 
-                    feat = F.normalize(feat, p=2, dim=1)
+            self.model.eval()
+            
+            with torch.no_grad():
+                def extract(loader, desc):
+                    feats_list, ids_list = [], []
+                    for clips, labels, _, _ in tqdm(loader, desc=desc):
+                        clips = clips.to(self.device)
+                        feat = self.model(clips) 
+                        feat = F.normalize(feat, p=2, dim=1)
+                        
+                        feats_list.append(feat.cpu())
+                        ids_list.extend(labels.tolist())
                     
-                    feats_list.append(feat.cpu())
-                    ids_list.extend(labels.tolist())
-                return torch.cat(feats_list, dim=0), ids_list
+                    return torch.cat(feats_list, dim=0), torch.tensor(ids_list)
 
-            query_feats, query_ids = extract(self.query_loader, "Querying")
-            gallery_feats, gallery_ids = extract(self.gallery_loader, "Gallerying")
+                query_feats, query_ids = extract(self.query_loader, "Querying")
+                gallery_feats, gallery_ids = extract(self.gallery_loader, "Gallerying")
 
-        sim_mat = query_feats @ gallery_feats.T
-        cmc, mAP = self.compute_metrics(sim_mat, query_ids, gallery_ids)
-        return cmc[0], cmc[4], mAP
+                # --- TMP SAVE FEATURES ---
+                # Save these so you can load them in a notebook later for visualization
+                eval_data = {
+                    "query_feats": query_feats,
+                    "query_ids": query_ids,
+                    "gallery_feats": gallery_feats,
+                    "gallery_ids": gallery_ids
+                }
+                save_path = os.path.join(self.cfg.output_dir, "eval_features_debug.pt")
+                torch.save(eval_data, save_path)
+                print(f"Features saved to {save_path}")
+                # -------------------------
+
+            # Calculate Similarity
+            sim_mat = query_feats @ gallery_feats.T
+            
+            # Apply the fix to ignore self-matches if they exist
+            cmc, mAP = self.compute_metrics(sim_mat, query_ids, gallery_ids)
+            return cmc[0], cmc[4], mAP
 
     def compute_metrics(self, similarity_mat, query_labels, gallery_labels):
         query_labels = torch.tensor(query_labels)
