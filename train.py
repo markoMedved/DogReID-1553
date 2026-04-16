@@ -4,12 +4,14 @@ from configs.config import Config
 from data.dataloader import build_dataloaders
 from models.model_factory import build_model
 from engine.trainer import Trainer
-from losses.triplet_loss import TripletLoss
+import torch.nn as nn 
 
 
 def main():
 
     cfg = Config()
+
+    print(f"Training with model: {cfg.model}")
 
     train_loader, query_loader, gallery_loader = build_dataloaders(cfg)
 
@@ -21,15 +23,12 @@ def main():
         weight_decay=cfg.weight_decay
     )
 
-    loss_fn = TripletLoss(margin=0.3)
-
     trainer = Trainer(
         model=model,
         train_loader=train_loader,
         query_loader=query_loader,
         gallery_loader=gallery_loader,
         optimizer=optimizer,
-        loss_fn=loss_fn,
         device=cfg.device,
         cfg=cfg
     )

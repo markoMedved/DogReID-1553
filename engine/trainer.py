@@ -2,6 +2,9 @@ import torch
 import os
 from tqdm import tqdm
 import numpy as np
+from pytorch_metric_learning.losses import TripletMarginLoss
+from pytorch_metric_learning.miners import BatchHardMiner
+import torch.nn.functional as F
 
 
 class Trainer:
@@ -13,7 +16,6 @@ class Trainer:
         query_loader,
         gallery_loader,
         optimizer,
-        loss_fn,
         device,
         cfg
     ):
@@ -23,11 +25,14 @@ class Trainer:
         self.gallery_loader = gallery_loader
 
         self.optimizer = optimizer
-        self.loss_fn = loss_fn
+        #self.loss_fn = loss_fn
         self.device = device
         self.cfg = cfg
 
         self.model.to(device)
+
+        self.miner = BatchHardMiner()
+        self.loss_fn = TripletMarginLoss(margin=0.3)
 
         os.makedirs(cfg.output_dir, exist_ok=True)
 
@@ -42,7 +47,6 @@ class Trainer:
             print(f"\nEpoch {epoch} | Avg Loss: {loss:.4f}")
 
             if epoch % self.cfg.eval_period == 0:
-                
 
                 rank1, rank5, mAP = self.evaluate()
 
@@ -69,13 +73,27 @@ class Trainer:
 
         for batch_idx, (clips, labels, dog_ids, video_names) in enumerate(pbar):
 
-
-            clips = clips.to(self.device)
+            clips = clips.to(self.device)      # (B, T, C, H, W)
             labels = labels.to(self.device)
 
-            embeddings = self.model(clips)
+            B, T, C, H, W = clips.shape
 
-            loss = self.loss_fn(embeddings, labels)
+            # flatten frames
+            frames = clips.reshape(B * T, C, H, W)
+
+            # frame embeddings
+            frame_embeddings = self.model(frames)   # (B*T, D)
+
+            # restore video structure
+            frame_embeddings = frame_embeddings.view(B, T, -1)
+
+            # temporal average
+            embeddings = frame_embeddings.mean(dim=1)   # (B, D)
+
+            embeddings = F.normalize(embeddings, dim=1)
+
+            hard_pairs = self.miner(embeddings, labels)
+            loss = self.loss_fn(embeddings, labels, hard_pairs)
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -101,88 +119,107 @@ class Trainer:
             "loss": loss
         }, path)
 
+
     def evaluate(self):
+
+        print("evaluating")
 
         self.model.eval()
 
-        query_feats = []
-        gallery_feats = []
-
-        query_ids = []
-        gallery_ids = []
+        query_feats, gallery_feats = [], []
+        query_ids, gallery_ids = [], []
 
         with torch.no_grad():
 
             # ----- QUERY -----
-            for clips, labels, dog_ids, video_names in self.query_loader:
+            for clips, labels, dog_ids, video_names in tqdm(
+                self.query_loader, desc="Extracting query features"
+            ):
 
-                clips = clips.to(self.device)
+                x = clips[0].to(self.device, non_blocking=True)   # (T,C,H,W)
+                y = labels[0].item()
 
-                feats = self.model(clips)
+                frame_feats = self.model(x)    # (T,D)
+                feats = frame_feats.mean(dim=0)
 
                 query_feats.append(feats.cpu())
-                query_ids.extend(labels.numpy())
+                query_ids.append(y)
 
             # ----- GALLERY -----
-            for clips, labels, dog_ids, video_names in self.gallery_loader:
+            for clips, labels, dog_ids, video_names in tqdm(
+                self.gallery_loader, desc="Extracting gallery features"
+            ):
 
-                clips = clips.to(self.device)
+                x = clips[0].to(self.device, non_blocking=True)
+                y = labels[0].item()
 
-                feats = self.model(clips)
+                frame_feats = self.model(x)
+                feats = frame_feats.mean(dim=0)
 
                 gallery_feats.append(feats.cpu())
-                gallery_ids.extend(labels.numpy())
+                gallery_ids.append(y)
 
-        query_feats = torch.cat(query_feats)
-        gallery_feats = torch.cat(gallery_feats)
+        query_feats = torch.stack(query_feats)
+        gallery_feats = torch.stack(gallery_feats)
 
-        distmat = self.compute_distance_matrix(query_feats, gallery_feats)
+        print("Computing similarity matrix...")
+        sim_mat = self.compute_similarity_matrix(query_feats, gallery_feats)
 
-        cmc, mAP = self.compute_metrics(distmat, query_ids, gallery_ids)
+        print("Computing metrics...")
+        cmc, mAP = self.compute_metrics(sim_mat, query_ids, gallery_ids)
 
         return cmc[0], cmc[4], mAP
     
-    def compute_distance_matrix(self, qf, gf):
+    def compute_similarity_matrix(self, qf, gf):
 
         qf = torch.nn.functional.normalize(qf, dim=1)
         gf = torch.nn.functional.normalize(gf, dim=1)
 
-        dist = 1 - torch.mm(qf, gf.t())
+        sim_mat = qf @ gf.T
+        
+        return sim_mat
 
-        return dist.cpu().numpy()
 
+    def compute_metrics(self, similarity_mat, query_labels, gallery_labels):
 
-    def compute_metrics(self, distmat, q_ids, g_ids):
+        query_labels = torch.tensor(query_labels)
+        gallery_labels = torch.tensor(gallery_labels)
 
-        q_ids = np.asarray(q_ids)
-        g_ids = np.asarray(g_ids)
+        num_queries = len(query_labels)
+        num_gallery = len(gallery_labels)
 
-        indices = np.argsort(distmat, axis=1)
-        matches = (g_ids[indices] == q_ids[:, None])
+        cmc_curve = torch.zeros(num_gallery)
 
-        all_cmc = []
-        all_AP = []
+        ap_list = []
 
-        for i in range(len(q_ids)):
+        print(similarity_mat.shape)
+        print(len(query_labels), len(gallery_labels))
 
-            match = matches[i]
+        for query_label, similarity_row in zip(query_labels, similarity_mat):
 
-            if not np.any(match):
+            sorted_indices = torch.argsort(similarity_row, descending=True)
+
+            matches = (gallery_labels[sorted_indices] == query_label).float()
+
+            if matches.sum() == 0:
                 continue
 
-            cmc = match.cumsum()
-            cmc[cmc > 1] = 1
-            all_cmc.append(cmc)
+            rank = matches.nonzero(as_tuple=False)[0].item()
 
-            num_rel = match.sum()
+            cmc_curve[rank:] += 1
 
-            tmp_cmc = match.cumsum()
-            precision = tmp_cmc / (np.arange(len(match)) + 1)
+            cum_matches = matches.cumsum(0)
 
-            AP = (precision * match).sum() / num_rel
-            all_AP.append(AP)
+            precision_at_k = cum_matches / torch.arange(
+                1, num_gallery + 1, dtype=torch.float32
+            )
 
-        cmc = np.mean(all_cmc, axis=0)
-        mAP = np.mean(all_AP)
+            ap = (precision_at_k * matches).sum() / matches.sum()
 
-        return cmc, mAP
+            ap_list.append(ap)
+
+        cmc_curve = cmc_curve / num_queries
+
+        mAP = torch.stack(ap_list).mean().item()
+
+        return cmc_curve, mAP

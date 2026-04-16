@@ -3,5 +3,14 @@ Videos
 Images.zip
 Videos.zip
 trained_models
+trained_models_vit
 *.pth
 logs
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+tests.ipynb
+test.py
+test_job.sh
