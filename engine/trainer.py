@@ -16,8 +16,7 @@ class Trainer:
         self.cfg = cfg
 
     # Define the losses with the specific names used in train_epoch
-        self.loss_triplet = TripletMarginLoss(margin=0.5) 
-        self.loss_id = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
+        self.loss_triplet = TripletMarginLoss(margin=0.6) 
 
         os.makedirs(cfg.output_dir, exist_ok=True)
         #TODO remove
@@ -55,9 +54,8 @@ class Trainer:
 
             # 3. Calculate Joint Loss
             loss_tr = self.loss_triplet(embeddings_norm, labels)
-            loss_id = self.loss_id(logits, labels)
             
-            total_loss = loss_tr + loss_id
+            total_loss = loss_tr
 
             # 4. Optimize
             self.optimizer.zero_grad()
