@@ -3,6 +3,7 @@ import torch
 from tqdm import tqdm
 from pytorch_metric_learning.losses import TripletMarginLoss
 import torch.nn.functional as F
+import torch.nn as nn
 
 class Trainer:
     def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, device, cfg):
@@ -14,12 +15,14 @@ class Trainer:
         self.device = device
         self.cfg = cfg
 
-        self.loss_fn = TripletMarginLoss(margin=0.7)
+    # Define the losses with the specific names used in train_epoch
+        self.loss_triplet = TripletMarginLoss(margin=0.5) 
+        self.loss_id = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
 
         os.makedirs(cfg.output_dir, exist_ok=True)
         #TODO remove
-        rank1, rank5, mAP = self.evaluate()
-        print(f"Eval -> Rank-1: {rank1:.4f} Rank-5: {rank5:.4f} mAP: {mAP:.4f}")
+        # rank1, rank5, mAP = self.evaluate()
+        # print(f"Eval -> Rank-1: {rank1:.4f} Rank-5: {rank5:.4f} mAP: {mAP:.4f}")
 
     def train(self):
         best_loss = float("inf")
@@ -42,23 +45,25 @@ class Trainer:
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
 
         for clips, labels, _, _ in pbar:
-            clips = clips.to(self.device)   # (B, T, C, H, W)
-            labels = labels.to(self.device) # (B)
+            clips, labels = clips.to(self.device), labels.to(self.device)
 
-            # 1. Forward Pass (Model now handles temporal pooling)
-            embeddings = self.model(clips)  # (B, 768)
-            embeddings = F.normalize(embeddings, p=2, dim=1)
+            # 1. Forward Pass
+            embeddings, logits = self.model(clips)
+            
+            # 2. Normalize embeddings for Triplet Loss
+            embeddings_norm = F.normalize(embeddings, p=2, dim=1)
 
-            # 2. Metric Learning Loss
-            loss = self.loss_fn(embeddings, labels)
+            # 3. Calculate Joint Loss
+            loss_tr = self.loss_triplet(embeddings_norm, labels)
+            loss_id = self.loss_id(logits, labels)
+            
+            total_loss = loss_tr + loss_id
 
-            # 3. Optimize
+            # 4. Optimize
             self.optimizer.zero_grad()
-            loss.backward()
+            total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
-
-            total_loss += loss.item()
-            pbar.set_postfix(loss=loss.item())
 
         return total_loss / len(self.train_loader)
 

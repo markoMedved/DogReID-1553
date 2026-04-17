@@ -40,7 +40,7 @@ def build_dataloaders(cfg):
 
     sampler = MPerClassSampler(
             labels=train_dataset.labels,  
-            m=2,
+            m=cfg.k,
             batch_size=cfg.batch_size,
             # This is the magic line: 
             # It forces the epoch to end after we've seen each video roughly once.

@@ -13,8 +13,10 @@ class Config:
     world = "closed"
 
     batch_size = 8
+    k = 4
     num_ids = 4
     num_instances = 2
+    num_classes = 744
     
     num_workers = 12
     # TODO change
@@ -25,7 +27,7 @@ class Config:
     epochs = 50
     lr = 2e-5
     weight_decay = 1e-5
-    eval_period = 10
+    eval_period = 1
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
