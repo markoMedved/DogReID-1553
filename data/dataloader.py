@@ -41,20 +41,18 @@ def build_dataloaders(cfg):
     sampler = MPerClassSampler(
             labels=train_dataset.labels,  
             m=2,
-            # This prevents the batch count from exploding
-            batch_size=cfg.batch_size 
+            batch_size=cfg.batch_size,
+            # This is the magic line: 
+            # It forces the epoch to end after we've seen each video roughly once.
+            length_before_new_iter=len(train_dataset) 
         )
 
-    # 6. Build Loaders
-    # Use num_workers > 0 and pin_memory for HPC performance
-# In build_dataloaders, replace sampler with:
     train_loader = DataLoader(
         train_dataset,
         batch_size=cfg.batch_size,
-        shuffle=True, # Use this instead of the MPerClassSampler
+        sampler=sampler, #
         drop_last=True,
-        num_workers=cfg.num_workers,
-        pin_memory=True
+        num_workers=cfg.num_workers
     )
 
     query_loader = DataLoader(

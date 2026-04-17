@@ -37,15 +37,9 @@ def main():
         cfg=cfg
     )
 
-    # 5. Launch
-    if cfg.eval_only:
-        print("Running Evaluation Only...")
-        # Note: You might need to load weights here if eval_only is True
-        rank1, rank5, mAP = trainer.evaluate()
-        print(f"Rank-1: {rank1:.4f}, mAP: {mAP:.4f}")
-    else:
-        print("Starting Training...")
-        trainer.train()
+
+    print("Starting Training...")
+    trainer.train()
 
 if __name__ == "__main__":
     main()

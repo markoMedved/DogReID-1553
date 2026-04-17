@@ -2,7 +2,6 @@ import os
 import torch
 from tqdm import tqdm
 from pytorch_metric_learning.losses import TripletMarginLoss
-from pytorch_metric_learning.miners import BatchHardMiner
 import torch.nn.functional as F
 
 class Trainer:
@@ -15,7 +14,6 @@ class Trainer:
         self.device = device
         self.cfg = cfg
 
-        self.miner = BatchHardMiner()
         self.loss_fn = TripletMarginLoss(margin=0.3)
 
         os.makedirs(cfg.output_dir, exist_ok=True)
@@ -49,8 +47,7 @@ class Trainer:
             embeddings = F.normalize(embeddings, p=2, dim=1)
 
             # 2. Metric Learning Loss
-            hard_pairs = self.miner(embeddings, labels)
-            loss = self.loss_fn(embeddings, labels, hard_pairs)
+            loss = self.loss_fn(embeddings, labels)
 
             # 3. Optimize
             self.optimizer.zero_grad()
@@ -80,19 +77,6 @@ class Trainer:
 
                 query_feats, query_ids = extract(self.query_loader, "Querying")
                 gallery_feats, gallery_ids = extract(self.gallery_loader, "Gallerying")
-
-                # --- TMP SAVE FEATURES ---
-                # Save these so you can load them in a notebook later for visualization
-                eval_data = {
-                    "query_feats": query_feats,
-                    "query_ids": query_ids,
-                    "gallery_feats": gallery_feats,
-                    "gallery_ids": gallery_ids
-                }
-                save_path = os.path.join(self.cfg.output_dir, "eval_features_debug.pt")
-                torch.save(eval_data, save_path)
-                print(f"Features saved to {save_path}")
-                # -------------------------
 
             # Calculate Similarity
             sim_mat = query_feats @ gallery_feats.T
