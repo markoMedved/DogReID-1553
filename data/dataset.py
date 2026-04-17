@@ -5,7 +5,6 @@ from torch.utils.data import Dataset
 from .video_utils import load_video_clip
 import numpy as np
 
-
 class DOGVideoREIDDataset(Dataset):
     def __init__(self, root_dir, split_file, split="train", clip_len=16, 
                  transform=None, use_videos=True, world="closed", label_map=None):
@@ -14,15 +13,20 @@ class DOGVideoREIDDataset(Dataset):
         self.transform = transform
         self.use_videos = use_videos
         self.world = world
+        self.split = split
 
+        # Load and filter by split
         df = pd.read_csv(split_file)
         split_col = "SPLIT_CLOSED_SET" if world == "closed" else "SPLIT_OPEN_SET"
         df = df[df[split_col] == split]
 
-        # Filter IDs with at least 2 samples (necessary for Triplet Loss)
-        counts = df["DOG_ID"].value_counts()
-        valid_ids = counts[counts > 1].index
-        df = df[df["DOG_ID"].isin(valid_ids)]
+        # CRITICAL FIX 1: Only filter for multiple samples in training.
+        # Eval sets (query/gallery) often only have 1 sample per dog/clip.
+        if self.split == "train":
+            counts = df["DOG_ID"].value_counts()
+            valid_ids = counts[counts > 1].index
+            df = df[df["DOG_ID"].isin(valid_ids)]
+        
         self.df = df.reset_index(drop=True)
 
         # Build or use provided mapping
@@ -32,23 +36,25 @@ class DOGVideoREIDDataset(Dataset):
         else:
             self.id_map = label_map
 
-        # Pre-calculate labels for the Sampler (much faster!)
-        self._labels = self.df["DOG_ID"].map(self.id_map).tolist()
+        # Pre-calculate labels for the Sampler
+        # We use .get(dog_id, -1) to ensure it doesn't crash on unknown IDs
+        self._labels = self.df["DOG_ID"].map(lambda x: self.id_map.get(x, -1)).tolist()
 
     def __len__(self):
         return len(self.df)
 
     @property
     def labels(self):
+        """Used by MPerClassSampler"""
         return self._labels
 
     def _get_path(self, dog_id, video_id):
-            folder = "Videos" if self.use_videos else "Images"
-            ext = "mp4" if self.use_videos else "jpg"
-            
-            # Matches your current structure: Videos/dog_id/dog_id-video_id.mp4
-            filename = f"{dog_id}-{video_id}.{ext}"
-            return os.path.join(self.root_dir, folder, dog_id, filename)
+        folder = "Videos" if self.use_videos else "Images"
+        ext = "mp4" if self.use_videos else "jpg"
+        
+        # Structure: Videos/dog_id/dog_id-video_id.mp4
+        filename = f"{dog_id}-{video_id}.{ext}"
+        return os.path.join(self.root_dir, folder, dog_id, filename)
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
@@ -57,17 +63,18 @@ class DOGVideoREIDDataset(Dataset):
 
         path = self._get_path(dog_id, video_id)
         
-        # 1. ADD A CHECK: If the path is wrong, you'll know exactly why
         if not os.path.exists(path):
-            raise FileNotFoundError(f"Check your pathing! File not found at: {path}")
+            # In some datasets, IDs in CSV might have prefixes or different casing
+            raise FileNotFoundError(f"Clip not found: {path}")
 
+        # Load raw numpy frames
         clip = load_video_clip(path, self.clip_len)
 
+        # Apply transformations (Numpy -> PIL -> Tensor)
         if self.transform:
             clip = self.transform(clip)
 
-        # 2. THE KEYERROR FIX: Use .get() to provide a fallback label
-        # This prevents the crash if a dog is in Query but not in Train
+        # Final label check
         label = self.id_map.get(dog_id, -1) 
         
         return clip, label, dog_id, video_id
