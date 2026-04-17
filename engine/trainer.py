@@ -14,7 +14,7 @@ class Trainer:
         self.device = device
         self.cfg = cfg
 
-        self.loss_fn = TripletMarginLoss(margin=0.3)
+        self.loss_fn = TripletMarginLoss(margin=0.7)
 
         os.makedirs(cfg.output_dir, exist_ok=True)
         #TODO remove
