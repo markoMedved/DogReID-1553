@@ -12,3 +12,5 @@ __pycache__/
 *.pyo
 *.pyd
 test_job.sh
+logs_test
+job.sh

@@ -17,14 +17,15 @@ class Config:
     num_instances = 2
     
     num_workers = 12
-    clip_len = 16 
+    # TODO change
+    clip_len = 4
 
     embedding_dim = 768 
 
     epochs = 50
-    lr = 3e-4
+    lr = 2e-5
     weight_decay = 1e-5
-    eval_period = 5
+    eval_period = 10
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

@@ -29,7 +29,8 @@ class ViTVideoTransform:
             transforms.Normalize(            # 4. Standardize
                 mean=[0.485, 0.456, 0.406], 
                 std=[0.229, 0.224, 0.225]
-            )
+            ),
+            transforms.RandomErasing(p=0.5, scale=(0.02, 0.33), ratio=(0.3, 3.3), value=0),
         ])
 
     def __call__(self, clip):
