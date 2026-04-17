@@ -20,7 +20,6 @@ class DOGVideoREIDDataset(Dataset):
         split_col = "SPLIT_CLOSED_SET" if world == "closed" else "SPLIT_OPEN_SET"
         df = df[df[split_col] == split]
 
-        # CRITICAL FIX 1: Only filter for multiple samples in training.
         # Eval sets (query/gallery) often only have 1 sample per dog/clip.
         if self.split == "train":
             counts = df["DOG_ID"].value_counts()
@@ -36,8 +35,7 @@ class DOGVideoREIDDataset(Dataset):
         else:
             self.id_map = label_map
 
-        # Pre-calculate labels for the Sampler
-        # We use .get(dog_id, -1) to ensure it doesn't crash on unknown IDs
+
         self._labels = self.df["DOG_ID"].map(lambda x: self.id_map.get(x, -1)).tolist()
 
     def __len__(self):

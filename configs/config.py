@@ -16,7 +16,7 @@ class Config:
     num_ids = 4
     num_instances = 2
     
-    num_workers = 4
+    num_workers = 12
     clip_len = 16 
 
     embedding_dim = 768 
