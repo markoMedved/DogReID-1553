@@ -38,22 +38,23 @@ def build_dataloaders(cfg):
     print(f"Query samples: {len(query_dataset)}  | Unique IDs: {len(set(query_dataset.labels))}")
     print(f"Gallery samples: {len(gallery_dataset)}| Unique IDs: {len(set(gallery_dataset.labels))}")
 
-    # 5. Configure Sampler for Metric Learning (P-K Sampling)
-    # This ensures every batch has 'm' instances of the same dog for triplet mining
     sampler = MPerClassSampler(
-        labels=train_dataset.labels,  
-        m=2          
-    )
+            labels=train_dataset.labels,  
+            m=2,
+            # This prevents the batch count from exploding
+            batch_size=cfg.batch_size 
+        )
 
     # 6. Build Loaders
     # Use num_workers > 0 and pin_memory for HPC performance
+# In build_dataloaders, replace sampler with:
     train_loader = DataLoader(
         train_dataset,
-        batch_size=cfg.batch_size, # e.g., 8 or 16
-        sampler=sampler,
+        batch_size=cfg.batch_size,
+        shuffle=True, # Use this instead of the MPerClassSampler
         drop_last=True,
         num_workers=cfg.num_workers,
-        pin_memory=True 
+        pin_memory=True
     )
 
     query_loader = DataLoader(
