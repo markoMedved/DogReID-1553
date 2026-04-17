@@ -20,7 +20,7 @@ class Config:
     
     num_workers = 12
     # TODO change
-    clip_len = 4
+    clip_len = 8
 
     embedding_dim = 768 
 

@@ -20,8 +20,8 @@ class Trainer:
 
         os.makedirs(cfg.output_dir, exist_ok=True)
         #TODO remove
-        # rank1, rank5, mAP = self.evaluate()
-        # print(f"Eval -> Rank-1: {rank1:.4f} Rank-5: {rank5:.4f} mAP: {mAP:.4f}")
+        rank1, rank5, mAP = self.evaluate()
+        print(f"Eval -> Rank-1: {rank1:.4f} Rank-5: {rank5:.4f} mAP: {mAP:.4f}")
 
     def train(self):
         best_loss = float("inf")
