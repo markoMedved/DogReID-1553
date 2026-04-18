@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import vit_b_16, ViT_B_16_Weights
+from torchvision.models import swin_v2_b, Swin_V2_B_Weights
 
 class TemporalAttentionPool(nn.Module):
     def __init__(self, dim):
@@ -14,49 +14,49 @@ class TemporalAttentionPool(nn.Module):
         )
 
     def forward(self, x):
-        # x: (B, T, D)
+        # x shape: (B, T, Dim)
         weights = self.attn(x) # (B, T, 1)
         return (x * weights).sum(dim=1)
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torchvision.models import vit_b_16, ViT_B_16_Weights
-
-class VideoViT(nn.Module):
-    def __init__(self, chunk_size=16):
+class VideoSwin(nn.Module):
+    def __init__(self, num_classes=None, chunk_size=8):
         super().__init__()
-        # 1. Load ViT Base (768 dim) 
-        # Rename 'self.vit' to 'self.backbone' to fix the AttributeError
-        weights = ViT_B_16_Weights.DEFAULT
-        self.backbone = vit_b_16(weights=weights)
+        # 1. Load Swin V2 Base and rename to 'backbone' for train.py compatibility
+        weights = Swin_V2_B_Weights.DEFAULT
+        self.backbone = swin_v2_b(weights=weights)
         
-        # 2. Remove the classification head
-        self.backbone.heads = nn.Identity()
+        # 2. Remove original classification head
+        self.backbone.head = nn.Identity()
         
-        self.chunk_size = chunk_size
-        self.dim = 768
+        # 3. Settings
+        self.dim = 1024 # Swin-B output dimension
+        self.chunk_size = chunk_size # Helps avoid OOM on MIG slices
         
-        # 3. Temporal Attention and BN-Neck
+        # 4. Attention Pooling 
         self.temporal_pool = TemporalAttentionPool(self.dim)
+        
+        # 5. BN-Neck (Crucial for Triplet Loss)
         self.bn = nn.BatchNorm1d(self.dim)
-        self.bn.bias.requires_grad_(False)
+        self.bn.bias.requires_grad_(False) 
 
     def forward(self, x):
-        # x shape: (B, T, C, H, W)
+        # x shape: (Batch, Time, Channels, Height, Width)
         if x.dim() == 5:
             B, T, C, H, W = x.shape
             x = x.view(B * T, C, H, W)
             
             # --- CHUNKED FORWARD ---
+            # Swin-v2-B is memory intensive. Processing in chunks keeps usage stable.
             chunks = torch.split(x, self.chunk_size, dim=0)
             feats = torch.cat([self.backbone(c) for c in chunks], dim=0) 
             
-            # --- TEMPORAL ATTENTION ---
-            feats = feats.view(B, T, -1)
+            # Reshape back to (B, T, D) for pooling
+            feats = feats.view(B, T, -1) 
+            
+            # --- ATTENTION POOLING ---
             feats = self.temporal_pool(feats) 
         else:
-            # Single image fallback
+            # Single image input
             feats = self.backbone(x)
 
         # Apply BN-Neck and L2 Normalize

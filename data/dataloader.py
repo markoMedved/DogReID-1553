@@ -1,12 +1,12 @@
 import pandas as pd
 from torch.utils.data import DataLoader
 from .dataset import DOGVideoREIDDataset
-from .transforms import ViTVideoTransform
+from .transforms import VideoTransform
 from pytorch_metric_learning.samplers import MPerClassSampler
 
 def build_dataloaders(cfg):
     # 1. Initialize Transform (handles NumPy -> PIL -> Tensor)
-    transform = ViTVideoTransform()
+    transform = VideoTransform()
 
     # 2. Build a GLOBAL label map from the entire CSV
     # This prevents the "ID Collapse" where all test dogs become label -1
