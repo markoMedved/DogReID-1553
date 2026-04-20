@@ -47,6 +47,7 @@ def main():
     # --- 4. DIFFERENTIAL LEARNING RATES ---
     backbone_params = [p for p in model.backbone.parameters() if p.requires_grad]
     head_params = [p for n, p in model.named_parameters() if p.requires_grad and 'backbone' not in n]
+    print(len(head_params))
     
     optimizer = torch.optim.AdamW([
         {"params": backbone_params, "lr": cfg.lr * 0.1}, 

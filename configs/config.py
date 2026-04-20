@@ -8,7 +8,7 @@ class Config:
     """
     
     # --- Experimental Metadata ---
-    model = "dinov2"      # Options: 'dinov2', 'swin', 'vit'
+    model = "dinov2"   # Options: 'dinov2', 'swin', 'vit'
     world = "closed"      # Options: 'closed' (fixed dog set), 'open' (new dogs at test)
     run_name = f"{model}_{world}_v1"
 
@@ -31,12 +31,14 @@ class Config:
     # batch_size = P * K
     # P = Number of unique dog IDs in a batch
     # K = Number of clips per dog ID
-    batch_size = 16      
+    batch_size = 64     
     k = 4                
     num_ids = batch_size // k 
     
     # Video specific: number of frames per clip
-    clip_len = 16         
+    clip_len = 32      
+
+    val_split = 0.1
 
     # --- Model Hyperparameters ---
     # Note: DINOv2-Base and vit is 768, Swin-Base is 1024
@@ -44,9 +46,9 @@ class Config:
     
     # --- Optimization ---
     epochs = 50
-    lr = 3e-5            # Gentle start for fine-tuning foundation models
+    lr = 3e-05           # Gentle start for fine-tuning foundation models
     weight_decay = 1e-4  # L2 penalty to prevent overfitting on 3.5k samples
-    margin = 0.3         # Minimum distance gap for Triplet Loss
+    margin = 0.3      # Minimum distance gap for Triplet Loss
     
     # Gradient Accumulation: Simulates a larger batch size (16 * 8 = 128)
     # This leads to much smoother loss curves and better convergence.
