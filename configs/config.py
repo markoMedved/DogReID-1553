@@ -31,7 +31,7 @@ class Config:
     # batch_size = P * K
     # P = Number of unique dog IDs in a batch
     # K = Number of clips per dog ID
-    batch_size = 64     
+    batch_size = 32     
     k = 4                
     num_ids = batch_size // k 
     
