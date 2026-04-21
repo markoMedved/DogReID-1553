@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
+import json
 
 class Trainer:
     def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner):
@@ -179,6 +180,30 @@ class Trainer:
 
         return thresholds.cpu().numpy(), np.array(dir_list), np.array(far_list)
 
+
     def save_checkpoint(self, filename):
+        # 1. Save the Model Weights (existing logic)
         path = os.path.join(self.cfg.output_dir, filename)
-        torch.save(self.model.state_dict(), path)
+        
+        # If your model is wrapped in DataParallel, save the underlying module
+        state_dict = self.model.module.state_dict() if hasattr(self.model, 'module') else self.model.state_dict()
+        
+        checkpoint_data = {
+            'model': state_dict,
+            'epoch': getattr(self, 'current_epoch', 'unknown'), # Optional: track epoch
+            'model_name': getattr(self.cfg, 'model_name', 'unknown')
+        }
+        torch.save(checkpoint_data, path)
+
+        # 2. Save Hyperparams to a matching metadata file
+        # If filename is 'best_model.pth', this creates 'best_model_params.json'
+        meta_path = path.replace(".pth", "_params.json")
+        
+        # Filter cfg to only include basic types (strings, ints, floats) for JSON
+        params = {k: v for k, v in vars(self.cfg).items() if isinstance(v, (int, float, str, bool, list))}
+        
+        with open(meta_path, 'w') as f:
+            json.dump(params, f, indent=4)
+            
+        print(f"Checkpoint saved: {path}")
+        print(f"Metadata saved: {meta_path}")
