@@ -21,4 +21,4 @@ conda activate project
 echo "Running on $(hostname) with $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 
 # Finally launch
-python train.py 
+python train.py --lr 5e-7 --margin 0.8
