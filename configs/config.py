@@ -38,13 +38,13 @@ class Config:
     # Video specific: number of frames per clip
     clip_len = 32    
 
-    val_split = 0.2
+    val_split = 0
 
     # --- Model Hyperparameters ---
     embedding_dim = 768
     
     # --- Optimization ---
-    epochs = 50          # Gentle start for fine-tuning foundation models
+    epochs = 0          # Gentle start for fine-tuning foundation models
     weight_decay = 0.01  # L2 penalty to prevent overfitting on 3.5k samples
     margin = 0.3      # Minimum distance gap for Triplet Loss
     lr = 3e-05 

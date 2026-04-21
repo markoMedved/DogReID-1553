@@ -219,13 +219,20 @@ class Trainer:
         }
         torch.save(checkpoint_data, path)
 
-        # 4. Strict Hyperparameter Export
+        # 4. STRICT PARAMETER EXTRACTION (The "It Just Works" version)
         allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size', 'k', 'model', 'world', 'clip_len']
-        cfg_dict = vars(self.cfg)
-        params_to_save = {k: cfg_dict[k] for k in allowed_keys if k in cfg_dict}
+        params_to_save = {}
+
+        for key in allowed_keys:
+            # This checks the object attributes directly, avoiding the vars() issue
+            if hasattr(self.cfg, key):
+                params_to_save[key] = getattr(self.cfg, key)
+            # If your cfg is actually a dictionary
+            elif isinstance(self.cfg, dict) and key in self.cfg:
+                params_to_save[key] = self.cfg[key]
 
         # 5. Save JSON
         with open(meta_path, 'w') as f:
             json.dump(params_to_save, f, indent=4)
             
-        print(f"Saved weights to: {path}")
+        print(f"✅ Saved weights and metadata to: {target_dir}")
