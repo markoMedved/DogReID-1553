@@ -7,8 +7,8 @@ from pathlib import Path
 
 def extract_features_with_ids(model, dataloader, device):
     """
-    Extracts features and returns them along with sample identifiers.
-    Assumes Dataset __getitem__ returns (video, label, sample_id).
+    Updated to handle the 4 values returned by DOGVideoREIDDataset:
+    (clip, label, dog_id, video_id)
     """
     model.eval()
     all_embeddings = []
@@ -16,15 +16,22 @@ def extract_features_with_ids(model, dataloader, device):
     
     print(f"-> Extracting features for {len(dataloader.dataset)} samples...")
     with torch.no_grad():
-        for videos, labels, item_ids in tqdm(dataloader):
+        for batch in tqdm(dataloader):
+            # 1. Unpack the 4 values from your dataset
+            # clip: (B, T, C, H, W), labels: (B,), dog_ids: (B,), video_ids: (B,)
+            videos, labels, dog_ids, video_ids = batch
+            
+            # 2. Create a unique identifier string: "DogID_VideoID"
+            # This ensures get_dog_label (split('_')[0]) still works!
+            item_ids = [f"{d}_{v}" for d, v in zip(dog_ids, video_ids)]
+            
             videos = videos.to(device)
             embeddings = model(videos)
             
-            # Normalize for consistent Euclidean distance behavior
+            # 3. Normalize for consistent Euclidean distance
             embeddings = F.normalize(embeddings, p=2, dim=1)
             
             all_embeddings.append(embeddings.cpu())
-            # item_ids should be the unique video filename or dog_name_index
             all_ids.extend(item_ids)
             
     return torch.cat(all_embeddings), all_ids
