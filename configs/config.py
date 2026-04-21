@@ -36,7 +36,7 @@ class Config:
     num_ids = batch_size // k 
     
     # Video specific: number of frames per clip
-    clip_len = 32      
+    clip_len = 8      
 
     val_split = 0.1
 

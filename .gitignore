@@ -15,6 +15,8 @@ test_job.sh
 logs_test
 job.sh
 logs_dl
+logs_val_data_leakage
 trained_models_vit
 trained_models_swin
 trained_models_dinov2
+experiments
