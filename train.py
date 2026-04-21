@@ -11,7 +11,6 @@ def main():
     parser = argparse.ArgumentParser(description="Dog Re-ID Training")
     parser.add_argument('--lr', type=float, default=None, help='Learning rate')
     parser.add_argument('--margin', type=float, default=None, help='Triplet loss margin')
-    parser.add_argument('--clip_len', type=int, default=None, help='Number of frames per clip')
     parser.add_argument('--weight_decay', type=float, default=None, help='L2 regularization')
     parser.add_argument('--batch_size', type=int, default=None, help='Batch size (P*K)')
     parser.add_argument('--k', type=int, default=None, help='Clips per dog ID')

@@ -9,7 +9,7 @@ class Config:
     
     # --- Experimental Metadata ---
     model = "dinov2"   # Options: 'dinov2', 'swin', 'vit'
-    world = "closed"      # Options: 'closed' (fixed dog set), 'open' (new dogs at test)
+    world = "open"      # Options: 'closed' (fixed dog set), 'open' (new dogs at test)
     run_name = f"{model}_{world}_v1"
 
     # --- Path Management ---
@@ -31,7 +31,7 @@ class Config:
     # batch_size = P * K
     # P = Number of unique dog IDs in a batch
     # K = Number of clips per dog ID
-    batch_size = 32     
+    batch_size = 16     
     k = 4                
     num_ids = batch_size // k 
     
@@ -61,8 +61,7 @@ class Config:
     def __init__(self):
             """Initializes the experiment directory."""
             self.output_dir.mkdir(parents=True, exist_ok=True)
-            # Use our new display method during init
-            self.display()
+            
 
     def display(self):
         """Prints a structured table of the current configuration."""
