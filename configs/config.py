@@ -9,7 +9,7 @@ class Config:
     
     # --- Experimental Metadata ---
     model = "dinov2"   # Options: 'dinov2', 'swin', 'vit'
-    world = "open"      # Options: 'closed' (fixed dog set), 'open' (new dogs at test)
+    world = "closed"      # Options: 'closed' (fixed dog set), 'open' (new dogs at test)
     run_name = f"{model}_{world}_v1"
 
     # --- Path Management ---
@@ -46,9 +46,9 @@ class Config:
     
     # --- Optimization ---
     epochs = 50
-    lr = 1e-05           # Gentle start for fine-tuning foundation models
+    lr = 3e-05           # Gentle start for fine-tuning foundation models
     weight_decay = 1e-4  # L2 penalty to prevent overfitting on 3.5k samples
-    margin = 0.4      # Minimum distance gap for Triplet Loss
+    margin = 0.3      # Minimum distance gap for Triplet Loss
     
     # Gradient Accumulation: Simulates a larger batch size (16 * 8 = 128)
     # This leads to much smoother loss curves and better convergence.
@@ -66,7 +66,7 @@ class Config:
     def display(self):
         """Prints a structured table of the current configuration."""
         print("\n" + "="*50)
-        print(f"🐾 DOG RE-ID CONFIGURATION: {self.run_name}")
+        print(f"DOG RE-ID CONFIGURATION: {self.run_name}")
         print("-"*50)
         
         # Group important settings for readability

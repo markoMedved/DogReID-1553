@@ -78,12 +78,3 @@ csv_path = generate_distance_csv(
     cfg, 
     filename=CSV_NAME
 )
-
-# 6. Run Metrics based on World Type
-print("\n" + "="*30)
-if cfg.world == "closed":
-    print("   CLOSED WORLD RESULTS")
-    calculate_metrics_from_csv(csv_path)
-else:
-    print("   OPEN SET RESULTS")
-    calculate_open_set_metrics_from_csv(csv_path)
