@@ -18,7 +18,7 @@ class Trainer:
         self.loss_fn = loss_fn
         self.miner = miner
 
-        self.evaluate()
+        # self.evaluate()
 
     def train(self):
             best_rank1 = 0.0
@@ -79,31 +79,32 @@ class Trainer:
         q_f, q_pids = self._get_features(self.query_loader, "Querying")
         g_f, g_pids = self._get_features(self.gallery_loader, "Gallerying")
 
-        # --- CLOSED WORLD METRICS (Always calculated as baseline) ---
-        dist_mat = 1 - torch.mm(q_f, g_f.t())
-        
-        
+        # 1. Closed World Branch
         if self.cfg.world == "closed":
+            dist_mat = 1 - torch.mm(q_f, g_f.t())
             r1, r5, mAP = self.calculate_cmc_map(dist_mat.numpy(), q_pids.numpy(), g_pids.numpy())
-            print(f"Eval (Closed) -> Rank-1: {r1:.2%}, mAP: {mAP:.2%}")
-            return r1, mAP
+            
+            print(f"Eval (Closed) -> Rank-1: {r1:.2%}, Rank-5: {r5:.2%}, mAP: {mAP:.2%}")
+            return r1, r5, mAP
 
-        # --- OPEN WORLD METRICS ---
+        # 2. Open World Branch (Returns DIR values as the primary metrics)
         else:
             thresh, dir_curve, far_curve = self.dir_vs_far(q_f, q_pids, g_f, g_pids)
             
-            # Calculate at 3 levels: 0.1%, 1%, 10%
-            far_levels = [0.01, 0.05, 0.1]
-            dir_at_far = {}
+            # Extract DIR @ specific FAR levels
+            # We map these to r1, r5, mAP so the training loop doesn't break
+            idx_1pct = np.argmin(np.abs(far_curve - 0.01))
+            idx_5pct = np.argmin(np.abs(far_curve - 0.05))
+            idx_10pct = np.argmin(np.abs(far_curve - 0.10))
             
-            print(f"Eval (Open) -> Rank-1: {r1:.2%}, mAP: {mAP:.2%}")
-            for level in far_levels:
-                idx = np.argmin(np.abs(far_curve - level))
-                val = dir_curve[idx]
-                dir_at_far[level] = val
-                print(f"  DIR @ {level*100}% FAR: {val:.2%}")
+            dir_1 = dir_curve[idx_1pct]
+            dir_5 = dir_curve[idx_5pct]
+            dir_10 = dir_curve[idx_10pct]
+
+            print(f"Eval (Open) -> DIR@1%FAR: {dir_1:.2%}, DIR@5%FAR: {dir_5:.2%}, DIR@10%FAR: {dir_10:.2%}")
             
-            return r1, mAP, dir_at_far
+            # Return these so the Trainer's 'best_rank1' actually tracks 'best_DIR@1%'
+            return dir_1, dir_5, dir_10
 
     def _get_features(self, loader, name):
         feats, pids = [], []

@@ -7,7 +7,7 @@ from engine.trainer import Trainer
 from pytorch_metric_learning import losses, miners
 
 def main():
-    # --- 0. ARGUMENT PARSING ---
+# --- 0. ARGUMENT PARSING ---
     parser = argparse.ArgumentParser(description="Dog Re-ID Training")
     parser.add_argument('--lr', type=float, default=None, help='Learning rate')
     parser.add_argument('--margin', type=float, default=None, help='Triplet loss margin')
@@ -16,8 +16,8 @@ def main():
     parser.add_argument('--k', type=int, default=None, help='Clips per dog ID')
     parser.add_argument('--model', type=str, default=None, help="Backbone: 'dinov2', 'swin', 'vit'")
     parser.add_argument('--world', type=str, default=None, help="'closed' or 'open'")
+    parser.add_argument('--clip_len', type=int, default=None, help='Frames per video clip')
 
-    
     args = parser.parse_args()
 
     # Initialize default config
