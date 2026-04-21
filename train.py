@@ -16,7 +16,7 @@ def main():
     parser.add_argument('--k', type=int, default=None, help='Clips per dog ID')
     parser.add_argument('--model', type=str, default=None, help="Backbone: 'dinov2', 'swin', 'vit'")
     parser.add_argument('--world', type=str, default=None, help="'closed' or 'open'")
-    parser.add_argument('--clip_len', type=int, default=None, help='Frames per clip')
+
     
     args = parser.parse_args()
 
