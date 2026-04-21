@@ -22,21 +22,31 @@ class Trainer:
         # self.evaluate()
 
     def train(self):
-            best_rank1 = 0.0
-            for epoch in range(self.cfg.epochs):
-                avg_loss = self.train_epoch(epoch)
-                print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
+        best_rank1 = 0.0
+        val_split = getattr(self.cfg, 'val_split', 0)
 
+        for epoch in range(self.cfg.epochs):
+            self.current_epoch = epoch
+            avg_loss = self.train_epoch(epoch)
+            print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
+
+            # CASE 1: Standard Experiment (Validation exists)
+            if val_split > 0:
                 if (epoch + 1) % self.cfg.eval_period == 0:
                     rank1, rank5, mAP = self.evaluate()
-                    print(f"Eval -> Rank-1: {rank1:.2%}, Rank-5: {rank5:.2%}, mAP: {mAP:.2%}")
-
+                    
                     if rank1 > best_rank1:
                         best_rank1 = rank1
                         self.save_checkpoint("best_model.pth")
                 
-                # 4. Save last (Indented 8 spaces/2 tabs)
+                # Save 'last' normally in the main output dir
                 self.save_checkpoint("last_model.pth")
+
+        # CASE 2: Final Production Run (No Validation)
+        if val_split <= 0.01:
+            print("!!! Final training run detected (val_split=0). Saving final model...")
+            # This will automatically use the 'final_model_MODELNAME' folder logic below
+            self.save_checkpoint("final_model.pth")
 
     def train_epoch(self, epoch):
         self.model.train()
@@ -182,28 +192,40 @@ class Trainer:
 
 
     def save_checkpoint(self, filename):
-        # 1. Save the Model Weights (existing logic)
-        path = os.path.join(self.cfg.output_dir, filename)
+        # 1. Determine folder: Final Model vs Experimental Run
+        val_split = getattr(self.cfg, 'val_split', 0)
         
-        # If your model is wrapped in DataParallel, save the underlying module
+        if val_split == 0:
+            # Save in: output_dir/final_model_dinov2/
+            subfolder = f"final_model_{self.cfg.model}"
+            target_dir = os.path.join(self.cfg.output_dir, subfolder)
+        else:
+            # Save in: output_dir/
+            target_dir = self.cfg.output_dir
+            
+        if not os.path.exists(target_dir):
+            os.makedirs(target_dir, exist_ok=True)
+
+        # 2. Paths
+        path = os.path.join(target_dir, filename)
+        meta_path = path.replace(".pth", "_params.json")
+
+        # 3. Save Weights
         state_dict = self.model.module.state_dict() if hasattr(self.model, 'module') else self.model.state_dict()
-        
         checkpoint_data = {
             'model': state_dict,
-            'epoch': getattr(self, 'current_epoch', 'unknown'), # Optional: track epoch
-            'model_name': getattr(self.cfg, 'model_name', 'unknown')
+            'epoch': getattr(self, 'current_epoch', 'unknown'),
+            'val_split': val_split
         }
         torch.save(checkpoint_data, path)
 
-        # 2. Save Hyperparams to a matching metadata file
-        # If filename is 'best_model.pth', this creates 'best_model_params.json'
-        meta_path = path.replace(".pth", "_params.json")
-        
-        # Filter cfg to only include basic types (strings, ints, floats) for JSON
-        params = {k: v for k, v in vars(self.cfg).items() if isinstance(v, (int, float, str, bool, list))}
-        
+        # 4. Strict Hyperparameter Export
+        allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size', 'k', 'model', 'world', 'clip_len']
+        cfg_dict = vars(self.cfg)
+        params_to_save = {k: cfg_dict[k] for k in allowed_keys if k in cfg_dict}
+
+        # 5. Save JSON
         with open(meta_path, 'w') as f:
-            json.dump(params, f, indent=4)
+            json.dump(params_to_save, f, indent=4)
             
-        print(f"Checkpoint saved: {path}")
-        print(f"Metadata saved: {meta_path}")
+        print(f"Saved weights to: {path}")

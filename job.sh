@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=train_vit
-#SBATCH --output=logs/train_%j.out
-#SBATCH --error=logs/train_%j.err
+#SBATCH --job-name=train
+#SBATCH --output=logs_swin/train_%j.out
+#SBATCH --error=logs_swin/train_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
@@ -21,4 +21,4 @@ conda activate project
 echo "Running on $(hostname) with $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 
 # Finally launch
-python train.py --lr 5e-7 --margin 0.8
+python train.py --model vit --world closed --lr 5e-05 --margin 0.5
