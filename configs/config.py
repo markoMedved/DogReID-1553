@@ -38,20 +38,19 @@ class Config:
     # Video specific: number of frames per clip
     clip_len = 32    
 
-    val_split = 0
+    val_split = 0.2
 
     # --- Model Hyperparameters ---
     embedding_dim = 768
     
     # --- Optimization ---
-    epochs = 0          # Gentle start for fine-tuning foundation models
+    epochs = 50          # Gentle start for fine-tuning foundation models
     weight_decay = 0.01  # L2 penalty to prevent overfitting on 3.5k samples
     margin = 0.3      # Minimum distance gap for Triplet Loss
     lr = 3e-05 
     
     # Gradient Accumulation: Simulates a larger batch size (16 * 8 = 128)
-    # This leads to much smoother loss curves and better convergence.
-    accum_steps = 8      
+    accum_steps = 2      
 
     # --- Evaluation ---
     eval_period = 1      # Run gallery/query validation every N epochs
