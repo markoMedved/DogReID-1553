@@ -21,3 +21,6 @@ trained_models_swin
 trained_models_dinov2
 experiments
 test_logs
+logs_vit
+logs_swin
+logs_dinov2
