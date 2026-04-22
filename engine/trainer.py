@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
 import json
+from ultralytics import YOLO
 
 class Trainer:
     def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner):
@@ -15,38 +16,80 @@ class Trainer:
         self.device = cfg.device
         self.cfg = cfg
         
-        # Now these match your main.py arguments
         self.loss_fn = loss_fn
         self.miner = miner
 
-        # self.evaluate()
+        # --- UPDATED: Load Fine-Tuned Specialist Model ---
+        detector_path = 'runs/detect/dog_detector_closed_world/weights/best.pt'
+        
+        if os.path.exists(detector_path):
+            print(f"🎯 Loading fine-tuned dog detector: {detector_path}")
+            self.detector = YOLO(detector_path).to(self.device)
+            # Custom training usually results in 'dog' being the first/only class (index 0)
+            self.dog_class_id = 0 
+        else:
+            print("⚠️ Specialist weights not found at path! Falling back to yolov8n.pt")
+            self.detector = YOLO('yolov8n.pt').to(self.device)
+            self.dog_class_id = 16 # COCO Dog class
 
-    def train(self):
-        best_rank1 = 0.0
-        val_split = getattr(self.cfg, 'val_split', 0)
+    def apply_detection_and_crop(self, videos):
+        """
+        Input: videos (B, C, T, H, W) 
+        Output: Cropped and Resized videos (B, C, T, img_size, img_size)
+        """
+        B, C, T, H, W = videos.shape
+        cropped_batch = []
+        img_size = getattr(self.cfg, 'img_size', 224)
 
-        for epoch in range(self.cfg.epochs):
-            self.current_epoch = epoch
-            avg_loss = self.train_epoch(epoch)
-            print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
+        for b in range(B):
+            # 1. Extract middle frame carefully for the detector
+            ref_frame = videos[b, :, T // 2, :, :]
+            
+            # Ensure 3-channel (RGB) shape (1, 3, H, W)
+            if ref_frame.shape[0] != 3:
+                ref_frame = ref_frame[0:1, :, :].repeat(3, 1, 1)
+            
+            input_tensor = ref_frame.unsqueeze(0)
 
-            # CASE 1: Standard Experiment (Validation exists)
-            if val_split > 0:
-                if (epoch + 1) % self.cfg.eval_period == 0:
-                    rank1, rank5, mAP = self.evaluate()
-                    
-                    if rank1 > best_rank1:
-                        best_rank1 = rank1
-                        self.save_checkpoint("best_model.pth")
+            # 2. Normalize values for the detector (0.0 to 1.0)
+            f_min, f_max = input_tensor.min(), input_tensor.max()
+            if f_min < 0 or f_max > 1:
+                input_tensor = (input_tensor - f_min) / (f_max - f_min + 1e-6)
+
+            # 3. Run Specialist Detector
+            with torch.no_grad():
+                results = self.detector(input_tensor.to(self.device).float(), verbose=False, conf=0.25)[0]
+            
+            dog_boxes = [box for box in results.boxes if int(box.cls) == self.dog_class_id]
+            
+            if len(dog_boxes) > 0:
+                # STRATEGY: Pick the LARGEST box (Area = w * h)
+                # This ensures we crop the subject dog, not a tiny one in the background
+                best_box = sorted(dog_boxes, key=lambda b: (b.xyxy[0][2] - b.xyxy[0][0]) * (b.xyxy[0][3] - b.xyxy[0][1]), reverse=True)[0]
+                x1, y1, x2, y2 = map(int, best_box.xyxy[0])
                 
-                # Save 'last' normally in the main output dir
-                self.save_checkpoint("last_model.pth")
+                # Clamp coordinates to image boundaries
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(W, x2), min(H, y2)
+                
+                # Crop original video sequence (C, T, H, W)
+                crop = videos[b, :, :, y1:y2, x1:x2]
+            else:
+                # FALLBACK: No dog found. 
+                # Instead of the full image, take a 75% center crop to reduce background bias
+                h_margin, w_margin = int(H * 0.125), int(W * 0.125)
+                crop = videos[b, :, :, h_margin:H-h_margin, w_margin:W-w_margin]
 
-        # CASE 2: Final Production Run (No Validation)
-        if val_split <= 0.01:
-            print("!!! Final training run detected (val_split=0). Saving final model...")
-            # This will automatically use the 'final_model_MODELNAME' folder logic below
-            self.save_checkpoint("final_model.pth")
+            # 4. Resize back to fixed input size
+            # interpolate wants (N, C, H, W). We treat T as the Batch dimension.
+            t_as_b = crop.permute(1, 0, 2, 3) 
+            resized_crop = F.interpolate(t_as_b, size=(img_size, img_size), 
+                                        mode='bilinear', align_corners=False)
+            
+            # Back to (C, T, H, W)
+            cropped_batch.append(resized_crop.permute(1, 0, 2, 3))
+
+        return torch.stack(cropped_batch)
 
     def train_epoch(self, epoch):
         self.model.train()
@@ -56,16 +99,17 @@ class Trainer:
 
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
 
-        # Use underscores (_) for values you don't need during training
         for i, (videos, labels, dog_ids, video_ids) in enumerate(pbar):
             videos = videos.to(self.device)
             labels = labels.to(self.device)
+
+            # Apply specialist cropping before Re-ID forward pass
+            videos = self.apply_detection_and_crop(videos)
 
             # 1. Forward pass
             embeddings = self.model(videos)
             
             # 2. Mining & Loss
-            # BatchHardMiner finds the most difficult triplets in the current batch
             hard_pairs = self.miner(embeddings, labels)
             loss = self.loss_fn(embeddings, labels, hard_pairs)
             
@@ -83,6 +127,29 @@ class Trainer:
 
         return running_loss / len(self.train_loader)
 
+    def train(self):
+        best_rank1 = 0.0
+        val_split = getattr(self.cfg, 'val_split', 0)
+
+        for epoch in range(self.cfg.epochs):
+            self.current_epoch = epoch
+            avg_loss = self.train_epoch(epoch)
+            print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
+
+            if val_split > 0:
+                if (epoch + 1) % self.cfg.eval_period == 0:
+                    rank1, rank5, mAP = self.evaluate()
+                    
+                    if rank1 > best_rank1:
+                        best_rank1 = rank1
+                        self.save_checkpoint("best_model.pth")
+                
+            self.save_checkpoint("last_model.pth")
+
+        if val_split <= 0.01:
+            print("!!! Final training run detected (val_split=0). Saving final model...")
+            self.save_checkpoint("final_model.pth")
+
     @torch.no_grad()
     def evaluate(self):
         self.model.eval()
@@ -90,40 +157,28 @@ class Trainer:
         q_f, q_pids = self._get_features(self.query_loader, "Querying")
         g_f, g_pids = self._get_features(self.gallery_loader, "Gallerying")
 
-        # 1. Closed World Branch
         if self.cfg.world == "closed":
             dist_mat = 1 - torch.mm(q_f, g_f.t())
             r1, r5, mAP = self.calculate_cmc_map(dist_mat.numpy(), q_pids.numpy(), g_pids.numpy())
-            
             print(f"Eval (Closed) -> Rank-1: {r1:.2%}, Rank-5: {r5:.2%}, mAP: {mAP:.2%}")
             return r1, r5, mAP
-
-        # 2. Open World Branch (Returns DIR values as the primary metrics)
         else:
             thresh, dir_curve, far_curve = self.dir_vs_far(q_f, q_pids, g_f, g_pids)
-            
-            # Extract DIR @ specific FAR levels
-            # We map these to r1, r5, mAP so the training loop doesn't break
             idx_1pct = np.argmin(np.abs(far_curve - 0.01))
-            idx_5pct = np.argmin(np.abs(far_curve - 0.05))
-            idx_10pct = np.argmin(np.abs(far_curve - 0.10))
-            
             dir_1 = dir_curve[idx_1pct]
-            dir_5 = dir_curve[idx_5pct]
-            dir_10 = dir_curve[idx_10pct]
-
-            print(f"Eval (Open) -> DIR@1%FAR: {dir_1:.2%}, DIR@5%FAR: {dir_5:.2%}, DIR@10%FAR: {dir_10:.2%}")
-            
-            # Return these so the Trainer's 'best_rank1' actually tracks 'best_DIR@1%'
-            return dir_1, dir_5, dir_10
+            print(f"Eval (Open) -> DIR@1%FAR: {dir_1:.2%}")
+            return dir_1, 0.0, 0.0
 
     def _get_features(self, loader, name):
         feats, pids = [], []
         for batch in tqdm(loader, desc=name):
             clips = batch[0].to(self.device)
             labels = batch[1]
+            
+            # Apply same cropping logic to evaluation data
+            clips = self.apply_detection_and_crop(clips)
+            
             f = self.model(clips)
-            # Normalize here ensures mm is Cosine Similarity
             f = F.normalize(f, p=2, dim=1)
             feats.append(f.cpu())
             pids.extend(labels.tolist())
@@ -151,13 +206,11 @@ class Trainer:
         return cmc[0], cmc[4], np.mean(all_AP)
 
     def dir_vs_far(self, query_features, query_labels, gallery_features, gallery_labels, thresholds=None):
-        # ... (Your logic remains exactly the same, integrated as class method)
         if thresholds is None:
             thresholds = torch.linspace(0, 1, 500)
         
         q_f = F.normalize(query_features, p=2, dim=1)
         g_f = F.normalize(gallery_features, p=2, dim=1)
-
         similarity_mat = q_f @ g_f.T 
         q_labels = query_labels.to(q_f.device)
         g_labels = gallery_labels.to(g_f.device)
@@ -176,41 +229,21 @@ class Trainer:
         max_vals_unknown, _ = unknown_sims.max(dim=1) if unknown_sims.numel() > 0 else (torch.tensor([]), None)
 
         for thresh in thresholds:
-            if known_sims.numel() > 0:
-                dir_val = ((max_vals_known > thresh) & top_is_correct).float().mean().item()
-            else:
-                dir_val = 0.0
-            dir_list.append(dir_val)
-
-            if unknown_sims.numel() > 0:
-                far_val = (max_vals_unknown > thresh).float().mean().item()
-            else:
-                far_val = 0.0
-            far_list.append(far_val)
+            dir_list.append(((max_vals_known > thresh) & top_is_correct).float().mean().item() if known_sims.numel() > 0 else 0.0)
+            far_list.append((max_vals_unknown > thresh).float().mean().item() if unknown_sims.numel() > 0 else 0.0)
 
         return thresholds.cpu().numpy(), np.array(dir_list), np.array(far_list)
 
-
     def save_checkpoint(self, filename):
-        # 1. Determine folder: Final Model vs Experimental Run
         val_split = getattr(self.cfg, 'val_split', 0)
-        
+        target_dir = self.cfg.output_dir
         if val_split == 0:
-            # Save in: output_dir/final_model_dinov2/
-            subfolder = f"final_model_{self.cfg.model}"
-            target_dir = os.path.join(self.cfg.output_dir, subfolder)
-        else:
-            # Save in: output_dir/
-            target_dir = self.cfg.output_dir
+            target_dir = os.path.join(target_dir, f"final_model_{self.cfg.model}")
             
-        if not os.path.exists(target_dir):
-            os.makedirs(target_dir, exist_ok=True)
-
-        # 2. Paths
+        os.makedirs(target_dir, exist_ok=True)
         path = os.path.join(target_dir, filename)
         meta_path = path.replace(".pth", "_params.json")
 
-        # 3. Save Weights
         state_dict = self.model.module.state_dict() if hasattr(self.model, 'module') else self.model.state_dict()
         checkpoint_data = {
             'model': state_dict,
@@ -219,19 +252,9 @@ class Trainer:
         }
         torch.save(checkpoint_data, path)
 
-        # 4. STRICT PARAMETER EXTRACTION (The "It Just Works" version)
         allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size', 'k', 'model', 'world', 'clip_len']
-        params_to_save = {}
+        params_to_save = {key: getattr(self.cfg, key) for key in allowed_keys if hasattr(self.cfg, key)}
 
-        for key in allowed_keys:
-            # This checks the object attributes directly, avoiding the vars() issue
-            if hasattr(self.cfg, key):
-                params_to_save[key] = getattr(self.cfg, key)
-            # If your cfg is actually a dictionary
-            elif isinstance(self.cfg, dict) and key in self.cfg:
-                params_to_save[key] = self.cfg[key]
-
-        # 5. Save JSON
         with open(meta_path, 'w') as f:
             json.dump(params_to_save, f, indent=4)
             

@@ -24,3 +24,8 @@ test_logs
 logs_vit
 logs_swin
 logs_dinov2
+yolov8n.pt
+*.pt
+runs
+yolo_dataset
+dog_data.yaml

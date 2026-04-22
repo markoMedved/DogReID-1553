@@ -36,16 +36,16 @@ class Config:
     num_ids = batch_size // k 
     
     # Video specific: number of frames per clip
-    clip_len = 32    
+    clip_len = 1    
 
-    val_split = 0
+    val_split = 0.2
 
     # --- Model Hyperparameters ---
     embedding_dim = 768
     
     # --- Optimization ---
-    epochs = 0          # Gentle start for fine-tuning foundation models
-    weight_decay = 0.01  # L2 penalty to prevent overfitting on 3.5k samples
+    epochs = 50          # Gentle start for fine-tuning foundation models
+    weight_decay = 0.0001  # L2 penalty to prevent overfitting on 3.5k samples
     margin = 0.3      # Minimum distance gap for Triplet Loss
     lr = 3e-05 
     
