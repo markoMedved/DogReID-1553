@@ -104,7 +104,7 @@ class Trainer:
             labels = labels.to(self.device)
 
             # Apply specialist cropping before Re-ID forward pass
-            videos = self.apply_detection_and_crop(videos)
+            # videos = self.apply_detection_and_crop(videos)
 
             # 1. Forward pass
             embeddings = self.model(videos)
