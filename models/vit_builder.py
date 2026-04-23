@@ -3,62 +3,99 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import vit_b_16, ViT_B_16_Weights
 
+
 class TemporalAttentionPool(nn.Module):
+    """
+    Learns attention weights across video frames and produces
+    a single feature vector representing the whole clip.
+    """
+
     def __init__(self, dim):
         super().__init__()
+
+        # small MLP producing a scalar weight per frame
         self.attn = nn.Sequential(
             nn.Linear(dim, 512),
             nn.Tanh(),
             nn.Linear(512, 1),
-            nn.Softmax(dim=1)
+            nn.Softmax(dim=1)  # normalize across time dimension
         )
 
     def forward(self, x):
-        # x: (B, T, D)
-        weights = self.attn(x) # (B, T, 1)
+        # x shape: (B, T, D)
+
+        # compute frame importance weights
+        weights = self.attn(x)  # (B, T, 1)
+
+        # weighted temporal aggregation
         return (x * weights).sum(dim=1)
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torchvision.models import vit_b_16, ViT_B_16_Weights
 
 class VideoViT(nn.Module):
+    """
+    Video ReID model using a ViT-B/16 backbone.
+
+    Pipeline:
+    frames → ViT backbone → temporal attention pooling → BN neck → L2 normalize
+    """
+
     def __init__(self, chunk_size=16):
         super().__init__()
-        # 1. Load ViT Base (768 dim) 
-        # Rename 'self.vit' to 'self.backbone' to fix the AttributeError
+
+        # load pretrained Vision Transformer
         weights = ViT_B_16_Weights.DEFAULT
         self.backbone = vit_b_16(weights=weights)
-        
-        # 2. Remove the classification head
+
+        # remove classification head (we want embeddings instead)
         self.backbone.heads = nn.Identity()
-        
-        self.chunk_size = chunk_size
+
+        # feature dimension for ViT-B
         self.dim = 768
-        
-        # 3. Temporal Attention and BN-Neck
+
+        # process frames in chunks to reduce VRAM spikes
+        self.chunk_size = chunk_size
+
+        # temporal attention module
         self.temporal_pool = TemporalAttentionPool(self.dim)
+
+        # BN-Neck used in most ReID pipelines
         self.bn = nn.BatchNorm1d(self.dim)
         self.bn.bias.requires_grad_(False)
 
     def forward(self, x):
-        # x shape: (B, T, C, H, W)
+
+        # expected input:
+        # video: (B, T, C, H, W)
+        # image: (B, C, H, W)
+
         if x.dim() == 5:
+
             B, T, C, H, W = x.shape
+
+            # flatten temporal dimension
             x = x.view(B * T, C, H, W)
-            
+
             # --- CHUNKED FORWARD ---
+            # prevents GPU OOM when processing long clips
             chunks = torch.split(x, self.chunk_size, dim=0)
-            feats = torch.cat([self.backbone(c) for c in chunks], dim=0) 
-            
-            # --- TEMPORAL ATTENTION ---
+
+            feats = torch.cat(
+                [self.backbone(c) for c in chunks],
+                dim=0
+            )
+
+            # restore temporal dimension
             feats = feats.view(B, T, -1)
-            feats = self.temporal_pool(feats) 
+
+            # temporal attention pooling
+            feats = self.temporal_pool(feats)
+
         else:
-            # Single image fallback
+            # fallback for single images
             feats = self.backbone(x)
 
-        # Apply BN-Neck and L2 Normalize
+        # BN-Neck
         feats = self.bn(feats)
+
+        # normalize embeddings to unit hypersphere
         return F.normalize(feats, p=2, dim=1)

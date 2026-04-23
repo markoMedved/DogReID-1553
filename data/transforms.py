@@ -3,6 +3,7 @@ from torchvision import transforms
 class VideoTransform:
     def __init__(self, is_training=True):
         if is_training:
+            # training augmentations
             self.frame_tf = transforms.Compose([
                             transforms.RandomResizedCrop(224, scale=(0.6, 1.0)),
                             transforms.RandomHorizontalFlip(),
@@ -12,7 +13,7 @@ class VideoTransform:
                             transforms.RandomErasing(p=0.3, scale=(0.02, 0.2)),
                         ])
         else:
-            # Eval needs to be deterministic
+            # deterministic eval transforms
             self.frame_tf = transforms.Compose([
                             transforms.Resize(256),
                             transforms.CenterCrop(224),
@@ -21,6 +22,5 @@ class VideoTransform:
                         ])
 
     def __call__(self, frame):
-        # We now pass frames individually from the Dataset loop 
-        # to respect the seed we set there.
+        # apply transform to a single frame
         return self.frame_tf(frame)

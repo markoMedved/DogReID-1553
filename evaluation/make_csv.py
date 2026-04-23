@@ -4,30 +4,46 @@ import torch
 from pathlib import Path
 from collections import OrderedDict
 
-# 1. System Path Setup - Handles being inside root/evaluation
-# This makes sure 'models', 'data', etc. are visible
+# Make project root visible so imports like "models", "data", etc. work
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
+
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
+
 # =================================================================
-# 🛠️ CONFIGURABLE SETTINGS (CHANGE THESE)
+# CONFIGURABLE SETTINGS
 # =================================================================
-WORLD_TYPE = "closed"            # Options: "closed" or "open"
-MODEL_NAME = "dinov2"            # Identifier for paths/folders
+
+# closed = all query dogs exist in gallery
+# open   = some query dogs are not in gallery
+WORLD_TYPE = "closed"
+
+# model identifier used for paths and output folders
+MODEL_NAME = "dinov2"
+
+# path to trained checkpoint
 MODEL_PATH = f"/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/experiments/{MODEL_NAME}_{WORLD_TYPE}_v1/best_model.pth"
 
+
 # MODEL ARCHITECTURE SELECTION
-from models.dinov2_builder import DINOv2ReID 
-from models.swin_builder import VideoSwin 
+# swapping this class switches the entire backbone
+from models.dinov2_builder import DINOv2ReID
+from models.swin_builder import VideoSwin
 from models.vit_builder import VideoViT
 
-MODEL_CLASS = DINOv2ReID         # Swapping this swaps the entire architecture
+MODEL_CLASS = DINOv2ReID
 
+
+# where evaluation CSV files will be stored
 OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_v1"
+
+# name of generated distance matrix
 CSV_NAME = f"{WORLD_TYPE}_dist_matrix.csv"
+
 # =================================================================
+
 
 from data.dataloader import build_test_loaders
 from configs.config import Config
@@ -37,44 +53,78 @@ from evaluation_utils import (
     calculate_open_set_metrics_from_csv
 )
 
-# 2. Setup Configuration
+
+# create configuration object
 cfg = Config()
+
+# specify open/closed world evaluation
 cfg.world = WORLD_TYPE
+
+# select device automatically
 cfg.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# output directory for evaluation files
 cfg.output_dir = OUTPUT_FOLDER
 cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
-# 3. Initialize and Load Model
+
+# -------------------------------------------------------------
+# Initialize Model
+# -------------------------------------------------------------
+
 print(f"-> Initializing Architecture: {MODEL_CLASS.__name__}...")
-model = MODEL_CLASS() 
+
+# create model instance
+model = MODEL_CLASS()
+
 
 print(f"-> Loading Weights: {MODEL_PATH}")
+
+# safety check
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"Model checkpoint not found at: {MODEL_PATH}")
 
+# load checkpoint
 checkpoint = torch.load(MODEL_PATH, map_location=cfg.device)
+
+# support different checkpoint formats
 state_dict = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
 
-# Clean 'module.' prefix from DataParallel/DDP saves
+
+# remove "module." prefix if model was trained with DataParallel / DDP
 new_state_dict = OrderedDict()
+
 for k, v in state_dict.items():
     name = k[7:] if k.startswith('module.') else k
     new_state_dict[name] = v
 
+
+# load weights into model
 model.load_state_dict(new_state_dict)
+
 model.to(cfg.device)
 model.eval()
 
-# 4. Build Dataloaders
+
+# -------------------------------------------------------------
+# Build Query / Gallery Dataloaders
+# -------------------------------------------------------------
+
 print(f"-> Preparing {cfg.world.upper()} test dataloaders...")
+
 query_loader, gallery_loader = build_test_loaders(cfg)
 
-# 5. Generate and Save Distance CSV
+
+# -------------------------------------------------------------
+# Run Inference and Generate Distance Matrix
+# -------------------------------------------------------------
+
 print(f"-> Running Inference...")
+
 csv_path = generate_distance_csv(
-    model, 
-    query_loader, 
-    gallery_loader, 
-    cfg, 
+    model,
+    query_loader,
+    gallery_loader,
+    cfg,
     filename=CSV_NAME
 )

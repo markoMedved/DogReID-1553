@@ -6,9 +6,17 @@ from models.model_factory import build_model
 from engine.trainer import Trainer
 from pytorch_metric_learning import losses, miners
 
+
 def main():
-    # --- 0. ARGUMENT PARSING ---
+
+    # ------------------------------------------------
+    # ARGUMENT PARSING
+    # Allows overriding config values from CLI
+    # Example:
+    # python train.py --model dinov2 --lr 1e-4 --batch_size 32
+    # ------------------------------------------------
     parser = argparse.ArgumentParser(description="Dog Re-ID Training")
+
     parser.add_argument('--lr', type=float, default=None, help='Learning rate')
     parser.add_argument('--margin', type=float, default=None, help='Triplet loss margin')
     parser.add_argument('--weight_decay', type=float, default=None, help='L2 regularization')
@@ -20,10 +28,17 @@ def main():
 
     args = parser.parse_args()
 
-    # Initialize default config
+
+    # ------------------------------------------------
+    # LOAD DEFAULT CONFIG
+    # ------------------------------------------------
     cfg = Config()
 
-    # --- 1. OVERRIDE CONFIG WITH CLI ARGS ---
+
+    # ------------------------------------------------
+    # OVERRIDE CONFIG WITH CLI ARGUMENTS
+    # Only overwrite values that were provided
+    # ------------------------------------------------
     if args.model: cfg.model = args.model
     if args.world: cfg.world = args.world
     if args.clip_len: cfg.clip_len = args.clip_len
@@ -33,74 +48,148 @@ def main():
     if args.batch_size: cfg.batch_size = args.batch_size
     if args.k: cfg.k = args.k
 
+    # print final configuration
     cfg.display()
 
-    # --- 2. DATA & MODEL ---
+
+    # ------------------------------------------------
+    # BUILD DATA LOADERS
+    # ------------------------------------------------
     train_loader, query_loader, gallery_loader = build_dataloaders(cfg)
+
+
+    # ------------------------------------------------
+    # BUILD MODEL
+    # ------------------------------------------------
     model = build_model(cfg).to(cfg.device)
 
-    # --- 3. ARCHITECTURE-AWARE UNFREEZING ---
-    # First, freeze everything
+
+    # ------------------------------------------------
+    # FREEZE ENTIRE MODEL FIRST
+    # We selectively unfreeze layers afterwards
+    # ------------------------------------------------
     for p in model.parameters():
         p.requires_grad = False
-    
-    # --- 2. ARCHITECTURE-AWARE PARTIAL UNFREEZING ---
-    # Handle Torchvision ViT (vit_b_16 / vit_l_16)
+
+
+    # ------------------------------------------------
+    # ARCHITECTURE-AWARE PARTIAL UNFREEZING
+    # Each backbone has a slightly different internal structure
+    # ------------------------------------------------
+
+    # --- Torchvision ViT ---
+    # encoder.layers = transformer blocks
     if hasattr(model.backbone, 'encoder') and hasattr(model.backbone.encoder, 'layers'):
+
+        # unfreeze last 2 transformer blocks
         for layer in model.backbone.encoder.layers[-2:]:
-            for p in layer.parameters(): p.requires_grad = True
+            for p in layer.parameters():
+                p.requires_grad = True
+
+        # unfreeze final layer normalization
         if hasattr(model.backbone.encoder, 'ln'):
-            for p in model.backbone.encoder.ln.parameters(): p.requires_grad = True
+            for p in model.backbone.encoder.ln.parameters():
+                p.requires_grad = True
 
-    # Handle DINOv2 (flat blocks structure)
+
+    # --- DINOv2 ---
+    # transformer blocks stored as backbone.blocks
     elif hasattr(model.backbone, 'blocks'):
+
         for block in model.backbone.blocks[-2:]:
-            for p in block.parameters(): p.requires_grad = True
-        if hasattr(model.backbone, 'norm'):
-            for p in model.backbone.norm.parameters(): p.requires_grad = True
+            for p in block.parameters():
+                p.requires_grad = True
 
-    # Handle Swin (hierarchical layers structure)
+        # final normalization layer
+        if hasattr(model.backbone, 'norm'):
+            for p in model.backbone.norm.parameters():
+                p.requires_grad = True
+
+
+    # --- Swin Transformer ---
+    # hierarchical transformer stages
     elif hasattr(model.backbone, 'layers'):
-        for p in model.backbone.layers[-1].parameters(): p.requires_grad = True
-        if hasattr(model.backbone, 'norm'):
-            for p in model.backbone.norm.parameters(): p.requires_grad = True
 
-    # --- 3. ALWAYS UNFREEZE THE HEAD ---
-    # Note: Using your internal naming 'temporal_pool' or 'temporal_attn'
-    # Always unfreeze the head
+        # unfreeze final stage
+        for p in model.backbone.layers[-1].parameters():
+            p.requires_grad = True
+
+        if hasattr(model.backbone, 'norm'):
+            for p in model.backbone.norm.parameters():
+                p.requires_grad = True
+
+
+    # ------------------------------------------------
+    # ALWAYS TRAIN TEMPORAL HEAD
+    # (Temporal attention pooling)
+    # ------------------------------------------------
     pool_layer = getattr(model, 'temporal_pool', getattr(model, 'temporal_attn', None))
+
     if pool_layer:
-        for p in pool_layer.parameters(): p.requires_grad = True
-    
-    for p in model.bn.parameters(): 
+        for p in pool_layer.parameters():
+            p.requires_grad = True
+
+
+    # BN neck is also always trainable
+    for p in model.bn.parameters():
         p.requires_grad = True
 
-    # --- 4. OPTIMIZER ---
-    # Differential Learning Rates: Backbone (Lower) vs Head (Higher)
-    backbone_params = [p for p in model.backbone.parameters() if p.requires_grad]
-    head_params = [p for n, p in model.named_parameters() if p.requires_grad and 'backbone' not in n]
-    
-    optimizer = torch.optim.AdamW([
-        {"params": backbone_params, "lr": cfg.lr * 0.1}, 
-        {"params": head_params, "lr": cfg.lr}
-    ], weight_decay=cfg.weight_decay)
 
-    # --- 5. LOSS & TRAINER ---
+    # ------------------------------------------------
+    # OPTIMIZER
+    # Different learning rates for backbone vs head
+    # ------------------------------------------------
+
+    backbone_params = [
+        p for p in model.backbone.parameters()
+        if p.requires_grad
+    ]
+
+    head_params = [
+        p for n, p in model.named_parameters()
+        if p.requires_grad and 'backbone' not in n
+    ]
+
+    optimizer = torch.optim.AdamW(
+        [
+            {"params": backbone_params, "lr": cfg.lr * 0.1},  # smaller LR
+            {"params": head_params, "lr": cfg.lr}             # larger LR
+        ],
+        weight_decay=cfg.weight_decay
+    )
+
+
+    # ------------------------------------------------
+    # METRIC LEARNING SETUP
+    # ------------------------------------------------
+
+    # hard triplet mining within batch
     miner = miners.BatchHardMiner()
+
+    # triplet margin loss
     loss_fn = losses.TripletMarginLoss(margin=cfg.margin)
 
+
+    # ------------------------------------------------
+    # TRAINER OBJECT
+    # ------------------------------------------------
     trainer = Trainer(
         model=model,
         train_loader=train_loader,
-        query_loader=query_loader,     
-        gallery_loader=gallery_loader, 
+        query_loader=query_loader,
+        gallery_loader=gallery_loader,
         optimizer=optimizer,
         loss_fn=loss_fn,
         miner=miner,
         cfg=cfg
     )
-    
+
+
+    # ------------------------------------------------
+    # TRAIN LOOP
+    # ------------------------------------------------
     trainer.train()
+
 
 if __name__ == "__main__":
     main()
