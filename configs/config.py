@@ -31,12 +31,12 @@ class Config:
     # batch_size = P * K
     # P = Number of unique dog IDs in a batch
     # K = Number of clips per dog ID
-    batch_size = 32     
+    batch_size = 16     
     k = 4                
     num_ids = batch_size // k 
     
     # Video specific: number of frames per clip
-    clip_len = 32    
+    clip_len = 16    
 
     val_split = 0.2
 
@@ -45,12 +45,13 @@ class Config:
     
     # --- Optimization ---
     epochs = 50          # Gentle start for fine-tuning foundation models
-    weight_decay = 0.01  # L2 penalty to prevent overfitting on 3.5k samples
+    weight_decay = 0.0001  # L2 penalty to prevent overfitting on 3.5k samples
     margin = 0.3      # Minimum distance gap for Triplet Loss
     lr = 3e-05 
     
     # Gradient Accumulation: Simulates a larger batch size (16 * 8 = 128)
-    accum_steps = 2      
+    # This leads to much smoother loss curves and better convergence.
+    accum_steps = 8      
 
     # --- Evaluation ---
     eval_period = 1      # Run gallery/query validation every N epochs

@@ -13,7 +13,7 @@ def build_dataloaders(cfg):
     all_unique_ids = sorted(full_df["DOG_ID"].unique())
     global_id_map = {dog_id: i for i, dog_id in enumerate(all_unique_ids)}
 
-    # 2. Setup common kwargs (Matching your Dataset class exactly)
+    # 2. Setup common kwargs
     dataset_kwargs = {
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
@@ -24,24 +24,47 @@ def build_dataloaders(cfg):
     }
 
     # 3. Initialize the BASE Training Dataset
-    # This filters by cfg.world internally to find 'train' samples
+    # base_train_dataset filters internally to only keep rows where SPLIT == 'train'
     base_train_dataset = DOGVideoREIDDataset(split="train", **dataset_kwargs)
 
-    # 4. Create Leakage-Free Validation Split
-    # We use indices based on the length of the filtered base_train_dataset
-    indices = np.arange(len(base_train_dataset))
-    np.random.seed(42)
-    np.random.shuffle(indices)
+    # 4. Create Leakage-Free Validation Split by Dog IDs
+    # To prevent identity leakage, we split DOG_IDs, not individual videos
+    unique_train_dog_ids = np.array(sorted(list(set(base_train_dataset.dog_ids))))
     
-    val_size = int(len(base_train_dataset) * cfg.val_split)
-    train_indices = indices[val_size:]
-    val_indices = indices[:val_size]
+    np.random.seed(42)
+    np.random.shuffle(unique_train_dog_ids)
+    
+    val_id_count = int(len(unique_train_dog_ids) * cfg.val_split)
+    val_dog_ids = set(unique_train_dog_ids[:val_id_count])
+    # train_dog_ids = set(unique_train_dog_ids[val_id_count:]) # Rest are training
 
-    # 5. Create Subsets
+    # 5. Filter indices for Train, Validation Query, and Validation Gallery
+    train_indices = []
+    val_query_indices = []
+    val_gallery_indices = []
+
+    # base_train_dataset.metadata should have the "GROUP" column from your CSV
+    # We iterate through the samples in the base_train_dataset
+    for i in range(len(base_train_dataset)):
+        dog_id = base_train_dataset.dog_ids[i]
+        # Check if the video belongs to a dog assigned to the validation set
+        if dog_id in val_dog_ids:
+            # Look up the GROUP in the dataset's internal dataframe
+            group_val = base_train_dataset.df.iloc[i]['GROUP']
+            if group_val == 1:
+                val_query_indices.append(i)
+            else:
+                val_gallery_indices.append(i)
+        else:
+            # Dog belongs to training
+            train_indices.append(i)
+
+    # 6. Create Subsets
     train_dataset = Subset(base_train_dataset, train_indices)
-    val_subset = Subset(base_train_dataset, val_indices)
+    val_query_dataset = Subset(base_train_dataset, val_query_indices)
+    val_gallery_dataset = Subset(base_train_dataset, val_gallery_indices)
 
-    # 6. PK Sampler (Extract labels from the base dataset for the subset)
+    # 7. PK Sampler (Important: uses labels from the specific train_indices)
     subset_labels = [base_train_dataset.labels[i] for i in train_indices]
     
     sampler = MPerClassSampler(
@@ -51,28 +74,25 @@ def build_dataloaders(cfg):
         length_before_new_iter=len(train_dataset) 
     )
 
-    # 7. Final Loaders
+    # 8. Final Loaders
     train_loader = DataLoader(
-        train_dataset, 
-        batch_size=cfg.batch_size, 
-        sampler=sampler, 
-        drop_last=True, 
-        num_workers=cfg.num_workers
+        train_dataset, batch_size=cfg.batch_size, sampler=sampler, 
+        drop_last=True, num_workers=cfg.num_workers
     )
 
-    # Split the validation subset into Query and Gallery (50/50)
-    mid = len(val_subset) // 2
     val_query_loader = DataLoader(
-        Subset(val_subset, range(0, mid)), 
-        batch_size=cfg.batch_size * 2, shuffle=False, num_workers=cfg.num_workers
+        val_query_dataset, batch_size=cfg.batch_size * 2, 
+        shuffle=False, num_workers=cfg.num_workers
     )
+    
     val_gallery_loader = DataLoader(
-        Subset(val_subset, range(mid, len(val_subset))), 
-        batch_size=cfg.batch_size * 2, shuffle=False, num_workers=cfg.num_workers
+        val_gallery_dataset, batch_size=cfg.batch_size * 2, 
+        shuffle=False, num_workers=cfg.num_workers
     )
 
-    print(f"--- Data Loading Stats (Validation Mode) ---")
-    print(f"Train samples: {len(train_dataset)} | Val samples: {len(val_subset)}")
+    print(f"--- Data Loading Stats ---")
+    print(f"Training: {len(train_dataset)} samples")
+    print(f"Validation: Query={len(val_query_dataset)}, Gallery={len(val_gallery_dataset)}")
 
     return train_loader, val_query_loader, val_gallery_loader
 
