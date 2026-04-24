@@ -1,0 +1,28 @@
+Starting Dog Re-ID Swin training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: vit_closed_v1
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : vit
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 1e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 5e-05
+[PATHS]
+  output_dir      : .../vit_closed_v1
+==================================================
+
+--- Data Loading Stats ---
+Training: 3756 samples
+Validation: Query=0, Gallery=0

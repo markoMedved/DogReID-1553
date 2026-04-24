@@ -8,7 +8,7 @@ class Config:
     """
     
     # --- Experiment ---
-    model = "swin"   # 'dinov2', 'swin', 'vit'
+    model = "vit"   # 'dinov2', 'swin', 'vit'
     world = "closed"   # 'closed' or 'open'
     run_name = f"{model}_{world}_v1"
 
@@ -35,22 +35,22 @@ class Config:
     # video clip length
     clip_len = 16    
 
-    val_split = 0.2
+    val_split = 0
 
     # --- Model ---
     embedding_dim = 768
     
     # --- Optimization ---
     epochs = 50
-    weight_decay = 0.0001
+    weight_decay = 5e-05
     margin = 0.3
-    lr = 3e-05 
+    lr = 1e-05
     
     # gradient accumulation (simulate larger batch)
     accum_steps = 8      
 
     # --- Evaluation ---
-    eval_period = 1
+    eval_period = 100
     eval_only   = False
 
     def __init__(self):
