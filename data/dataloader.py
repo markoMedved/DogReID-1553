@@ -91,7 +91,7 @@ def build_dataloaders(cfg):
     return train_loader, val_query_loader, val_gallery_loader
 
 
-def build_test_loaders(cfg):
+def build_test_loaders(cfg, images=False):
     """Test loaders using CSV splits."""
     transform = VideoTransform()
     full_df = pd.read_csv(cfg.split_file)
@@ -110,7 +110,13 @@ def build_test_loaders(cfg):
     }
 
     # query/gallery datasets
-    query_dataset = DOGVideoREIDDataset(split="query", **dataset_kwargs)
+    query_dataset = DOGVideoREIDDataset(
+            split="query", 
+            use_videos=not images, 
+            clip_len=1 if images else cfg.clip_len,
+            **dataset_kwargs
+        )
+    
     gallery_dataset = DOGVideoREIDDataset(split="gallery", **dataset_kwargs)
 
     query_loader = DataLoader(

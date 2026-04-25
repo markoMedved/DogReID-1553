@@ -52,3 +52,29 @@ Epoch 22 | Loss: 0.1453
 Epoch 23 | Loss: 0.1539
 Epoch 24 | Loss: 0.1511
 Epoch 25 | Loss: 0.1494
+Epoch 26 | Loss: 0.1549
+Epoch 27 | Loss: 0.1427
+Epoch 28 | Loss: 0.1479
+Epoch 29 | Loss: 0.1505
+Epoch 30 | Loss: 0.1347
+Epoch 31 | Loss: 0.1516
+Epoch 32 | Loss: 0.1500
+Epoch 33 | Loss: 0.1290
+Epoch 34 | Loss: 0.1282
+Epoch 35 | Loss: 0.1409
+Epoch 36 | Loss: 0.1313
+Epoch 37 | Loss: 0.1501
+Epoch 38 | Loss: 0.1307
+Epoch 39 | Loss: 0.1377
+Epoch 40 | Loss: 0.1477
+Epoch 41 | Loss: 0.1438
+Epoch 42 | Loss: 0.1411
+Epoch 43 | Loss: 0.1352
+Epoch 44 | Loss: 0.1287
+Epoch 45 | Loss: 0.1289
+Epoch 46 | Loss: 0.1330
+Epoch 47 | Loss: 0.1460
+Epoch 48 | Loss: 0.1379
+Epoch 49 | Loss: 0.1317
+!!! Final training run detected (val_split=0). Saving final model...
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/experiments/dinov2_closed_v1/final_model_dinov2
