@@ -72,56 +72,37 @@ class DOGVideoREIDDataset(Dataset):
 
 
     def __getitem__(self, idx):
+            row = self.df.iloc[idx]
+            dog_id, video_id = row["DOG_ID"], row["VIDEO_ID"]
+            path = self._get_path(dog_id, video_id)
+            
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"Missing: {path}")
 
-        row = self.df.iloc[idx]
+            # Data Loading
+            if self.use_videos:
+                clip = load_video_clip(path, self.clip_len, is_training=(self.split == "train"))
+            else:
+                img = Image.open(path).convert("RGB")
+                clip = [np.array(img)]
 
-        dog_id = row["DOG_ID"]
-        video_id = row["VIDEO_ID"]
-
-        # resolve file path
-        path = self._get_path(dog_id, video_id)
-        
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Clip not found: {path}")
-
-        # temporal frame sampling (T,H,W,C)
-        clip = load_video_clip(
-            path,
-            self.clip_len,
-            is_training=(self.split == "train")
-        )
-
-        # apply spatial transforms frame-by-frame
-        if self.transform:
-
-            transformed_frames = []
-
-            if self.split == "train":
-                # same augmentation for every frame in the clip
+            # Transformation Pipeline
+            if self.transform:
+                transformed_frames = []
                 seed = np.random.randint(2147483647)
 
                 for frame in clip:
-                    random.seed(seed)
-                    torch.manual_seed(seed)
-                    np.random.seed(seed)
+                    if self.split == "train":
+                        random.seed(seed)
+                        torch.manual_seed(seed)
+                        np.random.seed(seed)
 
                     pil_img = Image.fromarray(frame)
                     transformed_frames.append(self.transform(pil_img))
 
+                clip = torch.stack(transformed_frames)
             else:
-                # deterministic transforms during evaluation
-                for frame in clip:
-                    pil_img = Image.fromarray(frame)
-                    transformed_frames.append(self.transform(pil_img))
+                # (T, H, W, C) -> (T, C, H, W)
+                clip = torch.from_numpy(np.array(clip)).permute(0, 3, 1, 2).float() / 255.0
 
-            # stack frames → (T,C,H,W)
-            clip = torch.stack(transformed_frames)
-
-        else:
-            # fallback conversion (T,H,W,C) → (T,C,H,W)
-            clip = torch.from_numpy(clip).permute(0, 3, 1, 2).float() / 255.0
-
-        # mapped integer label
-        label = self._labels[idx]
-
-        return clip, label, dog_id, video_id
+            return clip, self._labels[idx], dog_id, video_id

@@ -1,0 +1,80 @@
+Starting Dog Re-ID training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_closed_v1
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : dinov2
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 1e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 1e-05
+[PATHS]
+  output_dir      : .../dinov2_closed_v1
+==================================================
+
+--- Data Loading Stats ---
+Training: 3756 samples
+Validation: Query=0, Gallery=0
+Epoch 0 | Loss: 0.2410
+Epoch 1 | Loss: 0.2151
+Epoch 2 | Loss: 0.2033
+Epoch 3 | Loss: 0.1955
+Epoch 4 | Loss: 0.1827
+Epoch 5 | Loss: 0.1859
+Epoch 6 | Loss: 0.1813
+Epoch 7 | Loss: 0.1788
+Epoch 8 | Loss: 0.1752
+Epoch 9 | Loss: 0.1685
+Epoch 10 | Loss: 0.1555
+Epoch 11 | Loss: 0.1678
+Epoch 12 | Loss: 0.1670
+Epoch 13 | Loss: 0.1705
+Epoch 14 | Loss: 0.1556
+Epoch 15 | Loss: 0.1660
+Epoch 16 | Loss: 0.1637
+Epoch 17 | Loss: 0.1489
+Epoch 18 | Loss: 0.1493
+Epoch 19 | Loss: 0.1541
+Epoch 20 | Loss: 0.1604
+Epoch 21 | Loss: 0.1555
+Epoch 22 | Loss: 0.1453
+Epoch 23 | Loss: 0.1539
+Epoch 24 | Loss: 0.1511
+Epoch 25 | Loss: 0.1494
+Epoch 26 | Loss: 0.1549
+Epoch 27 | Loss: 0.1427
+Epoch 28 | Loss: 0.1479
+Epoch 29 | Loss: 0.1505
+Epoch 30 | Loss: 0.1347
+Epoch 31 | Loss: 0.1516
+Epoch 32 | Loss: 0.1500
+Epoch 33 | Loss: 0.1290
+Epoch 34 | Loss: 0.1282
+Epoch 35 | Loss: 0.1409
+Epoch 36 | Loss: 0.1313
+Epoch 37 | Loss: 0.1501
+Epoch 38 | Loss: 0.1307
+Epoch 39 | Loss: 0.1377
+Epoch 40 | Loss: 0.1477
+Epoch 41 | Loss: 0.1438
+Epoch 42 | Loss: 0.1411
+Epoch 43 | Loss: 0.1352
+Epoch 44 | Loss: 0.1287
+Epoch 45 | Loss: 0.1289
+Epoch 46 | Loss: 0.1330
+Epoch 47 | Loss: 0.1460
+Epoch 48 | Loss: 0.1379
+Epoch 49 | Loss: 0.1317
+!!! Final training run detected (val_split=0). Saving final model...
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/experiments/dinov2_closed_v1/final_model_dinov2

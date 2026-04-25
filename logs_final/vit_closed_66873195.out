@@ -1,0 +1,77 @@
+Starting Dog Re-ID ViT training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: vit_closed_v1
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : vit
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 2e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 0.0005
+[PATHS]
+  output_dir      : .../vit_closed_v1
+==================================================
+
+--- Data Loading Stats ---
+Training: 3756 samples
+Validation: Query=0, Gallery=0
+Epoch 0 | Loss: 0.2773
+Epoch 1 | Loss: 0.2648
+Epoch 2 | Loss: 0.2604
+Epoch 3 | Loss: 0.2522
+Epoch 4 | Loss: 0.2467
+Epoch 5 | Loss: 0.2428
+Epoch 6 | Loss: 0.2433
+Epoch 7 | Loss: 0.2475
+Epoch 8 | Loss: 0.2382
+Epoch 9 | Loss: 0.2319
+Epoch 10 | Loss: 0.2304
+Epoch 11 | Loss: 0.2294
+Epoch 12 | Loss: 0.2342
+Epoch 13 | Loss: 0.2425
+Epoch 14 | Loss: 0.2331
+Epoch 15 | Loss: 0.2311
+Epoch 16 | Loss: 0.2274
+Epoch 17 | Loss: 0.2216
+Epoch 18 | Loss: 0.2289
+Epoch 19 | Loss: 0.2231
+Epoch 20 | Loss: 0.2323
+Epoch 21 | Loss: 0.2256
+Epoch 22 | Loss: 0.2230
+Epoch 23 | Loss: 0.2236
+Epoch 24 | Loss: 0.2199
+Epoch 25 | Loss: 0.2197
+Epoch 26 | Loss: 0.2283
+Epoch 27 | Loss: 0.2195
+Epoch 28 | Loss: 0.2217
+Epoch 29 | Loss: 0.2178
+Epoch 30 | Loss: 0.2191
+Epoch 31 | Loss: 0.2250
+Epoch 32 | Loss: 0.2209
+Epoch 33 | Loss: 0.2099
+Epoch 34 | Loss: 0.2141
+Epoch 35 | Loss: 0.2223
+Epoch 36 | Loss: 0.2154
+Epoch 37 | Loss: 0.2205
+Epoch 38 | Loss: 0.2128
+Epoch 39 | Loss: 0.2119
+Epoch 40 | Loss: 0.2128
+Epoch 41 | Loss: 0.2135
+Epoch 42 | Loss: 0.2157
+Epoch 43 | Loss: 0.2128
+Epoch 44 | Loss: 0.2142
+Epoch 45 | Loss: 0.2166
+Epoch 46 | Loss: 0.2114
+Epoch 47 | Loss: 0.2176
+Epoch 48 | Loss: 0.2122

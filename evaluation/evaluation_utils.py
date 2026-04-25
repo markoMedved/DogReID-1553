@@ -124,7 +124,8 @@ def _calc_open_logic(df):
     best_idx = np.argmin(dist_mat, axis=1)
     correct_match = (g_labels[best_idx] == q_labels)
 
-    thresholds = np.linspace(0, 2, 200)
+    # Standardize 500 points for a smooth curve
+    thresholds = np.linspace(0, 2, 500)
     dirs, fars = [], []
 
     for t in thresholds:
@@ -133,11 +134,13 @@ def _calc_open_logic(df):
         dirs.append(d)
         fars.append(f)
 
-    dir_at_far_points = {}
+    # Return the full arrays for plotting, plus the specific points for the table
+    res = {"dirs": np.array(dirs), "fars": np.array(fars)}
     for target in [0.01, 0.05, 0.1]:
         idx = np.argmin(np.abs(np.array(fars) - target))
-        dir_at_far_points[target] = dirs[idx]
-    return dir_at_far_points
+        res[target] = dirs[idx]
+        
+    return res
 
 def _aggregate_bootstrap_results(results, mode):
     if mode == "closed":
@@ -161,13 +164,27 @@ def _aggregate_bootstrap_results(results, mode):
             "ranks": np.arange(1, len(mean_cmc) + 1)
         }
     else:
-        # Open-set aggregation logic
-        final_open = {}
+        # Extract the full curves from all bootstrap iterations
+        all_dirs = np.array([r["dirs"] for r in results]) # Shape (m, 500)
+        all_fars = np.array([r["fars"] for r in results]) # Shape (m, 500)
+
+        # Compute Mean and 95% Confidence Intervals for the curve
+        mean_dirs = np.mean(all_dirs, axis=0)
+        lower_dirs = np.percentile(all_dirs, 2.5, axis=0)
+        upper_dirs = np.percentile(all_dirs, 97.5, axis=0)
+        
+        # We assume fars are roughly consistent across iterations because thresholds are fixed
+        mean_fars = np.mean(all_fars, axis=0)
+
+        print(f"\nBootstrap Results (Open-Set):")
         for target in [0.01, 0.05, 0.1]:
             vals = [r[target] for r in results]
-            final_open[target] = {
-                "mean": np.mean(vals),
-                "ci": (np.percentile(vals, 2.5), np.percentile(vals, 97.5))
-            }
-            print(f"Bootstrap DIR @ {target*100}% FAR: {np.mean(vals):.2%} [CI: {np.percentile(vals, 2.5):.2%} - {np.percentile(vals, 97.5):.2%}]")
-        return final_open
+            print(f"DIR @ {target:.0%} FAR: {np.mean(vals):.2%} ± {np.std(vals):.2%}")
+
+        return {
+            "mean_fars": mean_fars,
+            "mean_dirs": mean_dirs,
+            "lower_dirs": lower_dirs,
+            "upper_dirs": upper_dirs,
+            "targets": {t: np.mean([r[t] for r in results]) for t in [0.01, 0.05, 0.1]}
+        }

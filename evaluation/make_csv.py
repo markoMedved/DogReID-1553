@@ -8,6 +8,8 @@ from collections import OrderedDict
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
 
+USE_IMAGES = True
+
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
@@ -112,7 +114,11 @@ model.eval()
 
 print(f"-> Preparing {cfg.world.upper()} test dataloaders...")
 
-query_loader, gallery_loader = build_test_loaders(cfg)
+if USE_IMAGES:
+    query_loader, gallery_loader = build_test_loaders(cfg, images=True)
+
+else:
+    query_loader, gallery_loader = build_test_loaders(cfg)
 
 
 # -------------------------------------------------------------
