@@ -8,8 +8,8 @@ class Config:
     """
     
     # --- Experiment ---
-    model = "swin"   # 'dinov2', 'swin', 'vit'
-    world = "closed"   # 'closed' or 'open'
+    model = "dinov2"   # 'dinov2', 'swin', 'vit'
+    world = "open"   # 'closed' or 'open'
     run_name = f"{model}_{world}_v1"
 
     # --- Paths ---

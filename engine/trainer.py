@@ -23,6 +23,8 @@ class Trainer:
         self.loss_fn = loss_fn
         self.miner = miner
 
+        self.evaluate()
+
     def train(self):
         best_rank1 = 0.0
         val_split = getattr(self.cfg, 'val_split', 0)
