@@ -29,3 +29,5 @@ dog_data.yaml
 yolo_dataset
 runs
 logs_final
+final_models
+find_params.py

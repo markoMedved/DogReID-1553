@@ -103,7 +103,6 @@ def build_test_loaders(cfg, images=False):
     dataset_kwargs = {
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
-        "clip_len": cfg.clip_len,
         "transform": transform,
         "world": cfg.world,
         "label_map": global_id_map

@@ -1,20 +1,25 @@
 # 🐶 DogReID-1553: Large-Scale Dog Re-Identification Video Dataset
 
-**DogReID-1553** is a large-scale dataset designed for **individual dog
-re-identification (Re-ID)** using video data.\
-The dataset contains video clips and extracted frames of dogs captured
-across different environments, viewpoints, and lighting conditions.
+# 🐶 DogReID-1553: Large-Scale Dog Re-Identification Video Dataset
+
+**DogReID-1553** is a large-scale dataset designed for **individual dog re-identification (Re-ID)** using video data.  
+The dataset contains video clips and extracted frames of dogs captured across different environments, viewpoints, and lighting conditions.
 
 This dataset supports research in:
+* **Animal biometrics**
+* **Lost pet reunification**
+* **Automated animal welfare monitoring**
+* **Video-based re-identification systems**
 
--   Animal biometrics
--   Lost pet reunification
--   Automated animal welfare monitoring
--   Video-based re-identification systems
+The dataset is introduced as part of **Project Puppies**, which aims to enable new research directions in **animal identity recognition using computer vision**. 
 
-The dataset is introduced as part of **Project Puppies**, which aims to
-enable new research directions in **animal identity recognition using
-computer vision**.
+---
+
+### 🚀 Baseline Methods
+In this repository, we provide the **benchmark baseline methods** used to evaluate the dataset. This includes the complete training and evaluation pipeline for three state-of-the-art transformer-based architectures (DINOv2, SwinV2, and ViT). By providing these baselines, we aim to:
+1. **Ensure Reproducibility:** Allow researchers to replicate our benchmark results exactly.
+2. **Standardize Evaluation:** Provide the official implementation of our Closed-World and Open-World (DIR@FAR) evaluation protocols.
+3. **Facilitate Development:** Provide a modular framework that can be easily extended to test new methodologies.
 
 ------------------------------------------------------------------------
 
@@ -53,6 +58,11 @@ conda create -n dog_reid python=3.10 -y
 conda activate dog_reid
 ```
 
+### Install Project Dependencies
+
+    pip install -r requirements.txt
+
+
 ### Install PyTorch
 
 Install PyTorch compatible with your CUDA version.
@@ -71,11 +81,6 @@ pip install torch torchvision torchaudio
 
 ------------------------------------------------------------------------
 
-### Install Project Dependencies
-
-    pip install -r requirements.txt
-
-------------------------------------------------------------------------
 
 ## 📥 Dataset Download
 

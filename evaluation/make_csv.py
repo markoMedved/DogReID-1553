@@ -26,7 +26,7 @@ WORLD_TYPE = "closed"
 MODEL_NAME = "dinov2"
 
 # path to trained checkpoint
-MODEL_PATH = f"/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/experiments/{MODEL_NAME}_{WORLD_TYPE}_v1/best_model.pth"
+MODEL_PATH = f"/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/experiments/{MODEL_NAME}_{WORLD_TYPE}_v1/final_model_{MODEL_NAME}/final_model.pth"
 
 
 # MODEL ARCHITECTURE SELECTION
@@ -50,9 +50,7 @@ CSV_NAME = f"{WORLD_TYPE}_dist_matrix.csv"
 from data.dataloader import build_test_loaders
 from configs.config import Config
 from evaluation_utils import (
-    generate_distance_csv,
-    calculate_metrics_from_csv,
-    calculate_open_set_metrics_from_csv
+    generate_distance_csv
 )
 
 
