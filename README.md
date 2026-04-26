@@ -68,13 +68,13 @@ Install PyTorch compatible with your CUDA version.
 Example for **CUDA 12.1**:
 
 ``` bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 ```
 
 If you are using **CPU only**:
 
 ``` bash
-pip install torch torchvision torchaudio
+pip install torch torchvision
 ```
 
 ------------------------------------------------------------------------
@@ -84,7 +84,7 @@ pip install torch torchvision torchaudio
 
 Download the dataset from:
 
-**\[Dataset Link --- TODO\]**
+https://doi.org/10.7910/DVN/LVTRLG
 
 After downloading, unzip Videos.zip and Images.zip into:
 
@@ -139,8 +139,64 @@ Training parameters can be modified inside:
 ### Start Training
 
 ``` bash
-python train.py
+python train.py  # Can also specify parameters
 ```
+------------------------------------------------------------------------
+
+
+## 📊 Evaluation
+
+Evaluating a trained model is a two-step process: generating a distance matrix CSV, and then running bootstrap sampling to calculate the final metrics.
+
+### 1. Generate the Distance Matrix
+
+First, open `make_csv.py` and configure the settings at the top of the file to match your trained model:
+
+* **`WORLD_TYPE`**: Set to `"closed"` or `"open"` .
+* **`MODEL_NAME`**: A string identifier for your model (e.g., `"dinov2"`, `"vit"`, `"swin"`), for a new model just ignore this, but provide the MODEL_PATH and OUTPUT_FOLDER manually. 
+* **`MODEL_PATH`**: The path to your trained model checkpoint (`.pth` file).
+* **`MODEL_CLASS`**: Ensure you import and assign the correct architecture class for your weights (e.g., `MODEL_CLASS = DINOv2ReID`).
+
+Once configured, run the script to extract features and generate the distance CSV:
+
+```bash
+python make_csv.py
+```
+
+This will save a distance matrix CSV to `evaluation/csvs/<MODEL_NAME>_<WORLD_TYPE>/`.
+
+### 2. Calculate Metrics (Bootstrap Evaluation)
+
+Once the distance matrix is ready, use the bootstrap evaluation to calculate statistically robust metrics. This process resamples the data with replacement to provide mean scores and **95% Confidence Intervals**.
+
+```python
+from evaluation_utils import bootstrap_from_csv
+
+# Path to the CSV generated in Step 1
+csv_file = "evaluation/csvs/dinov2_closed/closed_dist_matrix.csv"
+
+# m=100 is recommended for stable confidence intervals
+results = bootstrap_from_csv(csv_path=csv_file, m=100, mode="closed")
+```
+
+
+### Understanding the Return Values
+
+The `results` dictionary provides different data depending on the `mode` you select.
+
+#### **Closed-World Setting (`mode="closed"`)**
+Used when every query dog is known to exist in the gallery.
+* **`mAP_mean` / `mAP_std`**: The average precision and its standard deviation.
+* **`cmc_mean`**: An array containing the mean accuracy at each rank (Rank-1, Rank-2, etc.).
+* **`cmc_lower` / `cmc_upper`**: The 95% confidence boundaries for the CMC curve.
+* **`ranks`**: An array of integers $[1, 2, 3, ...]$ for easy plotting.
+
+#### **Open-World Setting (`mode="open"`)**
+Used when the query set contains "stranger" dogs not present in the gallery.
+* **`mean_fars`**: The X-axis data (False Accept Rate).
+* **`mean_dirs`**: The Y-axis data (Detection and Identification Rate).
+* **`lower_dirs` / `upper_dirs`**: The 95% confidence "envelope" for the DIR curve.
+* **`targets`**: A dictionary containing the specific DIR scores at exactly **1%**, **5%**, and **10%** FAR.
 
 ------------------------------------------------------------------------
 
@@ -148,6 +204,6 @@ python train.py
 
 If you use this dataset in your research, please cite:
 
-``` bibtex
+```bibtex
 TODO
 ```

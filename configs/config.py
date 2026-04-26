@@ -33,14 +33,14 @@ class Config:
     embedding_dim = 768  # Default embedding dimension
     
     # --- Training & Optimization ---
-    epochs = 50
+    epochs = 2
     weight_decay = 5e-05
     margin = 0.25        # Loss margin
     lr = 2e-05           # Learning rate
     accum_steps = 8      # Gradient accumulation steps to simulate larger batch
 
     # --- Evaluation ---
-    eval_period = 0      # Epochs between evaluations 
+    eval_period = 1      # Epochs between evaluations 
     eval_only   = False  # Toggle for evaluation-only mode
 
     def __init__(self):

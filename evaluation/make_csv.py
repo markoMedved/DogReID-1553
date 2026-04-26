@@ -29,7 +29,7 @@ WORLD_TYPE = "closed"
 MODEL_NAME = "dinov2"
 
 # path to trained checkpoint
-MODEL_PATH = f"/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/experiments/{MODEL_NAME}_{WORLD_TYPE}_v1/final_model_{MODEL_NAME}/final_model.pth"
+MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{MODEL_NAME}_{WORLD_TYPE}" / "model.pth")
 
 
 # --- MODEL ARCHITECTURE SELECTION ---
@@ -43,7 +43,7 @@ MODEL_CLASS = DINOv2ReID
 
 # --- Output Configuration ---
 # where evaluation CSV files will be stored
-OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_v1"
+OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}"
 
 # name of generated distance matrix
 CSV_NAME = f"{WORLD_TYPE}_dist_matrix.csv"
