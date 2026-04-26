@@ -9,7 +9,7 @@ from collections import OrderedDict
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
 
-USE_IMAGES = True
+USE_IMAGES = False
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
@@ -22,11 +22,11 @@ if str(ROOT_DIR) not in sys.path:
 # --- Evaluation Environment ---
 # closed = all query dogs exist in gallery
 # open   = some query dogs are not in gallery
-WORLD_TYPE = "closed"
+WORLD_TYPE = "open"
 
 # --- Model Identification ---
 # model identifier used for paths and output folders
-MODEL_NAME = "dinov2"
+MODEL_NAME = "swin"
 
 # path to trained checkpoint
 MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{MODEL_NAME}_{WORLD_TYPE}" / "model.pth")
@@ -38,12 +38,15 @@ from models.dinov2_builder import DINOv2ReID
 from models.swin_builder import VideoSwin
 from models.vit_builder import VideoViT
 
-MODEL_CLASS = DINOv2ReID
+MODEL_CLASS = VideoSwin
 
 
 # --- Output Configuration ---
 # where evaluation CSV files will be stored
 OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}"
+if USE_IMAGES:
+    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_image"
+
 
 # name of generated distance matrix
 CSV_NAME = f"{WORLD_TYPE}_dist_matrix.csv"
