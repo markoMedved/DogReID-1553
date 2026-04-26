@@ -8,13 +8,8 @@ class Config:
     """
     
     # --- Experiment ---
-<<<<<<< HEAD
-    model = "dinov2"   # 'dinov2', 'swin', 'vit'
-    world = "open"   # 'closed' or 'open'
-=======
     model = "vit"   # 'dinov2', 'swin', 'vit'
     world = "closed"   # 'closed' or 'open'
->>>>>>> 3104006b91bd836fc8f628ecc071f6210c5d7c7f
     run_name = f"{model}_{world}_v1"
 
     # --- Paths ---
