@@ -62,7 +62,7 @@ def bootstrap_from_csv(csv_path, m=100, mode="closed", random_state=42):
     df_full = pd.read_csv(csv_path, sep=',')
     
     # Pre-calculate labels as integers for faster comparison
-    get_id = lambda x: int(str(x).split('_')[0])
+    get_id = lambda x: str(x).split('_')[0]
     query_labels = np.array([get_id(i) for i in df_full['queryId'].values])
     gallery_labels = np.array([get_id(i) for i in df_full.columns[1:].values])
     dist_mat = df_full.iloc[:, 1:].values
@@ -106,7 +106,6 @@ def bootstrap_from_csv(csv_path, m=100, mode="closed", random_state=42):
 
     return _aggregate_bootstrap_results(boot_results, mode)
 
-# -------- VECTORIZED INTERNAL HELPERS --------
 
 def _calc_closed_logic_vectorized(matches):
     """
@@ -163,17 +162,24 @@ def _calc_open_logic_vectorized(dist_mat, q_labels, g_labels):
     return res
 
 def _aggregate_bootstrap_results(results, mode):
-    # (Existing aggregation logic is fine, it just handles the dicts)
     if mode == "closed":
         maps = [r["mAP"] for r in results]
         cmcs = np.array([r["cmc"] for r in results])
         mean_cmc = np.mean(cmcs, axis=0)
+
+        mean_map = np.mean(maps)
+        mean_cmc = np.mean(cmcs, axis=0)
+
         return {
-            "mAP_mean": np.mean(maps), "mAP_std": np.std(maps),
-            "cmc_mean": mean_cmc, "cmc_lower": np.percentile(cmcs, 2.5, axis=0),
-            "cmc_upper": np.percentile(cmcs, 97.5, axis=0),
-            "ranks": np.arange(1, len(mean_cmc) + 1)
-        }
+                "mAP_mean": mean_map,
+                "mAP_lower": np.percentile(maps, 2.5),   
+                "mAP_upper": np.percentile(maps, 97.5),  
+                "mAP_std": np.std(maps),
+                "cmc_mean": mean_cmc,
+                "cmc_lower": np.percentile(cmcs, 2.5, axis=0),
+                "cmc_upper": np.percentile(cmcs, 97.5, axis=0),
+                "ranks": np.arange(1, len(mean_cmc) + 1)
+            }
     else:
         all_dirs = np.array([r["dirs"] for r in results])
         all_fars = np.array([r["fars"] for r in results])
