@@ -7,9 +7,9 @@ class Config:
     """
     
     # --- Experiment Settings ---
-    model = "swin"       # Options: 'dinov2', 'swin', 'vit'
-    world = "open"       # Options: 'closed', 'open'
-    run_name = f"{model}_{world}_v1"
+    model = "dinov2"       # Options: 'dinov2', 'swin', 'vit'
+    world = "closed"       # Options: 'closed', 'open'
+    run_name = f"{model}_{world}"
 
     # --- Directory Paths ---
     project_root = Path(__file__).resolve().parent.parent

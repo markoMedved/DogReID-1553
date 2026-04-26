@@ -28,6 +28,7 @@ DogReID-1553 contains:
 -   **1,553 individual dogs**
 -   **Video clips (.mp4)** for temporal feature learning
 -   **Extracted images (.jpg)** for image-based methods
+-   **Bounding Boxes**: For the dogs in the first frame of videos / Images dataset.
 -   **Train / Query / Gallery splits** provided in `splits.csv`
 
 Identities appear across **multiple videos and environments**,
@@ -139,7 +140,7 @@ Training parameters can be modified inside:
 ### Start Training
 
 ``` bash
-python train.py  # Can also specify parameters
+python train.py  # Can also specify parameters here
 ```
 ------------------------------------------------------------------------
 
