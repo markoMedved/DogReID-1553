@@ -1,7 +1,5 @@
 # 🐶 DogReID-1553: Large-Scale Dog Re-Identification Video Dataset
 
-# 🐶 DogReID-1553: Large-Scale Dog Re-Identification Video Dataset
-
 **DogReID-1553** is a large-scale dataset designed for **individual dog re-identification (Re-ID)** using video data.  
 The dataset contains video clips and extracted frames of dogs captured across different environments, viewpoints, and lighting conditions.
 
@@ -32,7 +30,7 @@ DogReID-1553 contains:
 -   **Extracted images (.jpg)** for image-based methods
 -   **Train / Query / Gallery splits** provided in `splits.csv`
 
-Each identity appears across **multiple videos and environments**,
+Identities appear across **multiple videos and environments**,
 making the dataset suitable for **video-based ReID benchmarking**.
 
 ------------------------------------------------------------------------
@@ -123,8 +121,6 @@ DogReID-1553/
 ├── breeds.csv                 # Dog breed metadata
 │
 ├── splits.csv                 # Train / Query / Gallery splits
-│
-├── job.sh                     # Cluster training job script
 │
 ├── train.py                   # Main training script
 │
