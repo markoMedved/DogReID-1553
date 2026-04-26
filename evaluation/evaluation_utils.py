@@ -33,13 +33,12 @@ def extract_features_with_ids(model, dataloader, device):
 
     return torch.cat(all_embeddings), all_ids
 
-def generate_distance_csv(model, query_loader, gallery_loader, cfg, filename="dist_matrix.csv"):
+def generate_distance_csv(model, query_loader, gallery_loader, cfg, filename="dist_matrix.csv", sep=','):
     # --- Extract Features ---
     q_feat, q_ids = extract_features_with_ids(model, query_loader, cfg.device)
     g_feat, g_ids = extract_features_with_ids(model, gallery_loader, cfg.device)
 
     print("-> Computing Distance Matrix...")
-    # Compute L2 distance matrix between query and gallery sets
     dist_mat = torch.cdist(q_feat, g_feat, p=2).numpy()
 
     # --- Format as DataFrame ---
@@ -48,20 +47,26 @@ def generate_distance_csv(model, query_loader, gallery_loader, cfg, filename="di
 
     # --- Save to CSV ---
     output_path = Path(cfg.output_dir) / filename
-    # Fixed: writing with a comma
-    df.to_csv(output_path, sep=',', index=False)
-    print(f"Distance CSV successfully created: {output_path}")
+    
+    # Save with the specified separator (default is comma)
+    df.to_csv(output_path, sep=sep, index=False)
+    print(f"Distance CSV successfully created: {output_path} (Separator: '{sep}')")
     return output_path
 
-def bootstrap_from_csv(csv_path, m=100, mode="closed", random_state=42):
+def bootstrap_from_csv(csv_path, m=100, mode="closed", random_state=42, sep=None):
+    """
+    sep: if None, pandas will attempt to auto-detect the separator. 
+         Otherwise, you can pass ',' or ';' explicitly.
+    """
     # --- Load Distance Matrix ---
-    # Fixed: reading with a comma
-    df_full = pd.read_csv(csv_path, sep=',')
+    # Using 'python' engine with sep=None allows pandas to auto-detect the delimiter
+    if sep is None:
+        df_full = pd.read_csv(csv_path, sep=None, engine='python')
+    else:
+        df_full = pd.read_csv(csv_path, sep=sep)
     
-    # Helper to extract dog ID from the combined string format
+    # Rest of the function remains the same...
     get_dog_label = lambda x: str(x).split('_')[0]
-
-    # --- Map Identities to Rows ---
     query_labels = np.array([get_dog_label(i) for i in df_full['queryId'].values])
     unique_ids = np.unique(query_labels)
     id_to_indices = {id_: np.where(query_labels == id_)[0] for id_ in unique_ids}
@@ -71,19 +76,14 @@ def bootstrap_from_csv(csv_path, m=100, mode="closed", random_state=42):
 
     print(f"-> Bootstrapping {mode} metrics from CSV ({m} iterations)...")
 
-    # --- Bootstrap Sampling Loop ---
     for _ in tqdm(range(m)):
-        # Sample identities with replacement
         sampled_ids = np.random.choice(unique_ids, size=len(unique_ids), replace=True)
-        
         selected_row_indices = []
         for id_ in sampled_ids:
             selected_row_indices.extend(id_to_indices[id_])
 
-        # Create resampled DataFrame
         df_boot = df_full.iloc[selected_row_indices].copy()
 
-        # --- Evaluate Resampled Data ---
         if mode == "closed":
             res = _calc_closed_logic(df_boot)
             boot_results.append(res)
