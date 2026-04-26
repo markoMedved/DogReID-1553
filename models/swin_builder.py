@@ -13,74 +13,78 @@ class TemporalAttentionPool(nn.Module):
     def __init__(self, dim):
         super().__init__()
 
-        # small MLP producing a scalar attention weight per frame
+        # --- Attention Network ---
+        # Small MLP producing a scalar attention weight per frame
         self.attn = nn.Sequential(
             nn.Linear(dim, 512),
             nn.Tanh(),
             nn.Linear(512, 1),
-            nn.Softmax(dim=1)  # normalize weights across time dimension
+            nn.Softmax(dim=1)  # Normalize weights across the time dimension
         )
 
     def forward(self, x):
-        # x shape: (B, T, Dim)
+        # Input shape: (Batch, Time, Dim)
 
-        # compute frame importance weights
-        weights = self.attn(x)  # (B, T, 1)
+        # --- Compute Attention Weights ---
+        weights = self.attn(x)  # Output shape: (B, T, 1)
 
-        # weighted temporal pooling
+        # --- Apply Weighted Pooling ---
+        # Broadcasts weights across the feature dimension and sums over time
         return (x * weights).sum(dim=1)
 
 
 class VideoSwin(nn.Module):
     """
-    Video ReID model using a Swin V2 backbone.
+    Video ReID model utilizing a Swin V2 backbone.
 
     Pipeline:
-    frames → Swin backbone → temporal attention pooling → BN neck → L2 normalize
+    frames -> Swin backbone -> temporal attention pooling -> BN neck -> L2 normalize
     """
 
     def __init__(self, num_classes=None, chunk_size=8):
         super().__init__()
 
-        # load pretrained Swin V2 Base model
+        # --- Load Pretrained Backbone ---
+        # Initializes Swin V2 Base with default ImageNet weights
         weights = Swin_V2_B_Weights.DEFAULT
         self.backbone = swin_v2_b(weights=weights)
 
-        # remove classification head since we want embeddings
+        # Remove classification head to extract raw embeddings instead of logits
         self.backbone.head = nn.Identity()
 
-        # Swin-B feature dimension
+        # Swin-B standard output feature dimension
         self.dim = 1024
 
-        # number of frames processed at once (helps avoid VRAM overflow)
+        # --- Memory Management ---
+        # Number of frames processed simultaneously (prevents VRAM overflow)
         self.chunk_size = chunk_size
 
-        # temporal attention pooling for aggregating frame features
+        # --- Temporal Aggregation ---
         self.temporal_pool = TemporalAttentionPool(self.dim)
 
-        # BN-Neck commonly used in ReID pipelines
-        # stabilizes embedding space before metric learning
+        # --- BN-Neck ---
+        # Stabilizes the embedding space before metric learning
         self.bn = nn.BatchNorm1d(self.dim)
 
-        # bias is typically frozen in BN-Neck
+        # Bias is typically frozen in BN-Neck implementations
         self.bn.bias.requires_grad_(False)
 
     def forward(self, x):
 
-        # expected input shapes:
-        # video: (Batch, Time, Channels, Height, Width)
-        # image: (Batch, Channels, Height, Width)
+        # Input dimensionalities:
+        # Video: (Batch, Time, Channels, Height, Width)
+        # Image: (Batch, Channels, Height, Width)
 
         if x.dim() == 5:
 
             B, T, C, H, W = x.shape
 
-            # flatten temporal dimension so backbone processes frames independently
+            # Flatten temporal dimension for independent frame processing
             x = x.view(B * T, C, H, W)
 
-            # --- CHUNKED FORWARD ---
+            # --- Chunked Forward Pass ---
             # Swin-V2-B is memory intensive.
-            # Process frames in smaller chunks to avoid GPU OOM.
+            # Processing frames in smaller chunks avoids GPU Out-Of-Memory errors.
             chunks = torch.split(x, self.chunk_size, dim=0)
 
             feats = torch.cat(
@@ -88,20 +92,20 @@ class VideoSwin(nn.Module):
                 dim=0
             )
 
-            # reshape back into video structure
+            # Reshape features back into their original video structure
             feats = feats.view(B, T, -1)
 
-            # --- TEMPORAL ATTENTION POOLING ---
-            # aggregate frame-level features into a single clip embedding
+            # --- Temporal Attention Pooling ---
+            # Aggregate frame-level features into a single clip embedding
             feats = self.temporal_pool(feats)
 
         else:
-            # standard single-image forward pass
+            # Standard single-image forward pass
             feats = self.backbone(x)
 
-        # --- BN-NECK ---
+        # --- BN-Neck Application ---
         feats = self.bn(feats)
 
-        # --- L2 NORMALIZATION ---
-        # ensures embeddings lie on unit hypersphere
+        # --- L2 Normalization ---
+        # Ensures embeddings lie on a unit hypersphere, making cosine similarity equivalent to dot product
         return F.normalize(feats, p=2, dim=1)

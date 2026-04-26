@@ -7,83 +7,92 @@ import json
 
 class Trainer:
     def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner):
-        # move model to device (gpu/cpu)
+        # --- Move Model to Compute Device ---
         self.model = model.to(cfg.device)
 
-        # dataloaders
+        # --- Dataloaders ---
         self.train_loader = train_loader
         self.query_loader = query_loader
         self.gallery_loader = gallery_loader
 
+        # --- Training Configuration ---
         self.optimizer = optimizer
         self.device = cfg.device
         self.cfg = cfg
         
-        # metric learning components
+        # --- Metric Learning Components ---
         self.loss_fn = loss_fn
         self.miner = miner
 
-        self.evaluate()
-
     def train(self):
+        # --- Initialize Tracking Variables ---
         best_rank1 = 0.0
         val_split = getattr(self.cfg, 'val_split', 0)
 
+        # --- Main Training Loop ---
         for epoch in range(self.cfg.epochs):
             self.current_epoch = epoch
 
-            # run one full training epoch
+            # Run one full training epoch
             avg_loss = self.train_epoch(epoch)
             print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
 
-            # validation experiment (dataset split contains validation identities)
+            # --- Validation Evaluation ---
             if val_split > 0:
-
-                # evaluation every few epochs
+                # Run evaluation only at specified intervals
                 if (epoch + 1) % self.cfg.eval_period == 0:
                     rank1, rank5, mAP = self.evaluate()
                     
 
-        # final production training (no validation split)
+        # --- Final Model Saving ---
+        # Automatically saves the model if trained on the full dataset
         if val_split <= 0.01:
             print("!!! Final training run detected (val_split=0). Saving final model...")
             self.save_checkpoint("model.pth")
 
     def train_epoch(self, epoch):
+        # --- Setup Training Epoch ---
         self.model.train()
 
-        # gradient accumulation helps simulate larger batch sizes
+        # Gradient accumulation helps simulate larger batch sizes on constrained hardware
         accum_steps = getattr(self.cfg, 'accum_steps', 8) 
 
         running_loss = 0.0
         self.optimizer.zero_grad()
 
+        # Initialize progress bar
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
 
+        # --- Batch Processing Loop ---
         for i, (videos, labels, dog_ids, video_ids) in enumerate(pbar):
 
+            # Move data to the active device
             videos = videos.to(self.device)
             labels = labels.to(self.device)
 
-            # forward pass → embedding vectors
+            # Forward Pass -> Generate embedding vectors
             embeddings = self.model(videos)
             
-            # miner selects hardest positive/negative pairs in the batch
+            # --- Hard Pair Mining ---
+            # Selects the hardest positive/negative pairs to optimize learning
             hard_pairs = self.miner(embeddings, labels)
 
-            # metric learning loss (triplet / margin based)
+            # --- Metric Learning Loss ---
+            # Computes triplet or margin-based loss using the mined pairs
             loss = self.loss_fn(embeddings, labels, hard_pairs)
             
-            # divide loss for accumulation
+            # --- Backpropagation with Accumulation ---
+            # Divides loss by accumulation steps to average gradients correctly
             loss = loss / accum_steps
             loss.backward()
 
-            # update weights only every accum_steps
+            # Update weights only after specified accumulation steps
             if (i + 1) % accum_steps == 0:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
+            # --- Update Progress Logging ---
             running_loss += loss.item() * accum_steps
             pbar.set_postfix(loss=loss.item() * accum_steps)
 
@@ -91,26 +100,29 @@ class Trainer:
 
     @torch.no_grad()
     def evaluate(self):
-        # switch model to inference mode
+        # --- Switch Model to Inference Mode ---
         self.model.eval()
         
-        # extract normalized embeddings
+        # --- Feature Extraction ---
+        # Extracts normalized embeddings for both query and gallery sets
         q_f, q_pids = self._get_features(self.query_loader, "Querying")
         g_f, g_pids = self._get_features(self.gallery_loader, "Gallerying")
 
-        # closed world = every query identity exists in gallery
+        # --- Closed-World Evaluation ---
+        # Assumes every query identity exists within the gallery
         if self.cfg.world == "closed":
-            dist_mat = 1 - torch.mm(q_f, g_f.t())  # cosine distance
+            dist_mat = 1 - torch.mm(q_f, g_f.t())  # Calculate cosine distance
             r1, r5, mAP = self.calculate_cmc_map(dist_mat.numpy(), q_pids.numpy(), g_pids.numpy())
             
             print(f"Eval (Closed) -> Rank-1: {r1:.2%}, Rank-5: {r5:.2%}, mAP: {mAP:.2%}")
             return r1, r5, mAP
 
-        # open world = some queries do not exist in gallery
+        # --- Open-World Evaluation ---
+        # Assumes some queries may not exist within the gallery
         else:
             thresh, dir_curve, far_curve = self.dir_vs_far(q_f, q_pids, g_f, g_pids)
             
-            # pick DIR values at specific FAR levels
+            # Select DIR values at specific False Accept Rates (FAR)
             idx_1pct = np.argmin(np.abs(far_curve - 0.01))
             idx_5pct = np.argmin(np.abs(far_curve - 0.05))
             idx_10pct = np.argmin(np.abs(far_curve - 0.10))
@@ -121,20 +133,21 @@ class Trainer:
 
             print(f"Eval (Open) -> DIR@1%FAR: {dir_1:.2%}, DIR@5%FAR: {dir_5:.2%}, DIR@10%FAR: {dir_10:.2%}")
             
-            # returned values used by training loop
+            # Returned values are typically logged by the training loop
             return dir_1, dir_5, dir_10
 
     def _get_features(self, loader, name):
+        # --- Extract Embeddings from Dataloader ---
         feats, pids = [], []
 
         for batch in tqdm(loader, desc=name):
             clips = batch[0].to(self.device)
             labels = batch[1]
 
-            # extract embeddings
+            # Forward pass to get features
             f = self.model(clips)
 
-            # normalize → cosine similarity becomes dot product
+            # Normalize embeddings -> Allows cosine similarity via dot product
             f = F.normalize(f, p=2, dim=1)
 
             feats.append(f.cpu())
@@ -143,13 +156,13 @@ class Trainer:
         return torch.cat(feats, 0), torch.tensor(pids)
 
     def calculate_cmc_map(self, distmat, q_pids, g_pids):
-        # classic person-reid evaluation
+        # --- Classic Person/Object Re-ID Evaluation Metrics ---
         num_q, num_g = distmat.shape
 
-        # sort gallery by distance for each query
+        # Sort the gallery indices by distance for each query
         indices = np.argsort(distmat, axis=1)
 
-        # binary match matrix
+        # Create a binary matrix indicating true matches
         matches = (g_pids[indices] == q_pids[:, np.newaxis]).astype(np.int32)
 
         all_cmc, all_AP = [], []
@@ -158,67 +171,73 @@ class Trainer:
 
             row_matches = matches[i]
 
-            # skip queries with no correct match
+            # Skip calculation if the query has no correct match in the gallery
             if not np.any(row_matches):
                 continue
 
-            # first correct match position
+            # Find the position of the first correct match
             index = np.where(row_matches == 1)[0][0]
             all_cmc.append(index)
 
-            # average precision computation
+            # --- Average Precision (AP) Computation ---
             cum_matches = np.cumsum(row_matches)
             prec = cum_matches / (np.arange(num_g) + 1)
             all_AP.append(np.sum(prec * row_matches) / np.sum(row_matches))
 
         cmc = np.zeros(num_g)
 
+        # Accumulate counts for CMC curve
         for rank in all_cmc:
             cmc[rank:] += 1
 
+        # Normalize to get probabilities
         cmc /= len(all_cmc) if len(all_cmc) > 0 else 1
 
         return cmc[0], cmc[4], np.mean(all_AP)
 
     def dir_vs_far(self, query_features, query_labels, gallery_features, gallery_labels, thresholds=None):
 
-        # used for open-world evaluation
-        # DIR = detection identification rate
-        # FAR = false accept rate
+        # --- Open-World Evaluation Metrics ---
+        # DIR = Detection Identification Rate (True Positive Rate)
+        # FAR = False Accept Rate (False Positive Rate)
 
         if thresholds is None:
             thresholds = torch.linspace(0, 1, 500)
         
+        # Ensure features are normalized
         q_f = F.normalize(query_features, p=2, dim=1)
         g_f = F.normalize(gallery_features, p=2, dim=1)
 
+        # Calculate similarity matrix via dot product
         similarity_mat = q_f @ g_f.T 
 
         q_labels = query_labels.to(q_f.device)
         g_labels = gallery_labels.to(g_f.device)
 
+        # Matrix indicating which queries match which gallery images
         match_matrix = q_labels[:, None] == g_labels[None, :]
 
-        # queries that exist in gallery
+        # Masks separating known (in gallery) vs unknown (not in gallery) queries
         known_mask = torch.any(match_matrix, dim=1) 
-
-        # queries that do not exist in gallery
         unknown_mask = ~known_mask
 
+        # Filter similarities and matches based on masks
         known_sims = similarity_mat[known_mask]      
         known_matches = match_matrix[known_mask]     
         unknown_sims = similarity_mat[unknown_mask]  
 
         dir_list, far_list = [], []
 
-        # best match per query
+        # Find the highest similarity score for known queries
         max_vals_known, max_idx_known = known_sims.max(dim=1)
 
-        # check if best match is correct identity
+        # Verify if the highest scoring gallery image is the correct identity
         top_is_correct = known_matches.gather(1, max_idx_known.unsqueeze(1)).squeeze(1)
 
+        # Find the highest similarity score for unknown queries
         max_vals_unknown, _ = unknown_sims.max(dim=1) if unknown_sims.numel() > 0 else (torch.tensor([]), None)
 
+        # Calculate metrics across different thresholds
         for thresh in thresholds:
 
             if known_sims.numel() > 0:
@@ -240,9 +259,8 @@ class Trainer:
 
     def save_checkpoint(self, filename):
 
-        # different folder depending on experiment vs final model
+        # --- Directory Configuration ---
         val_split = getattr(self.cfg, 'val_split', 0)
-
         target_dir = self.cfg.output_dir
             
         if not os.path.exists(target_dir):
@@ -251,7 +269,8 @@ class Trainer:
         path = os.path.join(target_dir, filename)
         meta_path = path.replace(".pth", "_params.json")
 
-        # handle DataParallel models
+        # --- Model State Extraction ---
+        # Handle models wrapped in DataParallel
         state_dict = self.model.module.state_dict() if hasattr(self.model, 'module') else self.model.state_dict()
 
         checkpoint_data = {
@@ -260,9 +279,11 @@ class Trainer:
             'val_split': val_split
         }
 
+        # Save weights
         torch.save(checkpoint_data, path)
 
-        # parameters saved for reproducibility
+        # --- Metadata Saving ---
+        # Save specific config parameters alongside the model for reproducibility
         allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size', 
                         'k', 'model', 'world', 'clip_len', 'epochs',
                         "accum_steps", "num_workers", "chunk_size"]

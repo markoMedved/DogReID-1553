@@ -4,6 +4,7 @@ import torch
 from pathlib import Path
 from collections import OrderedDict
 
+# --- Path Configuration ---
 # Make project root visible so imports like "models", "data", etc. work
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
@@ -15,13 +16,15 @@ if str(ROOT_DIR) not in sys.path:
 
 
 # =================================================================
-# CONFIGURABLE SETTINGS
+# --- CONFIGURABLE SETTINGS ---
 # =================================================================
 
+# --- Evaluation Environment ---
 # closed = all query dogs exist in gallery
 # open   = some query dogs are not in gallery
 WORLD_TYPE = "closed"
 
+# --- Model Identification ---
 # model identifier used for paths and output folders
 MODEL_NAME = "dinov2"
 
@@ -29,7 +32,7 @@ MODEL_NAME = "dinov2"
 MODEL_PATH = f"/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/experiments/{MODEL_NAME}_{WORLD_TYPE}_v1/final_model_{MODEL_NAME}/final_model.pth"
 
 
-# MODEL ARCHITECTURE SELECTION
+# --- MODEL ARCHITECTURE SELECTION ---
 # swapping this class switches the entire backbone
 from models.dinov2_builder import DINOv2ReID
 from models.swin_builder import VideoSwin
@@ -38,6 +41,7 @@ from models.vit_builder import VideoViT
 MODEL_CLASS = DINOv2ReID
 
 
+# --- Output Configuration ---
 # where evaluation CSV files will be stored
 OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_v1"
 
@@ -54,6 +58,7 @@ from evaluation_utils import (
 )
 
 
+# --- Setup Configuration Object ---
 # create configuration object
 cfg = Config()
 
@@ -69,7 +74,7 @@ cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
 
 # -------------------------------------------------------------
-# Initialize Model
+# --- Initialize Model ---
 # -------------------------------------------------------------
 
 print(f"-> Initializing Architecture: {MODEL_CLASS.__name__}...")
@@ -84,6 +89,7 @@ print(f"-> Loading Weights: {MODEL_PATH}")
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"Model checkpoint not found at: {MODEL_PATH}")
 
+# --- Load Checkpoint ---
 # load checkpoint
 checkpoint = torch.load(MODEL_PATH, map_location=cfg.device)
 
@@ -91,6 +97,7 @@ checkpoint = torch.load(MODEL_PATH, map_location=cfg.device)
 state_dict = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
 
 
+# --- Handle DataParallel / DDP Weights ---
 # remove "module." prefix if model was trained with DataParallel / DDP
 new_state_dict = OrderedDict()
 
@@ -107,7 +114,7 @@ model.eval()
 
 
 # -------------------------------------------------------------
-# Build Query / Gallery Dataloaders
+# --- Build Query / Gallery Dataloaders ---
 # -------------------------------------------------------------
 
 print(f"-> Preparing {cfg.world.upper()} test dataloaders...")
@@ -120,7 +127,7 @@ else:
 
 
 # -------------------------------------------------------------
-# Run Inference and Generate Distance Matrix
+# --- Run Inference and Generate Distance Matrix ---
 # -------------------------------------------------------------
 
 print(f"-> Running Inference...")

@@ -8,12 +8,12 @@ from pytorch_metric_learning.samplers import MPerClassSampler
 def build_dataloaders(cfg):
     transform = VideoTransform()
 
-    # global DOG_ID mapping
+    # --- Global DOG_ID Mapping ---
     full_df = pd.read_csv(cfg.split_file)
     all_unique_ids = sorted(full_df["DOG_ID"].unique())
     global_id_map = {dog_id: i for i, dog_id in enumerate(all_unique_ids)}
 
-    # shared dataset parameters
+    # --- Shared Dataset Parameters ---
     dataset_kwargs = {
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
@@ -23,10 +23,11 @@ def build_dataloaders(cfg):
         "label_map": global_id_map
     }
 
-    # base dataset (SPLIT='train')
+    # --- Base Training Dataset (SPLIT='train') ---
     base_train_dataset = DOGVideoREIDDataset(split="train", **dataset_kwargs)
 
-    # split dog IDs for validation (avoid identity leakage)
+    # --- Split Dog IDs for Validation ---
+    # Avoids identity leakage between training and validation sets
     unique_train_dog_ids = np.array(sorted(list(set(base_train_dataset.dog_ids))))
     
     np.random.seed(42)
@@ -35,12 +36,13 @@ def build_dataloaders(cfg):
     val_id_count = int(len(unique_train_dog_ids) * cfg.val_split)
     val_dog_ids = set(unique_train_dog_ids[:val_id_count])
 
-    # collect indices
+    # --- Collect Indices ---
     train_indices = []
     val_query_indices = []
     val_gallery_indices = []
 
-    # split validation into query/gallery using GROUP
+    # --- Split Validation into Query/Gallery ---
+    # Utilizes 'GROUP' logic to separate query vs. gallery samples
     for i in range(len(base_train_dataset)):
         dog_id = base_train_dataset.dog_ids[i]
 
@@ -53,12 +55,13 @@ def build_dataloaders(cfg):
         else:
             train_indices.append(i)
 
-    # create subsets
+    # --- Create PyTorch Subsets ---
     train_dataset = Subset(base_train_dataset, train_indices)
     val_query_dataset = Subset(base_train_dataset, val_query_indices)
     val_gallery_dataset = Subset(base_train_dataset, val_gallery_indices)
 
-    # PK sampler (P IDs × K clips)
+    # --- PK Sampler Initialization ---
+    # Ensures batches contain 'P' identities with 'K' clips each
     subset_labels = [base_train_dataset.labels[i] for i in train_indices]
     
     sampler = MPerClassSampler(
@@ -68,7 +71,7 @@ def build_dataloaders(cfg):
         length_before_new_iter=len(train_dataset) 
     )
 
-    # dataloaders
+    # --- Construct DataLoaders ---
     train_loader = DataLoader(
         train_dataset, batch_size=cfg.batch_size, sampler=sampler, 
         drop_last=True, num_workers=cfg.num_workers
@@ -93,13 +96,14 @@ def build_dataloaders(cfg):
 
 def build_test_loaders(cfg, images=False):
     """Test loaders using CSV splits."""
-    transform = VideoTransform()
+    transform = VideoTransform(is_training=False)
     full_df = pd.read_csv(cfg.split_file)
     
-    # same global ID map
+    # --- Global DOG_ID Mapping ---
     all_unique_ids = sorted(full_df["DOG_ID"].unique())
     global_id_map = {dog_id: i for i, dog_id in enumerate(all_unique_ids)}
 
+    # --- Shared Dataset Parameters ---
     dataset_kwargs = {
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
@@ -108,7 +112,7 @@ def build_test_loaders(cfg, images=False):
         "label_map": global_id_map
     }
 
-    # query/gallery datasets
+    # --- Query and Gallery Datasets ---
     query_dataset = DOGVideoREIDDataset(
             split="query", 
             use_videos=not images, 
@@ -118,6 +122,7 @@ def build_test_loaders(cfg, images=False):
     
     gallery_dataset = DOGVideoREIDDataset(split="gallery", **dataset_kwargs)
 
+    # --- Construct Test DataLoaders ---
     query_loader = DataLoader(
         query_dataset, batch_size=cfg.batch_size * 2, 
         shuffle=False, num_workers=cfg.num_workers, pin_memory=True

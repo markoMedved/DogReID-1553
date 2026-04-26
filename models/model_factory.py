@@ -1,5 +1,4 @@
-# Import available model architectures
-# from .video_resnet_reid import VideoResNetReID
+# --- Import Available Model Architectures ---
 from .vit_builder import VideoViT
 from .swin_builder import VideoSwin
 from .dinov2_builder import DINOv2ReID
@@ -7,23 +6,27 @@ from .dinov2_builder import DINOv2ReID
 
 def build_model(cfg):
     """
-    Factory function that builds the correct model
-    based on the configuration file.
+    Factory function to instantiate the requested model architecture
+    based on the provided configuration parameters.
     """
 
+    # --- Model Selection Routing ---
+
     if cfg.model == "dinov2":
-        # Using the "reg" variant which is more robust to background artifacts
+        # Initializes DINOv2 with registers (vitb14_reg)
+        # Registers help the model ignore background artifacts and distractors
         model = DINOv2ReID(variant="vitb14_reg")
 
     elif cfg.model == "vit":
-        # Standard Vision Transformer video model
+        # Initializes a standard Vision Transformer adapted for video processing
         model = VideoViT()
 
     elif cfg.model == "swin":
-        # Swin Transformer video backbone
+        # Initializes a Swin Transformer backbone for hierarchical video feature extraction
         model = VideoSwin()
 
     else:
-        raise ValueError(f"Unknown model: {cfg.model}")
+        # Fallback for unsupported or misspelled model configurations
+        raise ValueError(f"Unknown model architecture requested: {cfg.model}")
 
     return model

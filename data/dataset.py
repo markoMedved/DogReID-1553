@@ -19,16 +19,15 @@ class DOGVideoREIDDataset(Dataset):
         self.world = world
         self.split = split
 
-        # load split CSV
+        # --- Load Split Data ---
         df = pd.read_csv(split_file)
 
-    
-
-        # choose correct split column depending on world setting
+        # --- Select Split Column Based on World Setting ---
         split_col = "SPLIT_CLOSED_SET" if world == "closed" else "SPLIT_OPEN_SET"
         df = df[df[split_col] == split]
 
-        # remove identities with only one sample (needed for metric learning)
+        # --- Remove Identities with Only One Sample ---
+        # This is strictly required for proper metric learning during training
         if self.split == "train":
             counts = df["DOG_ID"].value_counts()
             valid_ids = counts[counts > 1].index
@@ -36,17 +35,18 @@ class DOGVideoREIDDataset(Dataset):
         
         self.df = df.reset_index(drop=True)
 
-        # store dog ids for external access (used by dataloader)
+        # --- Store Dog IDs for External Access ---
+        # Accessed by the dataloader to facilitate sampling logic
         self.dog_ids = self.df["DOG_ID"].tolist()
 
-        # build dog_id → label mapping
+        # --- Build Dog ID to Label Mapping ---
         if label_map is None:
             dog_ids = sorted(self.df["DOG_ID"].unique())
             self.id_map = {dog_id: i for i, dog_id in enumerate(dog_ids)}
         else:
             self.id_map = label_map
 
-        # integer labels used during training
+        # --- Assign Integer Labels for Training ---
         self._labels = self.df["DOG_ID"].map(
             lambda x: self.id_map.get(x, -1)
         ).tolist()
@@ -56,16 +56,16 @@ class DOGVideoREIDDataset(Dataset):
 
     @property
     def labels(self):
-        # used by MPerClassSampler
+        # Property accessed directly by MPerClassSampler
         return self._labels
 
     def _get_path(self, dog_id, video_id):
 
-        # choose dataset folder
+        # --- Choose Dataset Folder and Extension ---
         folder = "Videos" if self.use_videos else "Images"
         ext = "mp4" if self.use_videos else "jpg"
         
-        # dataset naming format
+        # --- Construct Filename Based on Dataset Format ---
         filename = f"{dog_id}-{video_id}.{ext}"
 
         return os.path.join(self.root_dir, folder, dog_id, filename)
@@ -79,14 +79,14 @@ class DOGVideoREIDDataset(Dataset):
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Missing: {path}")
 
-            # Data Loading
+            # --- Data Loading ---
             if self.use_videos:
                 clip = load_video_clip(path, self.clip_len, is_training=(self.split == "train"))
             else:
                 img = Image.open(path).convert("RGB")
                 clip = [np.array(img)]
 
-            # Transformation Pipeline
+            # --- Transformation Pipeline ---
             if self.transform:
                 transformed_frames = []
                 seed = np.random.randint(2147483647)
@@ -102,7 +102,7 @@ class DOGVideoREIDDataset(Dataset):
 
                 clip = torch.stack(transformed_frames)
             else:
-                # (T, H, W, C) -> (T, C, H, W)
+                # Convert tensor format: (T, H, W, C) -> (T, C, H, W)
                 clip = torch.from_numpy(np.array(clip)).permute(0, 3, 1, 2).float() / 255.0
 
             return clip, self._labels[idx], dog_id, video_id

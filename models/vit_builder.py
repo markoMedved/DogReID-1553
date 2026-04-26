@@ -13,70 +13,77 @@ class TemporalAttentionPool(nn.Module):
     def __init__(self, dim):
         super().__init__()
 
-        # small MLP producing a scalar weight per frame
+        # --- Attention Network ---
+        # Small MLP producing a scalar weight per frame
         self.attn = nn.Sequential(
             nn.Linear(dim, 512),
             nn.Tanh(),
             nn.Linear(512, 1),
-            nn.Softmax(dim=1)  # normalize across time dimension
+            nn.Softmax(dim=1)  # Normalize across the time dimension
         )
 
     def forward(self, x):
-        # x shape: (B, T, D)
+        # Input shape: (B, T, D)
 
-        # compute frame importance weights
-        weights = self.attn(x)  # (B, T, 1)
+        # --- Compute Attention Weights ---
+        weights = self.attn(x)  # Output shape: (B, T, 1)
 
-        # weighted temporal aggregation
+        # --- Apply Weighted Pooling ---
+        # Weighted temporal aggregation via broadcasting
         return (x * weights).sum(dim=1)
 
 
 class VideoViT(nn.Module):
     """
-    Video ReID model using a ViT-B/16 backbone.
+    Video ReID model utilizing a ViT-B/16 backbone.
 
     Pipeline:
-    frames → ViT backbone → temporal attention pooling → BN neck → L2 normalize
+    frames -> ViT backbone -> temporal attention pooling -> BN neck -> L2 normalize
     """
 
     def __init__(self, chunk_size=16):
         super().__init__()
 
-        # load pretrained Vision Transformer
+        # --- Load Pretrained Backbone ---
+        # Initializes Vision Transformer with default ImageNet weights
         weights = ViT_B_16_Weights.DEFAULT
         self.backbone = vit_b_16(weights=weights)
 
-        # remove classification head (we want embeddings instead)
+        # Remove classification head to extract raw embeddings instead of logits
         self.backbone.heads = nn.Identity()
 
-        # feature dimension for ViT-B
+        # Feature dimension for standard ViT-B
         self.dim = 768
 
-        # process frames in chunks to reduce VRAM spikes
+        # --- Memory Management ---
+        # Process frames in chunks to prevent VRAM overflow
         self.chunk_size = chunk_size
 
-        # temporal attention module
+        # --- Temporal Aggregation ---
         self.temporal_pool = TemporalAttentionPool(self.dim)
 
-        # BN-Neck used in most ReID pipelines
+        # --- BN-Neck ---
+        # Stabilizes the embedding space before metric learning (used in most ReID pipelines)
         self.bn = nn.BatchNorm1d(self.dim)
+        
+        # Bias is typically frozen in BN-Neck implementations
         self.bn.bias.requires_grad_(False)
 
     def forward(self, x):
 
-        # expected input:
-        # video: (B, T, C, H, W)
-        # image: (B, C, H, W)
+        # Expected input dimensionalities:
+        # Video: (B, T, C, H, W)
+        # Image: (B, C, H, W)
 
         if x.dim() == 5:
 
             B, T, C, H, W = x.shape
 
-            # flatten temporal dimension
+            # Flatten temporal dimension for independent frame processing
             x = x.view(B * T, C, H, W)
 
-            # --- CHUNKED FORWARD ---
-            # prevents GPU OOM when processing long clips
+            # --- Chunked Forward Pass ---
+            # Processing frames in smaller chunks prevents GPU Out-Of-Memory errors on long clips
             chunks = torch.split(x, self.chunk_size, dim=0)
 
             feats = torch.cat(
@@ -84,18 +91,20 @@ class VideoViT(nn.Module):
                 dim=0
             )
 
-            # restore temporal dimension
+            # Restore the temporal dimension structure
             feats = feats.view(B, T, -1)
 
-            # temporal attention pooling
+            # --- Temporal Attention Pooling ---
+            # Aggregate frame-level features into a single clip embedding
             feats = self.temporal_pool(feats)
 
         else:
-            # fallback for single images
+            # Fallback for standard single-image forward pass
             feats = self.backbone(x)
 
-        # BN-Neck
+        # --- BN-Neck Application ---
         feats = self.bn(feats)
 
-        # normalize embeddings to unit hypersphere
+        # --- L2 Normalization ---
+        # Ensures embeddings lie on a unit hypersphere, making cosine similarity equivalent to the dot product
         return F.normalize(feats, p=2, dim=1)

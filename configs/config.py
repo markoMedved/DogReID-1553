@@ -4,63 +4,54 @@ from pathlib import Path
 class Config:
     """
     Dog Re-ID training configuration.
-    Designed for DINOv2 / Swin on H100 (MIG 32GB).
     """
     
-    # --- Experiment ---
-    model = "swin"   # 'dinov2', 'swin', 'vit'
-    world = "open"   # 'closed' or 'open'
+    # --- Experiment Settings ---
+    model = "swin"       # Options: 'dinov2', 'swin', 'vit'
+    world = "open"       # Options: 'closed', 'open'
     run_name = f"{model}_{world}_v1"
 
-    # --- Paths ---
+    # --- Directory Paths ---
     project_root = Path(__file__).resolve().parent.parent
     data_root    = project_root 
     split_file   = project_root / "splits.csv"
-    
-    # outputs
     output_dir   = project_root / "trained_models" / f"{model}_{world}"
 
-    # --- Hardware ---
+    # --- Hardware & Compute ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_workers = 12      # dataloader workers
-    chunk_size  = 16      # frames processed at once
+    num_workers = 12     # Number of dataloader workers
+    chunk_size  = 16     # Number of frames processed simultaneously
 
-    # --- Batch Sampling (PK) ---
-    # batch = P identities × K clips
-    batch_size = 16     
-    k = 4                
+    # --- Batch Sampling (PK Strategy) ---
+    batch_size = 16      # Total batch size (P identities × K clips)
+    k = 4                # Number of clips per identity
     num_ids = batch_size // k 
-    
-    # video clip length
-    clip_len = 16    
+    clip_len = 16        # Frame length of each video clip
+    val_split = 0.2      # Validation set ratio
 
-    val_split = 0
-
-    # --- Model ---
-    embedding_dim = 768
+    # --- Model Architecture ---
+    embedding_dim = 768  # Default embedding dimension
     
-    # --- Optimization ---
+    # --- Training & Optimization ---
     epochs = 50
     weight_decay = 5e-05
-    margin = 0.25
-    lr =  2e-05
-    
-    # gradient accumulation (simulate larger batch)
-    accum_steps = 8      
+    margin = 0.25        # Loss margin
+    lr = 2e-05           # Learning rate
+    accum_steps = 8      # Gradient accumulation steps to simulate larger batch
 
     # --- Evaluation ---
-    eval_period = 100
-    eval_only   = False
+    eval_period = 0      # Epochs between evaluations 
+    eval_only   = False  # Toggle for evaluation-only mode
 
     def __init__(self):
-            """Create experiment directory."""
-            self.output_dir.mkdir(parents=True, exist_ok=True)
-            if self.model == "swin":
-                self.embedding_dim = 1024
-            
+        """Create experiment directory and apply model-specific overrides."""
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        if self.model == "swin":
+            self.embedding_dim = 1024
 
     def display(self):
-        """Print config table."""
+        """Print a formatted table of the configuration settings."""
         print("\n" + "="*50)
         print(f"DOG RE-ID CONFIGURATION: {self.run_name}")
         print("-"*50)
@@ -83,5 +74,5 @@ class Config:
         print("="*50 + "\n")
 
     def __repr__(self):
-        """Short config summary."""
+        """Return a short summary of the config instance."""
         return f"<Config: {self.run_name} | Model: {self.model} | Device: {self.device}>"
