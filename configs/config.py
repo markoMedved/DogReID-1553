@@ -8,8 +8,8 @@ class Config:
     """
     
     # --- Experiment ---
-    model = "vit"   # 'dinov2', 'swin', 'vit'
-    world = "closed"   # 'closed' or 'open'
+    model = "swin"   # 'dinov2', 'swin', 'vit'
+    world = "open"   # 'closed' or 'open'
     run_name = f"{model}_{world}_v1"
 
     # --- Paths ---
@@ -18,8 +18,7 @@ class Config:
     split_file   = project_root / "splits.csv"
     
     # outputs
-    output_dir   = project_root / "experiments" / run_name
-    checkpoint_path = output_dir / "best_model.pth"
+    output_dir   = project_root / "trained_models" / f"{model}_{world}"
 
     # --- Hardware ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -43,8 +42,8 @@ class Config:
     # --- Optimization ---
     epochs = 50
     weight_decay = 5e-05
-    margin = 0.3
-    lr = 1e-05
+    margin = 0.25
+    lr =  2e-05
     
     # gradient accumulation (simulate larger batch)
     accum_steps = 8      

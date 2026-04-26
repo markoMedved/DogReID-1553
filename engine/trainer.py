@@ -43,18 +43,11 @@ class Trainer:
                 if (epoch + 1) % self.cfg.eval_period == 0:
                     rank1, rank5, mAP = self.evaluate()
                     
-                    # keep best performing model
-                    if rank1 > best_rank1:
-                        best_rank1 = rank1
-                        self.save_checkpoint("best_model.pth")
-                
-                # always keep last checkpoint
-                self.save_checkpoint("last_model.pth")
 
         # final production training (no validation split)
         if val_split <= 0.01:
             print("!!! Final training run detected (val_split=0). Saving final model...")
-            self.save_checkpoint("final_model.pth")
+            self.save_checkpoint("model.pth")
 
     def train_epoch(self, epoch):
         self.model.train()
@@ -249,12 +242,8 @@ class Trainer:
 
         # different folder depending on experiment vs final model
         val_split = getattr(self.cfg, 'val_split', 0)
-        
-        if val_split == 0:
-            subfolder = f"final_model_{self.cfg.model}"
-            target_dir = os.path.join(self.cfg.output_dir, subfolder)
-        else:
-            target_dir = self.cfg.output_dir
+
+        target_dir = self.cfg.output_dir
             
         if not os.path.exists(target_dir):
             os.makedirs(target_dir, exist_ok=True)
@@ -274,7 +263,9 @@ class Trainer:
         torch.save(checkpoint_data, path)
 
         # parameters saved for reproducibility
-        allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size', 'k', 'model', 'world', 'clip_len']
+        allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size', 
+                        'k', 'model', 'world', 'clip_len', 'epochs',
+                        "accum_steps", "num_workers", "chunk_size"]
 
         params_to_save = {}
 

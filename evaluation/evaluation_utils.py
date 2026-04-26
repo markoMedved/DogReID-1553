@@ -37,12 +37,14 @@ def generate_distance_csv(model, query_loader, gallery_loader, cfg, filename="di
     df.insert(0, 'queryId', q_ids)
 
     output_path = Path(cfg.output_dir) / filename
-    df.to_csv(output_path, sep=';', index=False)
+    # Fixed: writing with a comma
+    df.to_csv(output_path, sep=',', index=False)
     print(f"Distance CSV successfully created: {output_path}")
     return output_path
 
 def bootstrap_from_csv(csv_path, m=100, mode="closed", random_state=42):
-    df_full = pd.read_csv(csv_path, sep=';')
+    # Fixed: reading with a comma
+    df_full = pd.read_csv(csv_path, sep=',')
     get_dog_label = lambda x: str(x).split('_')[0]
 
     query_labels = np.array([get_dog_label(i) for i in df_full['queryId'].values])
