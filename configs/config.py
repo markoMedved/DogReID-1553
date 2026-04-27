@@ -19,7 +19,7 @@ class Config:
 
     # --- Hardware & Compute ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_workers = 12     # Number of dataloader workers
+    num_workers = 0     # Number of dataloader workers
     chunk_size  = 16     # Number of frames processed simultaneously
 
     # --- Batch Sampling (PK Strategy) ---

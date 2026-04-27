@@ -9,7 +9,7 @@ from collections import OrderedDict
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
 
-USE_IMAGES = False
+USE_IMAGES = True
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
@@ -22,7 +22,7 @@ if str(ROOT_DIR) not in sys.path:
 # --- Evaluation Environment ---
 # closed = all query dogs exist in gallery
 # open   = some query dogs are not in gallery
-WORLD_TYPE = "open"
+WORLD_TYPE = "closed"
 
 # --- Model Identification ---
 # model identifier used for paths and output folders
