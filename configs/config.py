@@ -41,7 +41,7 @@ class Config:
 
     # --- Evaluation ---
     eval_period = 1      # Epochs between evaluations 
-    eval_only   = False  # Toggle for evaluation-only mode
+    eval_only   = False  
 
     def __init__(self):
         """Create experiment directory and apply model-specific overrides."""
