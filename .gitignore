@@ -37,3 +37,5 @@ sampled_dataset
 dataset_description.md
 csv_construct.md
 test_logs_OLD
+det_job.sh
+logs_det

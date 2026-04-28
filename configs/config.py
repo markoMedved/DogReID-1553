@@ -19,7 +19,7 @@ class Config:
 
     # --- Hardware & Compute ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_workers = 0     # Number of dataloader workers
+    num_workers = 12    # Number of dataloader workers
     chunk_size  = 16     # Number of frames processed simultaneously
 
     # --- Batch Sampling (PK Strategy) ---
@@ -33,9 +33,9 @@ class Config:
     embedding_dim = 768  # Default embedding dimension
     
     # --- Training & Optimization ---
-    epochs = 2
-    weight_decay = 5e-05
-    margin = 0.25        # Loss margin
+    epochs = 50
+    weight_decay = 1e-05
+    margin = 0.3       # Loss margin
     lr = 2e-05           # Learning rate
     accum_steps = 8      # Gradient accumulation steps to simulate larger batch
 

@@ -165,13 +165,12 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
     known_mask   = np.isin(q_labels, g_labels)
     unknown_mask = ~known_mask
 
-    best_dist    = np.min(dist_mat, axis=1)        
-    best_idx     = np.argmin(dist_mat, axis=1)      
+    best_dist     = np.min(dist_mat, axis=1)        
+    best_idx      = np.argmin(dist_mat, axis=1)      
     correct_match = g_labels[best_idx] == q_labels    
 
     thresholds = np.linspace(0, 2, _N_THRESHOLDS)  
 
-    # --- Vectorized DIR and FAR curves ---
     known_dists   = best_dist[known_mask]             
     known_correct = correct_match[known_mask]         
     unknown_dists = best_dist[unknown_mask]           
@@ -179,28 +178,34 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
     n_known   = known_mask.sum()
     n_unknown = unknown_mask.sum()
 
+    # --- Corrected Vectorized Logic ---
     if n_known > 0:
-        under_and_correct = (known_dists[:, None] < thresholds) & known_correct[:, None]
+        # DIR: Correct identity AND distance below threshold
+        under_and_correct = (known_dists[:, None] <= thresholds) & known_correct[:, None]
         dirs_at_t = under_and_correct.sum(axis=0) / n_known  
     else:
         dirs_at_t = np.zeros(_N_THRESHOLDS)
 
     if n_unknown > 0:
-        under_unknown = unknown_dists[:, None] < thresholds
-        fars_at_t = under_unknown.sum(axis=0) / n_unknown     
+        # FAR: Any "unknown" dog that falls below the distance threshold (false alarm)
+        under_unknown = unknown_dists[:, None] <= thresholds
+        fars_at_t = under_unknown.sum(axis=0) / n_unknown  # FIXED: Removed the zero overwrite
+    else:
         fars_at_t = np.zeros(_N_THRESHOLDS)
 
-    # --- DIR at standard FAR operating points ---
     res = {"dirs": dirs_at_t, "fars": fars_at_t}
 
+    # Interpolate DIR at specific FAR points
     for target in _DIR_FAR_TARGETS:
-        idx      = np.argmin(np.abs(fars_at_t - target))
-        achieved = fars_at_t[idx]
-        res[target] = (
-            float(dirs_at_t[idx])
-            if np.abs(achieved - target) <= _FAR_TOLERANCE
-            else float("nan")
-        )
+        # Find the threshold index where FAR is closest to our target (e.g., 0.01)
+        idx = np.argmin(np.abs(fars_at_t - target))
+        achieved_far = fars_at_t[idx]
+        
+        # Check if we actually reached the target FAR within tolerance
+        if np.abs(achieved_far - target) <= _FAR_TOLERANCE:
+            res[target] = float(dirs_at_t[idx])
+        else:
+            res[target] = float("nan")
 
     return res
 

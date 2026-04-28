@@ -7,46 +7,46 @@ import numpy as np
 import random
 from PIL import Image
 from ultralytics import YOLO
+from pathlib import Path
 
 COCO_DOG_CLASS = 16  # COCO class index for 'dog'
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_YOLO_PATH = os.path.join(PROJECT_ROOT, "runs", "detect", "yolo11_dogs", "weights", "best.pt")
 
-
-def load_yolo(model_name: str = "yolo11n.pt", device: torch.device = None) -> YOLO:
-    """Load YOLOv11 model onto the specified device."""
-    model = YOLO(model_name)
-    if device is not None:
-        model.to(device)
-    return model
-
-
-def detect_dog_box(
-    yolo: YOLO,
-    frame: Image.Image,
-    conf_threshold: float = 0.3,
-) -> tuple[int, int, int, int] | None:
+def load_yolo(custom_path: str = DEFAULT_YOLO_PATH, 
+              fallback_model: str = "yolo11n.pt", 
+              device: torch.device = None) -> tuple[YOLO, int]:
     """
-    Run YOLO on a single PIL frame and return the highest-confidence dog box.
-
-    Args:
-        yolo:           Loaded YOLO model.
-        frame:          PIL Image (raw, before transforms).
-        conf_threshold: Minimum confidence to accept a detection.
-    Returns:
-        (x1, y1, x2, y2) in pixel coordinates, or None if no dog found.
+    Returns (YOLO_Model_Object, Dog_Class_Index)
     """
+    if os.path.exists(custom_path):
+        print(f"-> Loading Custom YOLO: {custom_path}")
+        model = YOLO(custom_path)
+        class_id = 0  # Custom model dog index
+    else:
+        print(f"-> Custom weights not found. Fallback: {fallback_model}")
+        model = YOLO(fallback_model)
+        class_id = 16 # COCO dog index
+
+    # Use CPU to avoid CUDA initialization errors in DataLoader workers
+    target_device = device if device is not None else torch.device("cpu")
+    model.to(target_device)
+    return model, class_id
+
+def detect_dog_box(yolo: YOLO, frame: Image.Image, dog_class_id: int, conf_threshold: float = 0.3):
     results = yolo(frame, verbose=False)[0]
-
-    best_box  = None
-    best_conf = conf_threshold  # only accept detections above this
+    best_box = None
+    best_conf = conf_threshold
 
     for box in results.boxes:
-        cls  = int(box.cls.item())
+        cls = int(box.cls.item())
         conf = float(box.conf.item())
-        if cls == COCO_DOG_CLASS and conf > best_conf:
+        
+        if cls == dog_class_id and conf > best_conf:
             best_conf = conf
-            best_box  = tuple(map(int, box.xyxy[0].tolist()))  # (x1, y1, x2, y2)
+            best_box = tuple(map(int, box.xyxy[0].tolist()))
 
-    return best_box  # None if nothing passed threshold
+    return best_box
 
 
 def crop_frame(
@@ -85,7 +85,8 @@ def crop_frame(
 
 class DOGVideoREIDDataset(Dataset):
     def __init__(self, root_dir, split_file, split="train", clip_len=16, 
-                 transform=None, use_videos=True, world="closed", label_map=None, yolo_model: str | None = "yolo11n.pt"):
+                 transform=None, use_videos=True, world="closed", 
+                 label_map=None, custom_yolo_path="runs/detect/yolo11_dogs/weights/best.pt"):
 
         self.root_dir = root_dir
         self.clip_len = clip_len
@@ -94,7 +95,7 @@ class DOGVideoREIDDataset(Dataset):
         self.world = world
         self.split = split
 
-        self.yolo = load_yolo(yolo_model, device=torch.device("cpu")) if yolo_model else None
+        self.yolo_model, self.dog_class_id = load_yolo(custom_path=custom_yolo_path)
 
         # --- Load Split Data ---
         df = pd.read_csv(split_file)
@@ -164,13 +165,13 @@ class DOGVideoREIDDataset(Dataset):
             clip = [np.array(img)]
 
         # --- YOLO crop (per frame, on raw pixels, before transforms) ---
-        if self.yolo is not None:
+        if self.yolo_model is not None:
             cropped_clip = []
             for frame_arr in clip:
-                pil_frame  = Image.fromarray(frame_arr)
-                box        = detect_dog_box(self.yolo, pil_frame) 
-                pil_frame  = crop_frame(pil_frame, box)             
-                cropped_clip.append(np.array(pil_frame))            
+                pil_frame = Image.fromarray(frame_arr)
+                box = detect_dog_box(self.yolo_model, pil_frame, self.dog_class_id) 
+                pil_frame = crop_frame(pil_frame, box) 
+                cropped_clip.append(np.array(pil_frame)) 
             clip = cropped_clip
 
         if self.transform:

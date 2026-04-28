@@ -12,7 +12,7 @@ from collections import OrderedDict
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
 
-USE_IMAGES = False
+USE_IMAGES = True
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
