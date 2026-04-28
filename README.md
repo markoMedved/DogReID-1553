@@ -52,31 +52,41 @@ We recommend using **Conda** to create an isolated environment.
 
 ### Create Environment
 
-``` bash
+```bash
 conda create -n dog_reid python=3.10 -y
 conda activate dog_reid
 ```
 
-### Install Project Dependencies
+### Install Base Dependencies
 
-    pip install -r requirements.txt
-
-
-### Install PyTorch
-
-Install PyTorch compatible with your CUDA version.
-
-Example for **CUDA 12.1**:
-
-``` bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```bash
+pip install -r requirements.txt
 ```
 
-If you are using **CPU only**:
+### Install PyTorch (separately)
 
-``` bash
-pip install torch torchvision
+Install PyTorch based on your system.
+
+**CUDA 12.1:**
+
+```bash
+pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 ```
+
+**CPU only:**
+
+```bash
+pip install torch torchvision torchaudio
+```
+
+### Install Torch-dependent Libraries
+
+```bash
+pip install pytorch-metric-learning timm
+```
+
+---
+
 
 ------------------------------------------------------------------------
 
