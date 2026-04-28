@@ -75,10 +75,6 @@ class DINOv2ReID(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
-        # Input dimensionalities:
-        # Video: (B, T, C, H, W)
-        # Image: (B, C, H, W)
-
         if x.dim() == 5:
             B, T, C, H, W = x.shape
 
@@ -108,5 +104,4 @@ class DINOv2ReID(nn.Module):
         feats = self.bn(feats)
 
         # --- L2 Normalization ---
-        # Projects embeddings onto a unit hypersphere, making cosine similarity equivalent to the dot product
         return F.normalize(feats, dim=-1)

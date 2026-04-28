@@ -4,41 +4,39 @@ import torch
 from pathlib import Path
 from collections import OrderedDict
 
+# =================================================================
+# --- CONFIGURABLE SETTINGS ---
+# =================================================================
 # --- Path Configuration ---
 # Make project root visible so imports like "models", "data", etc. work
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
 
-USE_IMAGES = True
+USE_IMAGES = False
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-
-# =================================================================
-# --- CONFIGURABLE SETTINGS ---
-# =================================================================
-
 # --- Evaluation Environment ---
 # closed = all query dogs exist in gallery
 # open   = some query dogs are not in gallery
-WORLD_TYPE = "closed"
+WORLD_TYPE = "open"
 
 # --- Model Identification ---
 # model identifier used for paths and output folders
-MODEL_NAME = "swin"
+MODEL_NAME = "vit"
 
 # path to trained checkpoint
 MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{MODEL_NAME}_{WORLD_TYPE}" / "model.pth")
 
 
 # --- MODEL ARCHITECTURE SELECTION ---
-# swapping this class switches the entire backbone
+# swapping this class switches the backbone
 from models.dinov2_builder import DINOv2ReID
 from models.swin_builder import VideoSwin
 from models.vit_builder import VideoViT
 
-MODEL_CLASS = VideoSwin
+MODEL_CLASS = VideoViT
 
 
 # --- Output Configuration ---

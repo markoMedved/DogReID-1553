@@ -5,10 +5,6 @@ from torchvision.models import swin_v2_b, Swin_V2_B_Weights
 
 
 class TemporalAttentionPool(nn.Module):
-    """
-    Learns attention weights over video frames and produces
-    a single feature vector representing the entire clip.
-    """
 
     def __init__(self, dim):
         super().__init__()
@@ -26,7 +22,7 @@ class TemporalAttentionPool(nn.Module):
         # Input shape: (Batch, Time, Dim)
 
         # --- Compute Attention Weights ---
-        weights = self.attn(x)  # Output shape: (B, T, 1)
+        weights = self.attn(x)  
 
         # --- Apply Weighted Pooling ---
         # Broadcasts weights across the feature dimension and sums over time
@@ -34,12 +30,6 @@ class TemporalAttentionPool(nn.Module):
 
 
 class VideoSwin(nn.Module):
-    """
-    Video ReID model utilizing a Swin V2 backbone.
-
-    Pipeline:
-    frames -> Swin backbone -> temporal attention pooling -> BN neck -> L2 normalize
-    """
 
     def __init__(self, num_classes=None, chunk_size=8):
         super().__init__()
@@ -71,10 +61,6 @@ class VideoSwin(nn.Module):
 
     def forward(self, x):
 
-        # Input dimensionalities:
-        # Video: (Batch, Time, Channels, Height, Width)
-        # Image: (Batch, Channels, Height, Width)
-
         if x.dim() == 5:
 
             B, T, C, H, W = x.shape
@@ -83,8 +69,6 @@ class VideoSwin(nn.Module):
             x = x.view(B * T, C, H, W)
 
             # --- Chunked Forward Pass ---
-            # Swin-V2-B is memory intensive.
-            # Processing frames in smaller chunks avoids GPU Out-Of-Memory errors.
             chunks = torch.split(x, self.chunk_size, dim=0)
 
             feats = torch.cat(
@@ -107,5 +91,4 @@ class VideoSwin(nn.Module):
         feats = self.bn(feats)
 
         # --- L2 Normalization ---
-        # Ensures embeddings lie on a unit hypersphere, making cosine similarity equivalent to dot product
         return F.normalize(feats, p=2, dim=1)

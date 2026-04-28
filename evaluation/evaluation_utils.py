@@ -6,7 +6,7 @@ from torch.nn import functional as F
 from pathlib import Path
 
 def _to_scalar(x):
-    """Convert a 0-d tensor or Python scalar to a plain Python value."""
+
     return x.item() if hasattr(x, "item") else x
 
 
@@ -15,17 +15,7 @@ def extract_features_with_ids(
     dataloader: torch.utils.data.DataLoader,
     device: torch.device,
 ) -> tuple[torch.Tensor, list[str]]:
-    """
-    Run inference on all batches and return L2-normalised embeddings
-    together with their 'dogId_videoId' string identifiers.
 
-    Args:
-        model:      Model whose forward() returns (N, D) embeddings.
-        dataloader: Yields (videos, labels, dog_ids, video_ids) batches.
-        device:     Device to run inference on.
-    Returns:
-        Tuple of (embeddings [N, D] float32 CPU tensor, list of N id strings).
-    """
     was_training = model.training
     model.eval()
 
@@ -62,19 +52,6 @@ def generate_distance_csv(
     cfg,
     filename: str = "dist_matrix.csv",
 ) -> Path:
-    """
-    Extract embeddings for query and gallery sets, compute the L2 distance
-    matrix, and save it as a CSV.
-
-    Args:
-        model:          Trained embedding model.
-        query_loader:   DataLoader for query set.
-        gallery_loader: DataLoader for gallery set.
-        cfg:            Config object with .device and .output_dir attributes.
-        filename:       Output CSV filename.
-    Returns:
-        Path to the saved CSV file.
-    """
     q_feat, q_ids = extract_features_with_ids(model, query_loader, cfg.device)
     g_feat, g_ids = extract_features_with_ids(model, gallery_loader, cfg.device)
 
@@ -100,18 +77,7 @@ def bootstrap_from_csv(
     mode: str = "closed",
     random_state: int = 42,
 ) -> dict:
-    """
-    Bootstrap CMC/mAP (closed) or DIR@FAR (open) metrics from a precomputed
-    distance matrix CSV.
-
-    Args:
-        csv_path:     Path to CSV with columns [queryId, galleryId_0, galleryId_1, ...]
-        m:            Number of bootstrap iterations.
-        mode:         'closed' or 'open'.
-        random_state: Seed for reproducibility.
-    Returns:
-        dict of aggregated bootstrap statistics.
-    """
+    
     if mode not in ("closed", "open"):
         raise ValueError(f"mode must be 'closed' or 'open', got '{mode}'")
 
@@ -159,15 +125,6 @@ def bootstrap_from_csv(
 
 
 def _calc_closed_logic(matches: np.ndarray) -> dict:
-    """
-    Compute CMC and mAP for closed-world re-ID evaluation.
-
-    Args:
-        matches: Boolean array (NumQueries, NumGallery) sorted by ascending distance.
-                 matches[i, j] = True if gallery item j is the correct match for query i.
-    Returns:
-        dict with keys: 'mAP' (float), 'cmc' (np.ndarray of length NumGallery)
-    """
     num_gallery = matches.shape[1]
 
     # Filter out queries that have no correct match in the gallery
@@ -205,49 +162,32 @@ _N_THRESHOLDS     = 10_000
 
 
 def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.ndarray) -> dict:
-    """
-    Compute DIR@FAR curve and DIR values at standard FAR operating points
-    for open-world re-ID evaluation.
-
-    Args:
-        dist_mat: (NumQueries, NumGallery) pairwise distance matrix.
-        q_labels: (NumQueries,) identity labels for queries.
-        g_labels: (NumGallery,) identity labels for gallery items.
-    Returns:
-        dict with keys:
-            'dirs'         – DIR curve, shape (N_THRESHOLDS,)
-            'fars'         – FAR curve, shape (N_THRESHOLDS,)
-            0.01, 0.05, 0.1 – DIR at each FAR target (float or NaN if unreachable)
-    """
     known_mask   = np.isin(q_labels, g_labels)
     unknown_mask = ~known_mask
 
-    best_dist    = np.min(dist_mat, axis=1)           # (NumQueries,)
-    best_idx     = np.argmin(dist_mat, axis=1)        # (NumQueries,)
-    correct_match = g_labels[best_idx] == q_labels    # (NumQueries,)
+    best_dist    = np.min(dist_mat, axis=1)        
+    best_idx     = np.argmin(dist_mat, axis=1)      
+    correct_match = g_labels[best_idx] == q_labels    
 
-    thresholds = np.linspace(0, 2, _N_THRESHOLDS)    # (T,)
+    thresholds = np.linspace(0, 2, _N_THRESHOLDS)  
 
     # --- Vectorized DIR and FAR curves ---
-    known_dists   = best_dist[known_mask]             # (K,)
-    known_correct = correct_match[known_mask]         # (K,)
-    unknown_dists = best_dist[unknown_mask]           # (U,)
+    known_dists   = best_dist[known_mask]             
+    known_correct = correct_match[known_mask]         
+    unknown_dists = best_dist[unknown_mask]           
 
     n_known   = known_mask.sum()
     n_unknown = unknown_mask.sum()
 
     if n_known > 0:
-        # (K, T) broadcast: is each known query under threshold AND correct?
         under_and_correct = (known_dists[:, None] < thresholds) & known_correct[:, None]
-        dirs_at_t = under_and_correct.sum(axis=0) / n_known   # (T,)
+        dirs_at_t = under_and_correct.sum(axis=0) / n_known  
     else:
         dirs_at_t = np.zeros(_N_THRESHOLDS)
 
     if n_unknown > 0:
-        # (U, T) broadcast: is each unknown query under threshold?
         under_unknown = unknown_dists[:, None] < thresholds
-        fars_at_t = under_unknown.sum(axis=0) / n_unknown     # (T,)
-    else:
+        fars_at_t = under_unknown.sum(axis=0) / n_unknown     
         fars_at_t = np.zeros(_N_THRESHOLDS)
 
     # --- DIR at standard FAR operating points ---
@@ -268,18 +208,9 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
 # ---------------------------------------------------------------------------
 
 def _aggregate_bootstrap_results(results: list[dict], mode: str) -> dict:
-    """
-    Aggregate per-iteration bootstrap results into means and 95% CIs.
-
-    Args:
-        results: List of dicts returned by _calc_closed_logic or _calc_open_logic.
-        mode:    'closed' or 'open'.
-    Returns:
-        dict of aggregated statistics.
-    """
     if mode == "closed":
         maps = np.array([r["mAP"] for r in results])
-        cmcs = np.array([r["cmc"] for r in results])   # (M, NumGallery)
+        cmcs = np.array([r["cmc"] for r in results])  
 
         mean_cmc = np.mean(cmcs, axis=0)
 
@@ -295,8 +226,8 @@ def _aggregate_bootstrap_results(results: list[dict], mode: str) -> dict:
         }
 
     # --- open ---
-    all_dirs = np.array([r["dirs"] for r in results])  # (M, T)
-    all_fars = np.array([r["fars"] for r in results])  # (M, T)
+    all_dirs = np.array([r["dirs"] for r in results])  
+    all_fars = np.array([r["fars"] for r in results])  
 
     return {
         "mean_fars":  np.mean(all_fars,  axis=0),

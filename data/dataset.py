@@ -27,7 +27,6 @@ class DOGVideoREIDDataset(Dataset):
         df = df[df[split_col] == split]
 
         # --- Remove Identities with Only One Sample ---
-        # This is strictly required for proper metric learning during training
         if self.split == "train":
             counts = df["DOG_ID"].value_counts()
             valid_ids = counts[counts > 1].index
