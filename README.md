@@ -67,7 +67,7 @@ pip install -r requirements.txt
 
 Install PyTorch based on your system.
 
-**CUDA 12.1:**
+**CUDA 12.6:**
 
 ```bash
 pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
