@@ -5,187 +5,302 @@ from tqdm import tqdm
 from torch.nn import functional as F
 from pathlib import Path
 
-def extract_features_with_ids(model, dataloader, device):
-    # --- Set Model to Evaluation Mode ---
+def _to_scalar(x):
+    """Convert a 0-d tensor or Python scalar to a plain Python value."""
+    return x.item() if hasattr(x, "item") else x
+
+
+def extract_features_with_ids(
+    model: torch.nn.Module,
+    dataloader: torch.utils.data.DataLoader,
+    device: torch.device,
+) -> tuple[torch.Tensor, list[str]]:
+    """
+    Run inference on all batches and return L2-normalised embeddings
+    together with their 'dogId_videoId' string identifiers.
+
+    Args:
+        model:      Model whose forward() returns (N, D) embeddings.
+        dataloader: Yields (videos, labels, dog_ids, video_ids) batches.
+        device:     Device to run inference on.
+    Returns:
+        Tuple of (embeddings [N, D] float32 CPU tensor, list of N id strings).
+    """
+    was_training = model.training
     model.eval()
-    all_embeddings = []
-    all_ids = []
+
+    all_embeddings: list[torch.Tensor] = []
+    all_ids: list[str] = []
 
     print(f"-> Extracting features for {len(dataloader.dataset)} samples...")
 
-    # --- Feature Extraction Loop ---
-    with torch.no_grad():
-        for batch in tqdm(dataloader):
-            videos, labels, dog_ids, video_ids = batch
-            
-            # Create unique item identifiers
-            item_ids = [f"{d}_{v}" for d, v in zip(dog_ids, video_ids)]
-            videos = videos.to(device)
+    try:
+        with torch.no_grad():
+            for batch in tqdm(dataloader):
+                videos, _labels, dog_ids, video_ids = batch
 
-            # Forward pass to get embeddings
-            embeddings = model(videos)
-            
-            # L2 Normalize embeddings for cosine similarity equivalence
-            embeddings = F.normalize(embeddings, p=2, dim=1)
+                item_ids = [
+                    f"{_to_scalar(d)}_{_to_scalar(v)}"
+                    for d, v in zip(dog_ids, video_ids)
+                ]
 
-            all_embeddings.append(embeddings.cpu())
-            all_ids.extend(item_ids)
+                # Normalize on device, then move to CPU immediately to free VRAM
+                embeddings = F.normalize(model(videos.to(device)), p=2, dim=1).cpu()
+
+                all_embeddings.append(embeddings)
+                all_ids.extend(item_ids)
+    finally:
+        model.train(was_training)  # always restore original mode
 
     return torch.cat(all_embeddings), all_ids
 
-def generate_distance_csv(model, query_loader, gallery_loader, cfg, filename="dist_matrix.csv", sep=','):
-    # --- Extract Features ---
+
+def generate_distance_csv(
+    model: torch.nn.Module,
+    query_loader: torch.utils.data.DataLoader,
+    gallery_loader: torch.utils.data.DataLoader,
+    cfg,
+    filename: str = "dist_matrix.csv",
+) -> Path:
+    """
+    Extract embeddings for query and gallery sets, compute the L2 distance
+    matrix, and save it as a CSV.
+
+    Args:
+        model:          Trained embedding model.
+        query_loader:   DataLoader for query set.
+        gallery_loader: DataLoader for gallery set.
+        cfg:            Config object with .device and .output_dir attributes.
+        filename:       Output CSV filename.
+    Returns:
+        Path to the saved CSV file.
+    """
     q_feat, q_ids = extract_features_with_ids(model, query_loader, cfg.device)
     g_feat, g_ids = extract_features_with_ids(model, gallery_loader, cfg.device)
 
     print("-> Computing Distance Matrix...")
-    dist_mat = torch.cdist(q_feat, g_feat, p=2).numpy()
+    dist_mat = torch.cdist(
+        q_feat.to(cfg.device),
+        g_feat.to(cfg.device),
+        p=2,
+    ).cpu().numpy()
 
-    # --- Format as DataFrame ---
     df = pd.DataFrame(dist_mat, columns=g_ids)
-    df.insert(0, 'queryId', q_ids)
+    df.insert(0, "queryId", q_ids)
 
-    # --- Save to CSV ---
     output_path = Path(cfg.output_dir) / filename
-    
-    # Save with the specified separator (default is comma)
-    df.to_csv(output_path, sep=sep, index=False)
-    print(f"Distance CSV successfully created: {output_path} (Separator: '{sep}')")
+    df.to_csv(output_path, index=False)
+    print(f"-> Distance CSV saved: {output_path}")
+
     return output_path
 
-import pandas as pd
-import numpy as np
-from tqdm import tqdm
+def bootstrap_from_csv(
+    csv_path: str,
+    m: int = 100,
+    mode: str = "closed",
+    random_state: int = 42,
+) -> dict:
+    """
+    Bootstrap CMC/mAP (closed) or DIR@FAR (open) metrics from a precomputed
+    distance matrix CSV.
 
-def bootstrap_from_csv(csv_path, m=100, mode="closed", random_state=42):
-    # --- Load Distance Matrix ---
-    df_full = pd.read_csv(csv_path, sep=',')
-    
-    # Pre-calculate labels as integers for faster comparison
-    get_id = lambda x: str(x).split('_')[0]
-    query_labels = np.array([get_id(i) for i in df_full['queryId'].values])
+    Args:
+        csv_path:     Path to CSV with columns [queryId, galleryId_0, galleryId_1, ...]
+        m:            Number of bootstrap iterations.
+        mode:         'closed' or 'open'.
+        random_state: Seed for reproducibility.
+    Returns:
+        dict of aggregated bootstrap statistics.
+    """
+    if mode not in ("closed", "open"):
+        raise ValueError(f"mode must be 'closed' or 'open', got '{mode}'")
+
+    # --- Load ---
+    df_full = pd.read_csv(csv_path)
+
+    # dogId_videoId format → split from the right to handle underscores in IDs
+    get_id = lambda x: str(x).rsplit('_', 1)[0]
+
+    query_labels   = np.array([get_id(i) for i in df_full["queryId"].values])
     gallery_labels = np.array([get_id(i) for i in df_full.columns[1:].values])
-    dist_mat = df_full.iloc[:, 1:].values
+    dist_mat       = df_full.iloc[:, 1:].values.astype(np.float32)
 
-    # Pre-calculate Identity Mapping for Sampling
-    unique_ids = np.unique(query_labels)
-    id_to_indices = {id_: np.where(query_labels == id_)[0] for id_ in unique_ids}
+    # --- Identity index map for fast bootstrap sampling ---
+    unique_ids     = np.unique(query_labels)
+    id_to_indices  = {id_: np.where(query_labels == id_)[0] for id_ in unique_ids}
 
-    # --- Pre-calculate Sorted Match Matrix (CRITICAL FOR SPEED) ---
-    # This identifies where the "hits" are for every query, sorted by distance
-    print("-> Pre-calculating sorted match matrix...")
-    match_matrix = (query_labels[:, None] == gallery_labels[None, :])
-    sort_idx = np.argsort(dist_mat, axis=1)
-    # This is a boolean matrix of shape (Queries, Gallery) sorted by closeness
-    sorted_matches = np.take_along_axis(match_matrix, sort_idx, axis=1)
+    # --- Precompute sorted match matrix (closed only) ---
+    if mode == "closed":
+        print("-> Pre-calculating sorted match matrix...")
+        match_matrix   = query_labels[:, None] == gallery_labels[None, :]
+        sort_idx       = np.argsort(dist_mat, axis=1)
+        sorted_matches = np.take_along_axis(match_matrix, sort_idx, axis=1)
 
+    rng = np.random.default_rng(random_state)
     boot_results = []
-    np.random.seed(random_state)
 
-    print(f"-> Bootstrapping {mode} metrics from CSV ({m} iterations)...")
+    print(f"-> Bootstrapping '{mode}' metrics from CSV ({m} iterations)...")
 
     for _ in tqdm(range(m)):
-        sampled_ids = np.random.choice(unique_ids, size=len(unique_ids), replace=True)
-        
-        # Flatten the list of indices for the sampled IDs
-        selected_indices = []
-        for id_ in sampled_ids:
-            selected_indices.extend(id_to_indices[id_])
-        selected_indices = np.array(selected_indices)
+        sampled_ids      = rng.choice(unique_ids, size=len(unique_ids), replace=True)
+        selected_indices = np.concatenate([id_to_indices[id_] for id_ in sampled_ids])
 
         if mode == "closed":
-            # Pass the pre-sorted matches to the logic function
-            res = _calc_closed_logic_vectorized(sorted_matches[selected_indices])
-            boot_results.append(res)
+            res = _calc_closed_logic(sorted_matches[selected_indices])
         else:
-            # Open world is already relatively fast, but we pass pre-calculated masks
-            res = _calc_open_logic_vectorized(dist_mat[selected_indices], 
-                                              query_labels[selected_indices], 
-                                              gallery_labels)
-            boot_results.append(res)
+            res = _calc_open_logic(
+                dist_mat[selected_indices],
+                query_labels[selected_indices],
+                gallery_labels,
+            )
+        boot_results.append(res)
 
     return _aggregate_bootstrap_results(boot_results, mode)
 
 
-def _calc_closed_logic_vectorized(matches):
+def _calc_closed_logic(matches: np.ndarray) -> dict:
     """
-    Lightning fast vectorized CMC and mAP.
-    matches: Boolean array (NumQueries, NumGallery) sorted by distance.
+    Compute CMC and mAP for closed-world re-ID evaluation.
+
+    Args:
+        matches: Boolean array (NumQueries, NumGallery) sorted by ascending distance.
+                 matches[i, j] = True if gallery item j is the correct match for query i.
+    Returns:
+        dict with keys: 'mAP' (float), 'cmc' (np.ndarray of length NumGallery)
     """
-    num_queries, num_gallery = matches.shape
+    num_gallery = matches.shape[1]
+
+    # Filter out queries that have no correct match in the gallery
+    has_match    = np.any(matches, axis=1)
+    valid_matches = matches[has_match]
+    n_valid      = len(valid_matches)
+
+    if n_valid == 0:
+        return {"mAP": 0.0, "cmc": np.zeros(num_gallery)}
 
     # --- CMC ---
-    # Find index of first True in each row
-    first_match_ranks = np.argmax(matches, axis=1)
-    # Only count queries that actually have a match in gallery
-    has_match = np.any(matches, axis=1)
-    valid_ranks = first_match_ranks[has_match]
-    
-    cmc_counts = np.bincount(valid_ranks, minlength=num_gallery)
-    cmc = np.cumsum(cmc_counts) / len(valid_ranks) if len(valid_ranks) > 0 else np.zeros(num_gallery)
+    # Rank of first correct match for each valid query (0-indexed)
+    first_match_ranks = np.argmax(valid_matches, axis=1)
+    cmc_counts        = np.bincount(first_match_ranks, minlength=num_gallery)
+    cmc               = np.cumsum(cmc_counts) / n_valid
 
     # --- mAP ---
-    cum_matches = np.cumsum(matches, axis=1)
-    precisions = cum_matches / np.arange(1, num_gallery + 1)
-    # Average Precision is mean of precisions at the successful match positions
-    ap = np.sum(precisions * matches, axis=1) / np.maximum(1, np.sum(matches, axis=1))
-    
+    # Precision at each rank, averaged over positions where a match occurs
+    cum_matches = np.cumsum(valid_matches, axis=1)
+    precisions  = cum_matches / np.arange(1, num_gallery + 1)
+    n_relevant  = np.sum(valid_matches, axis=1)                          # per-query match count
+    ap          = np.sum(precisions * valid_matches, axis=1) / n_relevant  # safe: n_valid > 0 and has_match guarantees n_relevant >= 1
+
     return {
-        "mAP": np.mean(ap[has_match]) if any(has_match) else 0,
-        "cmc": cmc
+        "mAP": float(np.mean(ap)),
+        "cmc": cmc,
     }
 
-def _calc_open_logic_vectorized(dist_mat, q_labels, g_labels):
-    """Vectorized open-world logic."""
-    # Known vs Unknown
-    known_mask = np.isin(q_labels, g_labels)
+
+# ---------------------------------------------------------------------------
+
+_DIR_FAR_TARGETS  = (0.01, 0.05, 0.1)
+_FAR_TOLERANCE    = 0.001
+_N_THRESHOLDS     = 10_000
+
+
+def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.ndarray) -> dict:
+    """
+    Compute DIR@FAR curve and DIR values at standard FAR operating points
+    for open-world re-ID evaluation.
+
+    Args:
+        dist_mat: (NumQueries, NumGallery) pairwise distance matrix.
+        q_labels: (NumQueries,) identity labels for queries.
+        g_labels: (NumGallery,) identity labels for gallery items.
+    Returns:
+        dict with keys:
+            'dirs'         – DIR curve, shape (N_THRESHOLDS,)
+            'fars'         – FAR curve, shape (N_THRESHOLDS,)
+            0.01, 0.05, 0.1 – DIR at each FAR target (float or NaN if unreachable)
+    """
+    known_mask   = np.isin(q_labels, g_labels)
     unknown_mask = ~known_mask
 
-    # Best matches
-    best_dist = np.min(dist_mat, axis=1)
-    best_idx = np.argmin(dist_mat, axis=1)
-    correct_match = (g_labels[best_idx] == q_labels)
+    best_dist    = np.min(dist_mat, axis=1)           # (NumQueries,)
+    best_idx     = np.argmin(dist_mat, axis=1)        # (NumQueries,)
+    correct_match = g_labels[best_idx] == q_labels    # (NumQueries,)
 
-    thresholds = np.linspace(0, 2, 500)
-    
-    # Broadcast comparison for DIR and FAR
-    # Shape: (500, NumQueries)
-    dirs_at_t = np.array([np.sum((best_dist[known_mask] < t) & correct_match[known_mask]) / np.sum(known_mask) 
-                          if any(known_mask) else 0 for t in thresholds])
-    fars_at_t = np.array([np.sum(best_dist[unknown_mask] < t) / np.sum(unknown_mask) 
-                          if any(unknown_mask) else 0 for t in thresholds])
+    thresholds = np.linspace(0, 2, _N_THRESHOLDS)    # (T,)
 
+    # --- Vectorized DIR and FAR curves ---
+    known_dists   = best_dist[known_mask]             # (K,)
+    known_correct = correct_match[known_mask]         # (K,)
+    unknown_dists = best_dist[unknown_mask]           # (U,)
+
+    n_known   = known_mask.sum()
+    n_unknown = unknown_mask.sum()
+
+    if n_known > 0:
+        # (K, T) broadcast: is each known query under threshold AND correct?
+        under_and_correct = (known_dists[:, None] < thresholds) & known_correct[:, None]
+        dirs_at_t = under_and_correct.sum(axis=0) / n_known   # (T,)
+    else:
+        dirs_at_t = np.zeros(_N_THRESHOLDS)
+
+    if n_unknown > 0:
+        # (U, T) broadcast: is each unknown query under threshold?
+        under_unknown = unknown_dists[:, None] < thresholds
+        fars_at_t = under_unknown.sum(axis=0) / n_unknown     # (T,)
+    else:
+        fars_at_t = np.zeros(_N_THRESHOLDS)
+
+    # --- DIR at standard FAR operating points ---
     res = {"dirs": dirs_at_t, "fars": fars_at_t}
-    for target in [0.01, 0.05, 0.1]:
-        idx = np.argmin(np.abs(fars_at_t - target))
-        res[target] = dirs_at_t[idx]
+
+    for target in _DIR_FAR_TARGETS:
+        idx      = np.argmin(np.abs(fars_at_t - target))
+        achieved = fars_at_t[idx]
+        res[target] = (
+            float(dirs_at_t[idx])
+            if np.abs(achieved - target) <= _FAR_TOLERANCE
+            else float("nan")
+        )
+
     return res
 
-def _aggregate_bootstrap_results(results, mode):
+
+# ---------------------------------------------------------------------------
+
+def _aggregate_bootstrap_results(results: list[dict], mode: str) -> dict:
+    """
+    Aggregate per-iteration bootstrap results into means and 95% CIs.
+
+    Args:
+        results: List of dicts returned by _calc_closed_logic or _calc_open_logic.
+        mode:    'closed' or 'open'.
+    Returns:
+        dict of aggregated statistics.
+    """
     if mode == "closed":
-        maps = [r["mAP"] for r in results]
-        cmcs = np.array([r["cmc"] for r in results])
-        mean_cmc = np.mean(cmcs, axis=0)
+        maps = np.array([r["mAP"] for r in results])
+        cmcs = np.array([r["cmc"] for r in results])   # (M, NumGallery)
 
-        mean_map = np.mean(maps)
         mean_cmc = np.mean(cmcs, axis=0)
 
         return {
-                "mAP_mean": mean_map,
-                "mAP_lower": np.percentile(maps, 2.5),   
-                "mAP_upper": np.percentile(maps, 97.5),  
-                "mAP_std": np.std(maps),
-                "cmc_mean": mean_cmc,
-                "cmc_lower": np.percentile(cmcs, 2.5, axis=0),
-                "cmc_upper": np.percentile(cmcs, 97.5, axis=0),
-                "ranks": np.arange(1, len(mean_cmc) + 1)
-            }
-    else:
-        all_dirs = np.array([r["dirs"] for r in results])
-        all_fars = np.array([r["fars"] for r in results])
-        return {
-            "mean_fars": np.mean(all_fars, axis=0),
-            "mean_dirs": np.mean(all_dirs, axis=0),
-            "lower_dirs": np.percentile(all_dirs, 2.5, axis=0),
-            "upper_dirs": np.percentile(all_dirs, 97.5, axis=0)
+            "mAP_mean":  float(np.mean(maps)),
+            "mAP_std":   float(np.std(maps)),
+            "mAP_lower": float(np.percentile(maps, 2.5)),
+            "mAP_upper": float(np.percentile(maps, 97.5)),
+            "cmc_mean":  mean_cmc,
+            "cmc_lower": np.percentile(cmcs, 2.5,  axis=0),
+            "cmc_upper": np.percentile(cmcs, 97.5, axis=0),
+            "ranks":     np.arange(1, len(mean_cmc) + 1),
         }
+
+    # --- open ---
+    all_dirs = np.array([r["dirs"] for r in results])  # (M, T)
+    all_fars = np.array([r["fars"] for r in results])  # (M, T)
+
+    return {
+        "mean_fars":  np.mean(all_fars,  axis=0),
+        "mean_dirs":  np.mean(all_dirs,  axis=0),
+        "lower_dirs": np.percentile(all_dirs, 2.5,  axis=0),
+        "upper_dirs": np.percentile(all_dirs, 97.5, axis=0),
+    }
