@@ -66,6 +66,7 @@ pip install -r requirements.txt
 ### Install PyTorch (separately)
 
 Install PyTorch based on your system.
+Examples:
 
 **CUDA 12.6:**
 
@@ -82,7 +83,7 @@ pip install torch torchvision torchaudio
 ### Install Torch-dependent Libraries
 
 ```bash
-pip install pytorch-metric-learning timm
+pip install pytorch-metric-learning timm ultralytics
 ```
 
 ---
@@ -161,18 +162,21 @@ Evaluating a trained model is a two-step process: generating a distance matrix C
 
 ### 1. Generate the Distance Matrix
 
-First, open `make_csv.py` and configure the settings at the top of the file to match your trained model:
+You can generate the distance matrix directly from the terminal using command-line arguments. There is no need to manually edit the script for supported models. 
 
-* **`WORLD_TYPE`**: Set to `"closed"` or `"open"` .
-* **`MODEL_NAME`**: A string identifier for your model (e.g., `"dinov2"`, `"vit"`, `"swin"`), for a new model just ignore this, but provide the MODEL_PATH and OUTPUT_FOLDER manually. 
-* **`MODEL_PATH`**: The path to your trained model checkpoint (`.pth` file).
-* **`MODEL_CLASS`**: Ensure you import and assign the correct architecture class for your weights (e.g., `MODEL_CLASS = DINOv2ReID`).
+Run `make_csv.py` and configure your run using the following flags:
 
-Once configured, run the script to extract features and generate the distance CSV:
+* **`--model_name`**: The identifier for your architecture (choices: `dinov2`, `swin`, `vit`).
+* **`--world_type`**: The evaluation framework to use (choices: `closed` or `open`).
+* **`--use_images`**: Include this flag to evaluate on static images. Omit it to evaluate on video clips.
 
+**Example Command:**
 ```bash
-python make_csv.py
+python make_csv.py --model_name dinov2 --world_type open --use_images
 ```
+This will run inference to extract the features and automatically save a distance matrix CSV to `evaluation/csvs/<model_name>_<world_type>/`.
+
+> **Note for Custom Architectures:** If you are evaluating a brand-new model architecture not included in the default parser choices, you will need to open `make_csv.py` to manually define your `MODEL_CLASS` and provide the exact `MODEL_PATH` and `OUTPUT_FOLDER`.
 
 This will save a distance matrix CSV to `evaluation/csvs/<MODEL_NAME>_<WORLD_TYPE>/`.
 
