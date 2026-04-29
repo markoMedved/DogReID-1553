@@ -196,65 +196,60 @@ class Trainer:
         return cmc[0], cmc[4], np.mean(all_AP)
 
     def dir_vs_far(self, query_features, query_labels, gallery_features, gallery_labels, thresholds=None):
+            # --- Open-World Evaluation Metrics ---
+            # DIR = Detection Identification Rate (True Positive Rate)
+            # FAR = False Accept Rate (False Positive Rate)
 
-        # --- Open-World Evaluation Metrics ---
-        # DIR = Detection Identification Rate (True Positive Rate)
-        # FAR = False Accept Rate (False Positive Rate)
+            # Ensure features are normalized
+            q_f = F.normalize(query_features, p=2, dim=1)
+            g_f = F.normalize(gallery_features, p=2, dim=1)
 
-        if thresholds is None:
-            thresholds = torch.linspace(0, 1, 500)
-        
-        # Ensure features are normalized
-        q_f = F.normalize(query_features, p=2, dim=1)
-        g_f = F.normalize(gallery_features, p=2, dim=1)
+            # Calculate Distance Matrix via Euclidean Distance (matches your numpy logic)
+            # L2 normalized features have a maximum Euclidean distance of 2.0
+            dist_mat = torch.cdist(q_f, g_f)
 
-        # Calculate similarity matrix via dot product
-        similarity_mat = q_f @ g_f.T 
+            q_labels = query_labels.to(q_f.device)
+            g_labels = gallery_labels.to(g_f.device)
 
-        q_labels = query_labels.to(q_f.device)
-        g_labels = gallery_labels.to(g_f.device)
+            # Matrix indicating which queries match which gallery images
+            match_matrix = q_labels[:, None] == g_labels[None, :]
 
-        # Matrix indicating which queries match which gallery images
-        match_matrix = q_labels[:, None] == g_labels[None, :]
+            # Masks separating known (in gallery) vs unknown (not in gallery) queries
+            known_mask = torch.any(match_matrix, dim=1) 
+            unknown_mask = ~known_mask
 
-        # Masks separating known (in gallery) vs unknown (not in gallery) queries
-        known_mask = torch.any(match_matrix, dim=1) 
-        unknown_mask = ~known_mask
+            # Find the smallest distance (best match) and its index
+            best_dist, best_idx = torch.min(dist_mat, dim=1)
+            correct_match = g_labels[best_idx] == q_labels
 
-        # Filter similarities and matches based on masks
-        known_sims = similarity_mat[known_mask]      
-        known_matches = match_matrix[known_mask]     
-        unknown_sims = similarity_mat[unknown_mask]  
-
-        dir_list, far_list = [], []
-
-        # Find the highest similarity score for known queries
-        max_vals_known, max_idx_known = known_sims.max(dim=1)
-
-        # Verify if the highest scoring gallery image is the correct identity
-        top_is_correct = known_matches.gather(1, max_idx_known.unsqueeze(1)).squeeze(1)
-
-        # Find the highest similarity score for unknown queries
-        max_vals_unknown, _ = unknown_sims.max(dim=1) if unknown_sims.numel() > 0 else (torch.tensor([]), None)
-
-        # Calculate metrics across different thresholds
-        for thresh in thresholds:
-
-            if known_sims.numel() > 0:
-                dir_val = ((max_vals_known > thresh) & top_is_correct).float().mean().item()
+            if thresholds is None:
+                thresholds = torch.linspace(0, 2, 10000, device=q_f.device)
             else:
-                dir_val = 0.0
+                thresholds = thresholds.to(q_f.device)
 
-            dir_list.append(dir_val)
+            # Filter distances and matches based on masks
+            known_dists = best_dist[known_mask]
+            known_correct = correct_match[known_mask]
+            unknown_dists = best_dist[unknown_mask]
 
-            if unknown_sims.numel() > 0:
-                far_val = (max_vals_unknown > thresh).float().mean().item()
+            n_known = known_mask.sum().item()
+            n_unknown = unknown_mask.sum().item()
+
+            if n_known > 0:
+                under_and_correct = (known_dists[:, None] <= thresholds) & known_correct[:, None]
+                dir_array = under_and_correct.float().sum(dim=0) / n_known
             else:
-                far_val = 0.0
+                dir_array = torch.zeros_like(thresholds)
 
-            far_list.append(far_val)
+            # Vectorized FAR calculation: Unknown dog distance falls below threshold
+            if n_unknown > 0:
+                under_unknown = unknown_dists[:, None] <= thresholds
+                far_array = under_unknown.float().sum(dim=0) / n_unknown
+            else:
+                far_array = torch.zeros_like(thresholds)
 
-        return thresholds.cpu().numpy(), np.array(dir_list), np.array(far_list)
+            # Return identical format to your original dir_vs_far return statement
+            return thresholds.cpu().numpy(), dir_array.cpu().numpy(), far_array.cpu().numpy()
 
 
     def save_checkpoint(self, filename):
