@@ -24,8 +24,6 @@ class Trainer:
         self.loss_fn = loss_fn
         self.miner = miner
 
-        # TODO remove
-        self.evaluate()
 
     def train(self):
         # --- Initialize Tracking Variables ---
@@ -41,7 +39,7 @@ class Trainer:
             print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
 
             # --- Validation Evaluation ---
-            if val_split > 0:
+            if val_split > 0 and self.cfg.world == "closed":
                 # Run evaluation only at specified intervals
                 if (epoch + 1) % self.cfg.eval_period == 0:
                     rank1, rank5, mAP = self.evaluate()
@@ -120,24 +118,7 @@ class Trainer:
             print(f"Eval (Closed) -> Rank-1: {r1:.2%}, Rank-5: {r5:.2%}, mAP: {mAP:.2%}")
             return r1, r5, mAP
 
-        # --- Open-World Evaluation ---
-        # Assumes some queries may not exist within the gallery
-        else:
-            thresh, dir_curve, far_curve = self.dir_vs_far(q_f, q_pids, g_f, g_pids)
-            
-            # Select DIR values at specific False Accept Rates (FAR)
-            idx_1pct = np.argmin(np.abs(far_curve - 0.01))
-            idx_5pct = np.argmin(np.abs(far_curve - 0.05))
-            idx_10pct = np.argmin(np.abs(far_curve - 0.10))
-            
-            dir_1 = dir_curve[idx_1pct]
-            dir_5 = dir_curve[idx_5pct]
-            dir_10 = dir_curve[idx_10pct]
 
-            print(f"Eval (Open) -> DIR@1%FAR: {dir_1:.2%}, DIR@5%FAR: {dir_5:.2%}, DIR@10%FAR: {dir_10:.2%}")
-            
-            # Returned values are typically logged by the training loop
-            return dir_1, dir_5, dir_10
 
     def _get_features(self, loader, name):
         # --- Extract Embeddings from Dataloader ---
@@ -197,63 +178,6 @@ class Trainer:
         cmc /= len(all_cmc) if len(all_cmc) > 0 else 1
 
         return cmc[0], cmc[4], np.mean(all_AP)
-
-    def dir_vs_far(self, query_features, query_labels, gallery_features, gallery_labels, thresholds=None):
-            # --- Open-World Evaluation Metrics ---
-            # DIR = Detection Identification Rate (True Positive Rate)
-            # FAR = False Accept Rate (False Positive Rate)
-
-            # Ensure features are normalized
-            q_f = F.normalize(query_features, p=2, dim=1)
-            g_f = F.normalize(gallery_features, p=2, dim=1)
-
-            # Calculate Distance Matrix via Euclidean Distance (matches your numpy logic)
-            # L2 normalized features have a maximum Euclidean distance of 2.0
-            dist_mat = torch.cdist(q_f, g_f)
-
-            q_labels = query_labels.to(q_f.device)
-            g_labels = gallery_labels.to(g_f.device)
-
-            # Matrix indicating which queries match which gallery images
-            match_matrix = q_labels[:, None] == g_labels[None, :]
-
-            # Masks separating known (in gallery) vs unknown (not in gallery) queries
-            known_mask = torch.any(match_matrix, dim=1) 
-            unknown_mask = ~known_mask
-
-            # Find the smallest distance (best match) and its index
-            best_dist, best_idx = torch.min(dist_mat, dim=1)
-            correct_match = g_labels[best_idx] == q_labels
-
-            if thresholds is None:
-                thresholds = torch.linspace(0, 2, 10000, device=q_f.device)
-            else:
-                thresholds = thresholds.to(q_f.device)
-
-            # Filter distances and matches based on masks
-            known_dists = best_dist[known_mask]
-            known_correct = correct_match[known_mask]
-            unknown_dists = best_dist[unknown_mask]
-
-            n_known = known_mask.sum().item()
-            n_unknown = unknown_mask.sum().item()
-
-            if n_known > 0:
-                under_and_correct = (known_dists[:, None] <= thresholds) & known_correct[:, None]
-                dir_array = under_and_correct.float().sum(dim=0) / n_known
-            else:
-                dir_array = torch.zeros_like(thresholds)
-
-            # Vectorized FAR calculation: Unknown dog distance falls below threshold
-            if n_unknown > 0:
-                under_unknown = unknown_dists[:, None] <= thresholds
-                far_array = under_unknown.float().sum(dim=0) / n_unknown
-            else:
-                far_array = torch.zeros_like(thresholds)
-
-            # Return identical format to your original dir_vs_far return statement
-            return thresholds.cpu().numpy(), dir_array.cpu().numpy(), far_array.cpu().numpy()
-
 
     def save_checkpoint(self, filename):
 
