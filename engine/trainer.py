@@ -24,6 +24,9 @@ class Trainer:
         self.loss_fn = loss_fn
         self.miner = miner
 
+        # TODO remove
+        self.evaluate()
+
     def train(self):
         # --- Initialize Tracking Variables ---
         best_rank1 = 0.0
