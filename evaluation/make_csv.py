@@ -1,8 +1,43 @@
 import sys
 import os
 import torch
+import argparse
 from pathlib import Path
 from collections import OrderedDict
+
+# =================================================================
+# --- COMMAND-LINE ARGUMENTS ---
+# =================================================================
+parser = argparse.ArgumentParser(description="Evaluate Dog Re-ID Models")
+
+parser.add_argument(
+    "--model_name", 
+    type=str, 
+    default="dinov2", 
+    choices=["dinov2", "swin", "vit"],
+    help="Model identifier used for paths and architecture selection"
+)
+
+parser.add_argument(
+    "--world_type", 
+    type=str, 
+    default="closed", 
+    choices=["closed", "open"],
+    help="Evaluation environment: 'closed' (all queries in gallery) or 'open' (some not)"
+)
+
+parser.add_argument(
+    "--use_images", 
+    action="store_true", 
+    help="Include this flag to evaluate on images. Omit it to evaluate on videos."
+)
+
+args = parser.parse_args()
+
+# --- Assign parsed arguments to variables ---
+MODEL_NAME = args.model_name
+WORLD_TYPE = args.world_type
+USE_IMAGES = args.use_images
 
 # =================================================================
 # --- CONFIGURABLE SETTINGS ---
@@ -12,19 +47,8 @@ from collections import OrderedDict
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
 
-USE_IMAGES = True
-
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
-
-# --- Evaluation Environment ---
-# closed = all query dogs exist in gallery
-# open   = some query dogs are not in gallery
-WORLD_TYPE = "closed"
-
-# --- Model Identification ---
-# model identifier used for paths and output folders
-MODEL_NAME = "dinov2"
 
 # path to trained checkpoint
 MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{MODEL_NAME}_{WORLD_TYPE}" / "model.pth")
@@ -36,14 +60,22 @@ from models.dinov2_builder import DINOv2ReID
 from models.swin_builder import VideoSwin
 from models.vit_builder import VideoViT
 
-MODEL_CLASS = DINOv2ReID
+if MODEL_NAME == "dinov2":
+    MODEL_CLASS = DINOv2ReID
+elif MODEL_NAME == "swin":
+    MODEL_CLASS = VideoSwin
+elif MODEL_NAME == "vit":
+    MODEL_CLASS = VideoViT
+else:
+    raise ValueError("Invalid model name")
 
 
 # --- Output Configuration ---
 # where evaluation CSV files will be stored
-OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}"
 if USE_IMAGES:
     OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_image"
+else:
+    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}"
 
 
 # name of generated distance matrix
@@ -122,7 +154,6 @@ print(f"-> Preparing {cfg.world.upper()} test dataloaders...")
 
 if USE_IMAGES:
     query_loader, gallery_loader = build_test_loaders(cfg, images=True)
-
 else:
     query_loader, gallery_loader = build_test_loaders(cfg)
 
