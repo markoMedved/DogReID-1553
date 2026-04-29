@@ -7,7 +7,7 @@ class Config:
     """
     
     # --- Experiment Settings ---
-    model = "dinov2"       # Options: 'dinov2', 'swin', 'vit'
+    model = "swin"       # Options: 'dinov2', 'swin', 'vit'
     world = "closed"       # Options: 'closed', 'open'
     run_name = f"{model}_{world}"
 
