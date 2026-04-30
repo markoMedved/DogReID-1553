@@ -119,7 +119,6 @@ class Trainer:
             return r1, r5, mAP
 
 
-
     def _get_features(self, loader, name):
         # --- Extract Embeddings from Dataloader ---
         feats, pids = [], []
