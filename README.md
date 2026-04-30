@@ -40,7 +40,7 @@ making the dataset suitable for **video-based ReID benchmarking**.
 ## 1️⃣ Clone the Repository
 
 ``` bash
-git clone https://github.com/your-username/DogReID-1553.git
+git clone https://github.com/markoMedved/DogReID-1553.git
 cd DogReID-1553
 ```
 

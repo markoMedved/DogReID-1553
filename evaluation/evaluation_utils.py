@@ -158,7 +158,7 @@ def _calc_closed_logic(matches: np.ndarray) -> dict:
 
 _DIR_FAR_TARGETS  = (0.01, 0.05, 0.1)
 _FAR_TOLERANCE    = 0.001
-_N_THRESHOLDS     = 10_000
+_N_THRESHOLDS     = 1000
 
 
 def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.ndarray) -> dict:
@@ -189,7 +189,7 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
     if n_unknown > 0:
         # FAR: Any "unknown" dog that falls below the distance threshold (false alarm)
         under_unknown = unknown_dists[:, None] <= thresholds
-        fars_at_t = under_unknown.sum(axis=0) / n_unknown  # FIXED: Removed the zero overwrite
+        fars_at_t = under_unknown.sum(axis=0) / n_unknown  
     else:
         fars_at_t = np.zeros(_N_THRESHOLDS)
 
