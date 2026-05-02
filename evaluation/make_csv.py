@@ -43,7 +43,6 @@ USE_IMAGES = args.use_images
 # --- CONFIGURABLE SETTINGS ---
 # =================================================================
 # --- Path Configuration ---
-# Make project root visible so imports like "models", "data", etc. work
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
 
@@ -123,7 +122,6 @@ if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"Model checkpoint not found at: {MODEL_PATH}")
 
 # --- Load Checkpoint ---
-# load checkpoint
 checkpoint = torch.load(MODEL_PATH, map_location=cfg.device)
 
 # support different checkpoint formats
@@ -131,7 +129,6 @@ state_dict = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
 
 
 # --- Handle DataParallel / DDP Weights ---
-# remove "module." prefix if model was trained with DataParallel / DDP
 new_state_dict = OrderedDict()
 
 for k, v in state_dict.items():

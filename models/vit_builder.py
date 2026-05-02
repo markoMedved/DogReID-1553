@@ -5,8 +5,9 @@ from torchvision.models import vit_b_16, ViT_B_16_Weights
 
 
 class TemporalAttentionPool(nn.Module):
-
-
+    """
+    Learns attention weights over the temporal dimension of a video.
+    """
     def __init__(self, dim):
         super().__init__()
 
@@ -20,18 +21,16 @@ class TemporalAttentionPool(nn.Module):
         )
 
     def forward(self, x):
-        # Input shape: (B, T, D)
-
         # --- Compute Attention Weights ---
-        weights = self.attn(x)  # Output shape: (B, T, 1)
+        weights = self.attn(x)  
 
         # --- Apply Weighted Pooling ---
-        # Weighted temporal aggregation via broadcasting
+        # Weighted temporal aggregation
         return (x * weights).sum(dim=1)
 
 
 class VideoViT(nn.Module):
-
+    """Model using ViT as the backbone"""
 
     def __init__(self, chunk_size=16):
         super().__init__()

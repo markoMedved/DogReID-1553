@@ -2,6 +2,7 @@ from decord import VideoReader, cpu
 import numpy as np
 
 def load_video_clip(path, clip_len, is_training=True):
+    """Reading frames from video files"""
     # --- Initialize Video Reader ---
     vr = VideoReader(str(path), ctx=cpu(0))
     total_frames = len(vr)
@@ -29,7 +30,7 @@ def load_video_clip(path, clip_len, is_training=True):
         
     # --- Evaluation Mode: Uniform Sampling ---
     else:
-        # Extracts frames at evenly spaced intervals for deterministic evaluation
+        # Extracts frames at evenly spaced intervals for  evaluation
         indices = np.linspace(0, total_frames - 1, clip_len).astype(int)
     
     # --- Extract and Return Frames ---

@@ -15,7 +15,7 @@ class Config:
     project_root = Path(__file__).resolve().parent.parent
     data_root    = project_root 
     split_file   = project_root / "splits.csv"
-    output_dir   = project_root / "trained_models" / f"{model}_{world}"
+    output_dir   = project_root / "trained_models" / f"{model}_{world}" # Output for trained model
 
     # --- Hardware & Compute ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -35,7 +35,7 @@ class Config:
     # --- Training & Optimization ---
     epochs = 50
     weight_decay = 1e-05
-    margin = 0.3       # Loss margin
+    margin = 0.3       # Margin for triplet loss
     lr = 2e-05           # Learning rate
     accum_steps = 8      # Gradient accumulation steps to simulate larger batch
 
@@ -47,6 +47,7 @@ class Config:
         """Create experiment directory and apply model-specific overrides."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Swin has a different embedding dimension
         if self.model == "swin":
             self.embedding_dim = 1024
 

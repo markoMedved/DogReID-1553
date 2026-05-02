@@ -5,7 +5,9 @@ from torchvision.models import swin_v2_b, Swin_V2_B_Weights
 
 
 class TemporalAttentionPool(nn.Module):
-
+    """
+    Learns attention weights over the temporal dimension of a video.
+    """
     def __init__(self, dim):
         super().__init__()
 
@@ -15,12 +17,10 @@ class TemporalAttentionPool(nn.Module):
             nn.Linear(dim, 512),
             nn.Tanh(),
             nn.Linear(512, 1),
-            nn.Softmax(dim=1)  # Normalize weights across the time dimension
+            nn.Softmax(dim=1)  
         )
 
     def forward(self, x):
-        # Input shape: (Batch, Time, Dim)
-
         # --- Compute Attention Weights ---
         weights = self.attn(x)  
 
@@ -30,7 +30,7 @@ class TemporalAttentionPool(nn.Module):
 
 
 class VideoSwin(nn.Module):
-
+    """Model using the frozen swin_v2 backbone"""
     def __init__(self, num_classes=None, chunk_size=8):
         super().__init__()
 
@@ -39,14 +39,13 @@ class VideoSwin(nn.Module):
         weights = Swin_V2_B_Weights.DEFAULT
         self.backbone = swin_v2_b(weights=weights)
 
-        # Remove classification head to extract raw embeddings instead of logits
+        # Remove classification head to extract raw embeddings
         self.backbone.head = nn.Identity()
 
         # Swin-B standard output feature dimension
         self.dim = 1024
 
         # --- Memory Management ---
-        # Number of frames processed simultaneously (prevents VRAM overflow)
         self.chunk_size = chunk_size
 
         # --- Temporal Aggregation ---
@@ -56,7 +55,6 @@ class VideoSwin(nn.Module):
         # Stabilizes the embedding space before metric learning
         self.bn = nn.BatchNorm1d(self.dim)
 
-        # Bias is typically frozen in BN-Neck implementations
         self.bn.bias.requires_grad_(False)
 
     def forward(self, x):

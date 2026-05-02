@@ -6,14 +6,15 @@ import numpy as np
 import json
 
 class Trainer:
+    "Class that has the training logic"
     def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner):
         # --- Move Model to Compute Device ---
         self.model = model.to(cfg.device)
 
         # --- Dataloaders ---
         self.train_loader = train_loader
-        self.query_loader = query_loader
-        self.gallery_loader = gallery_loader
+        self.query_loader = query_loader # Validation
+        self.gallery_loader = gallery_loader # Validation
 
         # --- Training Configuration ---
         self.optimizer = optimizer
@@ -26,8 +27,8 @@ class Trainer:
 
 
     def train(self):
-        # --- Initialize Tracking Variables ---
-        best_rank1 = 0.0
+        """Train the model"""
+        # --- Get the validation split ratio ---
         val_split = getattr(self.cfg, 'val_split', 0)
 
         # --- Main Training Loop ---
@@ -52,10 +53,11 @@ class Trainer:
             self.save_checkpoint("model.pth")
 
     def train_epoch(self, epoch):
-        # --- Setup Training Epoch ---
+        """Train for one epoch"""
+        # --- Put into train mode ---
         self.model.train()
 
-        # Gradient accumulation helps simulate larger batch sizes on constrained hardware
+        # Gradient accumulation helps simulate larger batch sizes
         accum_steps = getattr(self.cfg, 'accum_steps', 8) 
 
         running_loss = 0.0
@@ -120,7 +122,7 @@ class Trainer:
 
 
     def _get_features(self, loader, name):
-        # --- Extract Embeddings from Dataloader ---
+        """Extract Embeddings from Dataloader"""
         feats, pids = [], []
 
         for batch in tqdm(loader, desc=name):
@@ -139,7 +141,6 @@ class Trainer:
         return torch.cat(feats, 0), torch.tensor(pids)
 
     def calculate_cmc_map(self, distmat, q_pids, g_pids):
-        # --- Classic Person/Object Re-ID Evaluation Metrics ---
         num_q, num_g = distmat.shape
 
         # Sort the gallery indices by distance for each query

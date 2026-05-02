@@ -6,7 +6,7 @@ from torch.nn import functional as F
 from pathlib import Path
 
 def _to_scalar(x):
-
+    """Get scalar"""
     return x.item() if hasattr(x, "item") else x
 
 
@@ -15,7 +15,9 @@ def extract_features_with_ids(
     dataloader: torch.utils.data.DataLoader,
     device: torch.device,
 ) -> tuple[torch.Tensor, list[str]]:
+    """Extract features of the samples from the provided ids"""
 
+    # If the model was training, to restore back after
     was_training = model.training
     model.eval()
 
@@ -26,6 +28,7 @@ def extract_features_with_ids(
 
     try:
         with torch.no_grad():
+            # --- Test loop ---
             for batch in tqdm(dataloader):
                 videos, _labels, dog_ids, video_ids = batch
 
@@ -34,7 +37,7 @@ def extract_features_with_ids(
                     for d, v in zip(dog_ids, video_ids)
                 ]
 
-                # Normalize on device, then move to CPU immediately to free VRAM
+                # Normalize on device, then move to CPU the features that the model produced
                 embeddings = F.normalize(model(videos.to(device)), p=2, dim=1).cpu()
 
                 all_embeddings.append(embeddings)
@@ -52,9 +55,13 @@ def generate_distance_csv(
     cfg,
     filename: str = "dist_matrix.csv",
 ) -> Path:
+    """Generate a distance csv from features gotten with model inference"""
+
+    # --- Get teh features for gallery and query samples ---
     q_feat, q_ids = extract_features_with_ids(model, query_loader, cfg.device)
     g_feat, g_ids = extract_features_with_ids(model, gallery_loader, cfg.device)
 
+    # --- Compute the distance matrix ---
     print("-> Computing Distance Matrix...")
     dist_mat = torch.cdist(
         q_feat.to(cfg.device),
@@ -62,9 +69,11 @@ def generate_distance_csv(
         p=2,
     ).cpu().numpy()
 
+    # --- Construct the appropriate csv --- 
     df = pd.DataFrame(dist_mat, columns=g_ids)
     df.insert(0, "queryId", q_ids)
 
+    # --- Create the output path ---
     output_path = Path(cfg.output_dir) / filename
     df.to_csv(output_path, index=False)
     print(f"-> Distance CSV saved: {output_path}")
@@ -77,6 +86,7 @@ def bootstrap_from_csv(
     mode: str = "closed",
     random_state: int = 42,
 ) -> dict:
+    """Use boostrap for uncertenty quantification"""
     
     if mode not in ("closed", "open"):
         raise ValueError(f"mode must be 'closed' or 'open', got '{mode}'")
@@ -107,10 +117,13 @@ def bootstrap_from_csv(
 
     print(f"-> Bootstrapping '{mode}' metrics from CSV ({m} iterations)...")
 
+    # --- Do m bootstrap repetitions ---
     for _ in tqdm(range(m)):
+        # Sample by Dog ID not by videos
         sampled_ids      = rng.choice(unique_ids, size=len(unique_ids), replace=True)
         selected_indices = np.concatenate([id_to_indices[id_] for id_ in sampled_ids])
 
+        # Based on the setting calculate the appropriate metrics
         if mode == "closed":
             res = _calc_closed_logic(sorted_matches[selected_indices])
         else:
@@ -125,8 +138,9 @@ def bootstrap_from_csv(
 
 
 def _calc_closed_logic(matches: np.ndarray) -> dict:
-    num_gallery = matches.shape[1]
+    """Calculate cmc and mAP"""
 
+    num_gallery = matches.shape[1]
     num_query = matches.shape[0]
 
     # --- CMC ---
@@ -139,8 +153,8 @@ def _calc_closed_logic(matches: np.ndarray) -> dict:
     # Precision at each rank, averaged over positions where a match occurs
     cum_matches = np.cumsum(matches, axis=1)
     precisions  = cum_matches / np.arange(1, num_gallery + 1)
-    n_relevant  = np.sum(matches, axis=1)                          # per-query match count
-    ap          = np.sum(precisions * matches, axis=1) / n_relevant  # safe: n_valid > 0 and has_match guarantees n_relevant >= 1
+    n_relevant  = np.sum(matches, axis=1)                          
+    ap          = np.sum(precisions * matches, axis=1) / n_relevant  
 
     return {
         "mAP": float(np.mean(ap)),
@@ -150,28 +164,28 @@ def _calc_closed_logic(matches: np.ndarray) -> dict:
 
 # ---------------------------------------------------------------------------
 
+# Hyperparameters for evaluating in the open-world setting 
 _DIR_FAR_TARGETS  = (0.01, 0.05, 0.1)
 _FAR_TOLERANCE    = 0.001
 _N_THRESHOLDS     = 1000
 
 
-import numpy as np
-
 def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.ndarray) -> dict:
+    """Calculate DIR vs FAR for Rank1 and Rank5"""
     known_mask   = np.isin(q_labels, g_labels)
     unknown_mask = ~known_mask
 
-    # 1. Get Top-5 indices instead of just argmin
+    # Get Top-5 indices 
     top5_idx = np.argsort(dist_mat, axis=1)[:, :5]
     
-    # 2. Best distance remains the minimum distance (Rank-1)
+    # Minimum distance (Rank-1)
     best_dist = dist_mat[np.arange(len(dist_mat)), top5_idx[:, 0]]
     
-    # 3. Rank-1 Match Logic
+    # Rank-1 Match Logic
     best_idx = top5_idx[:, 0]
     correct_match_r1 = g_labels[best_idx] == q_labels    
 
-    # 4. Rank-5 Match Logic: Check if the correct label is ANYWHERE in the top 5
+    # Rank-5 Match Logic: Check if the correct label is in the top 5
     top5_labels = g_labels[top5_idx]
     correct_match_r5 = np.any(top5_labels == q_labels[:, None], axis=1)
 
@@ -188,7 +202,6 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
     n_known   = known_mask.sum()
     n_unknown = unknown_mask.sum()
 
-    # --- Corrected Vectorized Logic ---
     if n_known > 0:
         # DIR @ Rank-1
         under_and_correct_r1 = (known_dists[:, None] <= thresholds) & known_correct_r1[:, None]
@@ -220,7 +233,7 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
         achieved_far = fars_at_t[idx]
         
         if np.abs(achieved_far - target) <= _FAR_TOLERANCE:
-            # Save both R1 and R5 using dynamic keys (e.g., 'r1_0.01' and 'r5_0.01')
+            # Save both R1 and R5 
             res[f"r1_{target}"] = float(dirs_at_t_r1[idx])
             res[f"r5_{target}"] = float(dirs_at_t_r5[idx])
         else:
@@ -232,9 +245,9 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
 
 # ---------------------------------------------------------------------------
 
-import numpy as np
 
 def _aggregate_bootstrap_results(results: list[dict], mode: str) -> dict:
+    """Return the results for closed and open world evaluation"""
     if mode == "closed":
         maps = np.array([r["mAP"] for r in results])
         cmcs = np.array([r["cmc"] for r in results])  
@@ -269,7 +282,7 @@ def _aggregate_bootstrap_results(results: list[dict], mode: str) -> dict:
         "upper_dirs_r5": np.percentile(all_dirs_r5, 97.5, axis=0),
     }
 
-    # Automatically aggregate any targeted FAR points we generated (e.g., r1_0.01, r5_0.10)
+    # Automatically aggregate any targeted FAR points
     target_keys = [k for k in results[0].keys() if k.startswith("r1_") or k.startswith("r5_")]
     for tk in target_keys:
         vals = np.array([r[tk] for r in results])
