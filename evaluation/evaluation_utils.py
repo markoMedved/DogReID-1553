@@ -127,26 +127,20 @@ def bootstrap_from_csv(
 def _calc_closed_logic(matches: np.ndarray) -> dict:
     num_gallery = matches.shape[1]
 
-    # Filter out queries that have no correct match in the gallery
-    has_match    = np.any(matches, axis=1)
-    valid_matches = matches[has_match]
-    n_valid      = len(valid_matches)
-
-    if n_valid == 0:
-        return {"mAP": 0.0, "cmc": np.zeros(num_gallery)}
+    num_query = matches.shape[0]
 
     # --- CMC ---
     # Rank of first correct match for each valid query (0-indexed)
-    first_match_ranks = np.argmax(valid_matches, axis=1)
+    first_match_ranks = np.argmax(matches, axis=1)
     cmc_counts        = np.bincount(first_match_ranks, minlength=num_gallery)
-    cmc               = np.cumsum(cmc_counts) / n_valid
+    cmc               = np.cumsum(cmc_counts) / num_query
 
     # --- mAP ---
     # Precision at each rank, averaged over positions where a match occurs
-    cum_matches = np.cumsum(valid_matches, axis=1)
+    cum_matches = np.cumsum(matches, axis=1)
     precisions  = cum_matches / np.arange(1, num_gallery + 1)
-    n_relevant  = np.sum(valid_matches, axis=1)                          # per-query match count
-    ap          = np.sum(precisions * valid_matches, axis=1) / n_relevant  # safe: n_valid > 0 and has_match guarantees n_relevant >= 1
+    n_relevant  = np.sum(matches, axis=1)                          # per-query match count
+    ap          = np.sum(precisions * matches, axis=1) / n_relevant  # safe: n_valid > 0 and has_match guarantees n_relevant >= 1
 
     return {
         "mAP": float(np.mean(ap)),
@@ -161,18 +155,34 @@ _FAR_TOLERANCE    = 0.001
 _N_THRESHOLDS     = 1000
 
 
+import numpy as np
+
 def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.ndarray) -> dict:
     known_mask   = np.isin(q_labels, g_labels)
     unknown_mask = ~known_mask
 
-    best_dist     = np.min(dist_mat, axis=1)        
-    best_idx      = np.argmin(dist_mat, axis=1)      
-    correct_match = g_labels[best_idx] == q_labels    
+    # 1. Get Top-5 indices instead of just argmin
+    top5_idx = np.argsort(dist_mat, axis=1)[:, :5]
+    
+    # 2. Best distance remains the minimum distance (Rank-1)
+    best_dist = dist_mat[np.arange(len(dist_mat)), top5_idx[:, 0]]
+    
+    # 3. Rank-1 Match Logic
+    best_idx = top5_idx[:, 0]
+    correct_match_r1 = g_labels[best_idx] == q_labels    
+
+    # 4. Rank-5 Match Logic: Check if the correct label is ANYWHERE in the top 5
+    top5_labels = g_labels[top5_idx]
+    correct_match_r5 = np.any(top5_labels == q_labels[:, None], axis=1)
 
     thresholds = np.linspace(0, 2, _N_THRESHOLDS)  
 
-    known_dists   = best_dist[known_mask]             
-    known_correct = correct_match[known_mask]         
+    # Separate Knowns
+    known_dists      = best_dist[known_mask]             
+    known_correct_r1 = correct_match_r1[known_mask]        
+    known_correct_r5 = correct_match_r5[known_mask]
+
+    # Separate Unknowns
     unknown_dists = best_dist[unknown_mask]           
 
     n_known   = known_mask.sum()
@@ -180,11 +190,16 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
 
     # --- Corrected Vectorized Logic ---
     if n_known > 0:
-        # DIR: Correct identity AND distance below threshold
-        under_and_correct = (known_dists[:, None] <= thresholds) & known_correct[:, None]
-        dirs_at_t = under_and_correct.sum(axis=0) / n_known  
+        # DIR @ Rank-1
+        under_and_correct_r1 = (known_dists[:, None] <= thresholds) & known_correct_r1[:, None]
+        dirs_at_t_r1 = under_and_correct_r1.sum(axis=0) / n_known  
+        
+        # DIR @ Rank-5
+        under_and_correct_r5 = (known_dists[:, None] <= thresholds) & known_correct_r5[:, None]
+        dirs_at_t_r5 = under_and_correct_r5.sum(axis=0) / n_known  
     else:
-        dirs_at_t = np.zeros(_N_THRESHOLDS)
+        dirs_at_t_r1 = np.zeros(_N_THRESHOLDS)
+        dirs_at_t_r5 = np.zeros(_N_THRESHOLDS)
 
     if n_unknown > 0:
         # FAR: Any "unknown" dog that falls below the distance threshold (false alarm)
@@ -193,24 +208,31 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
     else:
         fars_at_t = np.zeros(_N_THRESHOLDS)
 
-    res = {"dirs": dirs_at_t, "fars": fars_at_t}
+    res = {
+        "dirs_r1": dirs_at_t_r1, 
+        "dirs_r5": dirs_at_t_r5, 
+        "fars": fars_at_t
+    }
 
     # Interpolate DIR at specific FAR points
     for target in _DIR_FAR_TARGETS:
-        # Find the threshold index where FAR is closest to our target (e.g., 0.01)
         idx = np.argmin(np.abs(fars_at_t - target))
         achieved_far = fars_at_t[idx]
         
-        # Check if we actually reached the target FAR within tolerance
         if np.abs(achieved_far - target) <= _FAR_TOLERANCE:
-            res[target] = float(dirs_at_t[idx])
+            # Save both R1 and R5 using dynamic keys (e.g., 'r1_0.01' and 'r5_0.01')
+            res[f"r1_{target}"] = float(dirs_at_t_r1[idx])
+            res[f"r5_{target}"] = float(dirs_at_t_r5[idx])
         else:
-            res[target] = float("nan")
+            res[f"r1_{target}"] = float("nan")
+            res[f"r5_{target}"] = float("nan")
 
     return res
 
 
 # ---------------------------------------------------------------------------
+
+import numpy as np
 
 def _aggregate_bootstrap_results(results: list[dict], mode: str) -> dict:
     if mode == "closed":
@@ -231,12 +253,36 @@ def _aggregate_bootstrap_results(results: list[dict], mode: str) -> dict:
         }
 
     # --- open ---
-    all_dirs = np.array([r["dirs"] for r in results])  
-    all_fars = np.array([r["fars"] for r in results])  
+    all_dirs_r1 = np.array([r["dirs_r1"] for r in results])  
+    all_dirs_r5 = np.array([r["dirs_r5"] for r in results])  
+    all_fars    = np.array([r["fars"] for r in results])  
 
-    return {
-        "mean_fars":  np.mean(all_fars,  axis=0),
-        "mean_dirs":  np.mean(all_dirs,  axis=0),
-        "lower_dirs": np.percentile(all_dirs, 2.5,  axis=0),
-        "upper_dirs": np.percentile(all_dirs, 97.5, axis=0),
+    aggregated_res = {
+        "mean_fars":     np.mean(all_fars, axis=0),
+        
+        "mean_dirs_r1":  np.mean(all_dirs_r1, axis=0),
+        "lower_dirs_r1": np.percentile(all_dirs_r1, 2.5, axis=0),
+        "upper_dirs_r1": np.percentile(all_dirs_r1, 97.5, axis=0),
+        
+        "mean_dirs_r5":  np.mean(all_dirs_r5, axis=0),
+        "lower_dirs_r5": np.percentile(all_dirs_r5, 2.5, axis=0),
+        "upper_dirs_r5": np.percentile(all_dirs_r5, 97.5, axis=0),
     }
+
+    # Automatically aggregate any targeted FAR points we generated (e.g., r1_0.01, r5_0.10)
+    target_keys = [k for k in results[0].keys() if k.startswith("r1_") or k.startswith("r5_")]
+    for tk in target_keys:
+        vals = np.array([r[tk] for r in results])
+        # Filter out NaNs in case some bootstrap samples didn't reach the target FAR
+        valid_vals = vals[~np.isnan(vals)] 
+        
+        if len(valid_vals) > 0:
+            aggregated_res[f"{tk}_mean"]  = float(np.mean(valid_vals))
+            aggregated_res[f"{tk}_lower"] = float(np.percentile(valid_vals, 2.5))
+            aggregated_res[f"{tk}_upper"] = float(np.percentile(valid_vals, 97.5))
+        else:
+            aggregated_res[f"{tk}_mean"]  = float("nan")
+            aggregated_res[f"{tk}_lower"] = float("nan")
+            aggregated_res[f"{tk}_upper"] = float("nan")
+
+    return aggregated_res

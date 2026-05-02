@@ -67,7 +67,7 @@ class DINOv2ReID(nn.Module):
         self.temporal_attn = TemporalAttentionPool(D)
 
         # --- BN-Neck ---
-        # Commonly used in ReID pipelines to stabilize the embedding space before metric learning
+        # Used in ReID pipelines to stabilize the embedding space before metric learning
         self.bn = nn.BatchNorm1d(D)
 
         # Prevent BN bias from being updated (standard ReID practice)
