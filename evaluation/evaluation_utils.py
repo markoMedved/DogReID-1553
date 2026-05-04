@@ -85,6 +85,8 @@ def bootstrap_from_csv(
     m: int = 100,
     mode: str = "closed",
     random_state: int = 42,
+    # # scale: float = 1.0, 
+    # # shift: float = 0.0,  
 ) -> dict:
     """Use boostrap for uncertenty quantification"""
     
@@ -99,7 +101,10 @@ def bootstrap_from_csv(
 
     query_labels   = np.array([get_id(i) for i in df_full["queryId"].values])
     gallery_labels = np.array([get_id(i) for i in df_full.columns[1:].values])
+
+    # Scaling, just to test
     dist_mat       = df_full.iloc[:, 1:].values.astype(np.float32)
+    # dist_mat       = (dist_mat * scale) + shift
 
     # --- Identity index map for fast bootstrap sampling ---
     unique_ids     = np.unique(query_labels)
@@ -111,6 +116,11 @@ def bootstrap_from_csv(
         match_matrix   = query_labels[:, None] == gallery_labels[None, :]
         sort_idx       = np.argsort(dist_mat, axis=1)
         sorted_matches = np.take_along_axis(match_matrix, sort_idx, axis=1)
+
+    if mode == "open":
+        global_thresholds = np.linspace(dist_mat.min(), dist_mat.max(), _N_THRESHOLDS)
+    else:
+        global_thresholds = None
 
     rng = np.random.default_rng(random_state)
     boot_results = []
@@ -131,6 +141,7 @@ def bootstrap_from_csv(
                 dist_mat[selected_indices],
                 query_labels[selected_indices],
                 gallery_labels,
+                global_thresholds
             )
         boot_results.append(res)
 
@@ -170,7 +181,7 @@ _FAR_TOLERANCE    = 0.001
 _N_THRESHOLDS     = 1000
 
 
-def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.ndarray) -> dict:
+def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.ndarray, thresholds: np.ndarray) -> dict:
     """Calculate DIR vs FAR for Rank1 and Rank5"""
     known_mask   = np.isin(q_labels, g_labels)
     unknown_mask = ~known_mask
@@ -189,7 +200,8 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
     top5_labels = g_labels[top5_idx]
     correct_match_r5 = np.any(top5_labels == q_labels[:, None], axis=1)
 
-    thresholds = np.linspace(dist_mat.min(), dist_mat.max(), _N_THRESHOLDS) 
+    # thresholds = np.linspace(dist_mat.min(), dist_mat.max(), _N_THRESHOLDS) 
+    # print(dist_mat.min(), dist_mat.max())
 
     # Separate Knowns
     known_dists      = best_dist[known_mask]             
