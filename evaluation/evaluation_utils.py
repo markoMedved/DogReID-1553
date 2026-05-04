@@ -85,55 +85,48 @@ def bootstrap_from_csv(
     m: int = 100,
     mode: str = "closed",
     random_state: int = 42,
-    # # scale: float = 1.0, 
-    # # shift: float = 0.0,  
 ) -> dict:
-    """Use boostrap for uncertenty quantification"""
+    """Use boostrap for uncertainty quantification + Full Set evaluation"""
     
     if mode not in ("closed", "open"):
         raise ValueError(f"mode must be 'closed' or 'open', got '{mode}'")
 
     # --- Load ---
     df_full = pd.read_csv(csv_path)
-
-    # dogId_videoId format → split from the right to handle underscores in IDs
     get_id = lambda x: str(x).rsplit('_', 1)[0]
 
     query_labels   = np.array([get_id(i) for i in df_full["queryId"].values])
     gallery_labels = np.array([get_id(i) for i in df_full.columns[1:].values])
-
-    # Scaling, just to test
     dist_mat       = df_full.iloc[:, 1:].values.astype(np.float32)
-    # dist_mat       = (dist_mat * scale) + shift
 
-    # --- Identity index map for fast bootstrap sampling ---
+    # --- Precompute/Setup ---
     unique_ids     = np.unique(query_labels)
     id_to_indices  = {id_: np.where(query_labels == id_)[0] for id_ in unique_ids}
 
-    # --- Precompute sorted match matrix (closed only) ---
     if mode == "closed":
-        print("-> Pre-calculating sorted match matrix...")
         match_matrix   = query_labels[:, None] == gallery_labels[None, :]
         sort_idx       = np.argsort(dist_mat, axis=1)
         sorted_matches = np.take_along_axis(match_matrix, sort_idx, axis=1)
-
-    if mode == "open":
-        global_thresholds = np.linspace(dist_mat.min(), dist_mat.max(), _N_THRESHOLDS)
-    else:
         global_thresholds = None
+    else:
+        global_thresholds = np.linspace(dist_mat.min(), dist_mat.max(), _N_THRESHOLDS)
 
+    # --- Run on full set ---
+    print(f"-> Calculating full set metrics ({mode})...")
+    if mode == "closed":
+        full_set_res = _calc_closed_logic(sorted_matches)
+    else:
+        full_set_res = _calc_open_logic(dist_mat, query_labels, gallery_labels, global_thresholds)
+
+    # --- Run bootstrap ---
     rng = np.random.default_rng(random_state)
     boot_results = []
 
-    print(f"-> Bootstrapping '{mode}' metrics from CSV ({m} iterations)...")
-
-    # --- Do m bootstrap repetitions ---
+    print(f"-> Bootstrapping '{mode}' metrics ({m} iterations)...")
     for _ in tqdm(range(m)):
-        # Sample by Dog ID not by videos
         sampled_ids      = rng.choice(unique_ids, size=len(unique_ids), replace=True)
         selected_indices = np.concatenate([id_to_indices[id_] for id_ in sampled_ids])
 
-        # Based on the setting calculate the appropriate metrics
         if mode == "closed":
             res = _calc_closed_logic(sorted_matches[selected_indices])
         else:
@@ -145,7 +138,9 @@ def bootstrap_from_csv(
             )
         boot_results.append(res)
 
-    return _aggregate_bootstrap_results(boot_results, mode)
+    return _aggregate_bootstrap_results(boot_results, mode, full_set_res)
+
+
 
 
 def _calc_closed_logic(matches: np.ndarray) -> dict:
@@ -258,56 +253,48 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
 # ---------------------------------------------------------------------------
 
 
-def _aggregate_bootstrap_results(results: list[dict], mode: str) -> dict:
-    """Return the results for closed and open world evaluation"""
+def _aggregate_bootstrap_results(results: list[dict], mode: str, full_set_res: dict) -> dict:
+    """Combines full set results with bootstrap statistics"""
+    
+    final_output = {"full_set": full_set_res}
+
     if mode == "closed":
         maps = np.array([r["mAP"] for r in results])
-        cmcs = np.array([r["cmc"] for r in results])  
+        cmcs = np.array([r["cmc"] for r in results]) 
 
-        mean_cmc = np.mean(cmcs, axis=0)
+        final_output.update({
+            "mAP_boot_mean": float(np.mean(maps)),
+            "mAP_std":       float(np.std(maps)),
+            "mAP_ci":        (float(np.percentile(maps, 2.5)), float(np.percentile(maps, 97.5))),
+            "cmc_boot_mean": np.mean(cmcs, axis=0),
+            "cmc_ci_lower":  np.percentile(cmcs, 2.5, axis=0),
+            "cmc_ci_upper":  np.percentile(cmcs, 97.5, axis=0),
+        })
 
-        return {
-            "mAP_mean":  float(np.mean(maps)),
-            "mAP_std":   float(np.std(maps)),
-            "mAP_lower": float(np.percentile(maps, 2.5)),
-            "mAP_upper": float(np.percentile(maps, 97.5)),
-            "cmc_mean":  mean_cmc,
-            "cmc_lower": np.percentile(cmcs, 2.5,  axis=0),
-            "cmc_upper": np.percentile(cmcs, 97.5, axis=0),
-            "ranks":     np.arange(1, len(mean_cmc) + 1),
-        }
+    else:
+        # --- Open world aggregation ---
+        all_dirs_r1 = np.array([r["dirs_r1"] for r in results])
+        all_dirs_r5 = np.array([r["dirs_r5"] for r in results]) # Added this
+        all_fars    = np.array([r["fars"] for r in results])
 
-    # --- open ---
-    all_dirs_r1 = np.array([r["dirs_r1"] for r in results])  
-    all_dirs_r5 = np.array([r["dirs_r5"] for r in results])  
-    all_fars    = np.array([r["fars"] for r in results])  
+        final_output.update({
+            "fars_boot_mean":    np.mean(all_fars, axis=0),
+            "dirs_r1_boot_mean": np.mean(all_dirs_r1, axis=0),
+            "dirs_r5_boot_mean": np.mean(all_dirs_r5, axis=0), # Added this
+            # These keys match the tuple-based access used in the updated plot/print code
+            "dirs_r1_ci": (np.percentile(all_dirs_r1, 2.5, axis=0), np.percentile(all_dirs_r1, 97.5, axis=0)),
+            "dirs_r5_ci": (np.percentile(all_dirs_r5, 2.5, axis=0), np.percentile(all_dirs_r5, 97.5, axis=0)),
+        })
 
-    aggregated_res = {
-        "mean_fars":     np.mean(all_fars, axis=0),
-        
-        "mean_dirs_r1":  np.mean(all_dirs_r1, axis=0),
-        "lower_dirs_r1": np.percentile(all_dirs_r1, 2.5, axis=0),
-        "upper_dirs_r1": np.percentile(all_dirs_r1, 97.5, axis=0),
-        
-        "mean_dirs_r5":  np.mean(all_dirs_r5, axis=0),
-        "lower_dirs_r5": np.percentile(all_dirs_r5, 2.5, axis=0),
-        "upper_dirs_r5": np.percentile(all_dirs_r5, 97.5, axis=0),
-    }
+        # Targeted FAR points 
+        target_keys = [k for k in results[0].keys() if k.startswith("r1_") or k.startswith("r5_")]
+        for tk in target_keys:
+            vals = np.array([r[tk] for r in results])
+            valid_vals = vals[~np.isnan(vals)]
+            if len(valid_vals) > 0:
+                final_output[f"{tk}_boot_stats"] = {
+                    "mean": float(np.mean(valid_vals)),
+                    "ci": (float(np.percentile(valid_vals, 2.5)), float(np.percentile(valid_vals, 97.5)))
+                }
 
-    # Automatically aggregate any targeted FAR points
-    target_keys = [k for k in results[0].keys() if k.startswith("r1_") or k.startswith("r5_")]
-    for tk in target_keys:
-        vals = np.array([r[tk] for r in results])
-        # Filter out NaNs in case some bootstrap samples didn't reach the target FAR
-        valid_vals = vals[~np.isnan(vals)] 
-        
-        if len(valid_vals) > 0:
-            aggregated_res[f"{tk}_mean"]  = float(np.mean(valid_vals))
-            aggregated_res[f"{tk}_lower"] = float(np.percentile(valid_vals, 2.5))
-            aggregated_res[f"{tk}_upper"] = float(np.percentile(valid_vals, 97.5))
-        else:
-            aggregated_res[f"{tk}_mean"]  = float("nan")
-            aggregated_res[f"{tk}_lower"] = float("nan")
-            aggregated_res[f"{tk}_upper"] = float("nan")
-
-    return aggregated_res
+    return final_output
