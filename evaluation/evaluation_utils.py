@@ -189,7 +189,7 @@ def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.nd
     top5_labels = g_labels[top5_idx]
     correct_match_r5 = np.any(top5_labels == q_labels[:, None], axis=1)
 
-    thresholds = np.linspace(0, 2, _N_THRESHOLDS)  
+    thresholds = np.linspace(dist_mat.min(), dist_mat.max(), _N_THRESHOLDS) 
 
     # Separate Knowns
     known_dists      = best_dist[known_mask]             

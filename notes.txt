@@ -1,0 +1,87 @@
+### DIFFICULT CASES
+
+5df50194-07de-4e5b-8e6a-bd383fc88e88
+- Lighting Shift, Scale Variance, Background Mismatch, Pose Variation, Occlusion, Homogenous Coat
+
+d046314c-a4f3-4389-a34e-cf042993440f
+- Scale Variance, Background Mismatch, Pose Variation, Movement Speed, Homogenous Coat, Occlusion
+
+521ce98a-7ce5-40ac-b7ab-ff7059857076
+- Lighting Shift, Pose Variation, Scale Variance, Background Mismatch, Movement Speed, Occlusion
+
+5e11347a-d91f-4650-8615-62bf6a6c23bb
+- Background Mismatch
+
+a4c6538a-99e5-4b0e-8835-822849f32877
+- Occlusion
+
+7395b95e-0c7c-45c6-9a73-5c4c72d4e9ac
+- Background Mismatch, Homogenous Coat, Pose Variation
+
+50b375b8-be41-41e2-ade5-2e435e8899eb
+- Background Mismatch, Pose Variation, Movement Speed, Homogenous Coat
+
+2bd34070-5607-45cc-9e7a-cfbbe5e41623
+- Lighting Shift, Background Mismatch, Pose Variation, Movement Speed
+
+92c90f11-0154-49b6-a7fc-bfb72e04ed15
+- Lighting Shift, Background Mismatch, Homogenous Coat
+
+644d8873-4aad-4632-bb52-37ca8170d4cd
+- Lighting Shift, Occlusion
+
+
+### EASY ONES
+
+af71282c-873b-4c3c-8398-f5cb22aac102
+- Pose Variation, Background Mismatch
+
+2bfe9460-bf97-48e3-b258-4ac5233e3f55
+- Background Mismatch
+
+83bd4a16-7033-49cf-914d-74baf4afdc21
+- Lighting Shift, Homogenous Coat
+
+05468985-0eb6-4493-8cad-970e51ca9128
+- Background Mismatch
+
+a6c4d7b5-08ff-4530-8b51-c1470cbe35ac
+- Pose Variation
+
+707d71ba-06f4-4566-8232-05bf39cd5047
+- None
+
+72b8f97d-3149-48a4-819a-05ba5ad7952e
+- Background Mismatch
+
+e25b07af-c083-4a8f-a730-2fa62a0ce01e
+- Coat Patterns
+
+a79f2595-3297-4436-976a-f4f75493c6d2
+- Background Mismatch, Occlusion
+
+bc6bc162-5040-4472-85b3-d22cd3cafdc2
+- Background Mismatch, Coat Patterns
+
+
+### FREQUENCY TOTALS
+
+| Problem Class       | Difficult (N=10) | Easy (N=10) |
+|---------------------|------------------|-------------|
+| Background          | 8                | 6           |
+| Pose Variation      | 7                | 3           |
+| Lighting Shift      | 6                | 1           |
+| Homogenous Coat     | 5                | 4           |
+| Occlusion           | 5                | 1           |
+| Movement Speed      | 4                | 0           |
+| Scale Variance      | 3                | 0           |
+                                                                                                                                                                                                                                                                                                                                                +
+
+Put a picture of examples with one picture from gallery and one picture from the query
+
+
+6/10 difficult ones have monocoat, only one easy one, even worse with lighting shifts 
+movement speed missmatch between gallery and query
+ussualy there is multiple problems (4 - 6 per ID)
+distance is 
+Homogenous Coat paired with Lighting Shifts
