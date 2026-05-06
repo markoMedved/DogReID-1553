@@ -51,3 +51,4 @@ tqdm==4.67.3
 typer==0.24.1
 tzdata==2026.1
 urllib3==2.6.3
+ipykernel

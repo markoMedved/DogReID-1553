@@ -19,7 +19,7 @@ class Config:
 
     # --- Hardware & Compute ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_workers = 12    # Number of dataloader workers
+    num_workers = 0    # Number of dataloader workers
     chunk_size  = 16     # Number of frames processed simultaneously
 
     # --- Batch Sampling (PK Strategy) ---
@@ -27,7 +27,7 @@ class Config:
     k = 4                # Number of clips per identity
     num_ids = batch_size // k 
     clip_len = 16        # Frame length of each video clip
-    val_split = 0    # Validation set ratio
+    val_split = 0.2   # Validation set ratio
 
     # --- Model Architecture ---
     embedding_dim = 768  # Default embedding dimension
@@ -40,7 +40,7 @@ class Config:
     accum_steps = 8      # Gradient accumulation steps to simulate larger batch
 
     # --- Evaluation ---
-    eval_period = 100     # Epochs between evaluations 
+    eval_period = 1     # Epochs between evaluations 
     eval_only   = False  
 
     def __init__(self):
