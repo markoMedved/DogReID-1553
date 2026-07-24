@@ -43,6 +43,9 @@ class Config:
     eval_period = 1      # Epochs between evaluations 
     eval_only   = False  # Toggle for evaluation-only mode
 
+    # Experiment for background noise
+    mask_dog = True
+
     def __init__(self):
         """Create experiment directory and apply model-specific overrides."""
         self.output_dir.mkdir(parents=True, exist_ok=True)

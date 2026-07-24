@@ -22,11 +22,11 @@ if str(ROOT_DIR) not in sys.path:
 # --- Evaluation Environment ---
 # closed = all query dogs exist in gallery
 # open   = some query dogs are not in gallery
-WORLD_TYPE = "open"
+WORLD_TYPE = "closed"
 
 # --- Model Identification ---
 # model identifier used for paths and output folders
-MODEL_NAME = "swin"
+MODEL_NAME = "dinov2"
 
 # path to trained checkpoint
 MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{MODEL_NAME}_{WORLD_TYPE}" / "model.pth")
@@ -38,7 +38,7 @@ from models.dinov2_builder import DINOv2ReID
 from models.swin_builder import VideoSwin
 from models.vit_builder import VideoViT
 
-MODEL_CLASS = VideoSwin
+MODEL_CLASS = DINOv2ReID
 
 
 # --- Output Configuration ---

@@ -5,12 +5,13 @@ from torch.utils.data import Dataset
 from .video_utils import load_video_clip
 import numpy as np
 import random
-from PIL import Image
-
+from PIL import Image, ImageDraw
+from ultralytics import YOLO
 
 class DOGVideoREIDDataset(Dataset):
     def __init__(self, root_dir, split_file, split="train", clip_len=16, 
-                 transform=None, use_videos=True, world="closed", label_map=None):
+                 transform=None, use_videos=True, world="closed", label_map=None,
+                 mask_dog=False, yolo_model="yolo11n.pt"):
 
         self.root_dir = root_dir
         self.clip_len = clip_len
@@ -18,6 +19,14 @@ class DOGVideoREIDDataset(Dataset):
         self.use_videos = use_videos
         self.world = world
         self.split = split
+        
+        # --- Background Baseline Toggle ---
+        self.mask_dog = mask_dog
+        if self.mask_dog:
+            self.yolo = YOLO(yolo_model)
+            self.yolo.to(torch.device("cpu"))
+        else:
+            self.yolo = None
 
         # --- Load Split Data ---
         df = pd.read_csv(split_file)
@@ -27,7 +36,6 @@ class DOGVideoREIDDataset(Dataset):
         df = df[df[split_col] == split]
 
         # --- Remove Identities with Only One Sample ---
-        # This is strictly required for proper metric learning during training
         if self.split == "train":
             counts = df["DOG_ID"].value_counts()
             valid_ids = counts[counts > 1].index
@@ -36,7 +44,6 @@ class DOGVideoREIDDataset(Dataset):
         self.df = df.reset_index(drop=True)
 
         # --- Store Dog IDs for External Access ---
-        # Accessed by the dataloader to facilitate sampling logic
         self.dog_ids = self.df["DOG_ID"].tolist()
 
         # --- Build Dog ID to Label Mapping ---
@@ -56,20 +63,13 @@ class DOGVideoREIDDataset(Dataset):
 
     @property
     def labels(self):
-        # Property accessed directly by MPerClassSampler
         return self._labels
 
     def _get_path(self, dog_id, video_id):
-
-        # --- Choose Dataset Folder and Extension ---
         folder = "Videos" if self.use_videos else "Images"
         ext = "mp4" if self.use_videos else "jpg"
-        
-        # --- Construct Filename Based on Dataset Format ---
         filename = f"{dog_id}-{video_id}.{ext}"
-
         return os.path.join(self.root_dir, folder, dog_id, filename)
-
 
     def __getitem__(self, idx):
             row = self.df.iloc[idx]
@@ -85,6 +85,30 @@ class DOGVideoREIDDataset(Dataset):
             else:
                 img = Image.open(path).convert("RGB")
                 clip = [np.array(img)]
+
+            # --- Background Masking (Diagnostic Baseline) ---
+            if self.mask_dog and self.yolo is not None:
+                masked_clip = []
+                for frame_arr in clip:
+                    pil_frame = Image.fromarray(frame_arr)
+                    
+                    # Run YOLO to find the dog (COCO class 16)
+                    results = self.yolo(pil_frame, verbose=False)[0]
+                    best_box = None
+                    best_conf = 0.3
+                    
+                    for box in results.boxes:
+                        if int(box.cls.item()) == 16 and float(box.conf.item()) > best_conf:
+                            best_conf = float(box.conf.item())
+                            best_box = tuple(map(int, box.xyxy[0].tolist()))
+                    
+                    # If a dog is found, paint a black rectangle over its bounding box
+                    if best_box is not None:
+                        draw = ImageDraw.Draw(pil_frame)
+                        draw.rectangle(best_box, fill="black")
+                        
+                    masked_clip.append(np.array(pil_frame))
+                clip = masked_clip
 
             # --- Transformation Pipeline ---
             if self.transform:
@@ -102,7 +126,6 @@ class DOGVideoREIDDataset(Dataset):
 
                 clip = torch.stack(transformed_frames)
             else:
-                # Convert tensor format: (T, H, W, C) -> (T, C, H, W)
                 clip = torch.from_numpy(np.array(clip)).permute(0, 3, 1, 2).float() / 255.0
 
             return clip, self._labels[idx], dog_id, video_id
