@@ -4,6 +4,7 @@ from .swin_builder import VideoSwin
 from .dinov2_builder import DINOv2ReID
 
 
+
 def build_model(cfg):
     """
     Factory function to instantiate the requested model architecture
