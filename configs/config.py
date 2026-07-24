@@ -19,7 +19,7 @@ class Config:
 
     # --- Hardware & Compute ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_workers = 0    # Number of dataloader workers
+    num_workers = 12    # Number of dataloader workers
     chunk_size  = 16     # Number of frames processed simultaneously
 
     # --- Batch Sampling (PK Strategy) ---
@@ -36,7 +36,7 @@ class Config:
     epochs = 50
     weight_decay = 1e-05
     margin = 0.3       # Margin for triplet loss
-    lr = 2e-05           # Learning rate
+    lr = 5e-05           # Learning rate
     accum_steps = 8      # Gradient accumulation steps to simulate larger batch
 
     # --- Evaluation ---
@@ -44,7 +44,10 @@ class Config:
     eval_only   = False  
 
     # Experiment for background noise
-    mask_dog = True
+    mask_dog = False 
+    bbox_file = "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/bounding_boxes.csv" # TODO hardcoded
+    use_gt_for_query_mask = False
+    force_yolo = True
 
     def __init__(self):
         """Create experiment directory and apply model-specific overrides."""

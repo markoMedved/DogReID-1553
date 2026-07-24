@@ -22,8 +22,7 @@ def build_dataloaders(cfg):
         "clip_len": cfg.clip_len,
         "transform": transform,
         "world": cfg.world,
-        "label_map": global_id_map,
-        "mask_dog": cfg.mask_dog
+        "label_map": global_id_map
     }
 
     # --- Base Training Dataset (SPLIT='train') ---
@@ -102,7 +101,6 @@ def build_dataloaders(cfg):
 
 def build_test_loaders(cfg, images=False):
     """Test loaders using CSV splits."""
-    # Use test transforms
     transform = VideoTransform(is_training=False)
     full_df = pd.read_csv(cfg.split_file)
     
@@ -116,18 +114,37 @@ def build_test_loaders(cfg, images=False):
         "split_file": cfg.split_file,
         "transform": transform,
         "world": cfg.world,
-        "label_map": global_id_map
+        "label_map": global_id_map,
+        "mask_dog": getattr(cfg, "mask_dog", False),
+        "bbox_file": getattr(cfg, "bbox_file", None)
     }
 
     # --- Query and Gallery Datasets ---
+    query_kwargs = dataset_kwargs.copy()
+    gallery_kwargs = dataset_kwargs.copy()
+
+    # Check our new special config parameter
+    use_gt_query = getattr(cfg, "use_gt_for_query_mask", False)
+
+    if images and use_gt_query:
+        print("-> [INFO] Special Config Active: Query set will use Ground Truth boxes.")
+        query_kwargs["force_yolo"] = False
+    else:
+        query_kwargs["force_yolo"] = True  # Default to YOLO for normal evaluation
+
+    gallery_kwargs["force_yolo"] = True    # Gallery always uses YOLO
+
     query_dataset = DOGVideoREIDDataset(
-            split="query", 
-            use_videos=not images, 
-            clip_len=1 if images else cfg.clip_len,
-            **dataset_kwargs
-        )
+        split="query", 
+        use_videos=not images, 
+        clip_len=1 if images else cfg.clip_len,
+        **query_kwargs
+    )
     
-    gallery_dataset = DOGVideoREIDDataset(split="gallery", **dataset_kwargs)
+    gallery_dataset = DOGVideoREIDDataset(
+        split="gallery", 
+        **gallery_kwargs
+    )
 
     # --- Construct Test DataLoaders ---
     query_loader = DataLoader(
@@ -142,5 +159,6 @@ def build_test_loaders(cfg, images=False):
 
     print(f"--- Test Loaders Ready ---")
     print(f"Query: {len(query_dataset)} | Gallery: {len(gallery_dataset)}")
+    print(f"Background Masking Baseline: {dataset_kwargs['mask_dog']}")
 
     return query_loader, gallery_loader
