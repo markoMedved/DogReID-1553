@@ -1,0 +1,80 @@
+Starting Dog Re-ID swin closed-Set training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: swin_closed_v1
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : swin
+  embedding_dim   : 1024
+  chunk_size      : 16
+[OPTIM]
+  lr              : 2e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.25
+  weight_decay    : 5e-05
+[PATHS]
+  output_dir      : .../swin_closed
+==================================================
+
+--- Data Loading Stats ---
+Training: 3756 samples
+Validation: Query=0, Gallery=0
+Epoch 0 | Loss: 0.2381
+Epoch 1 | Loss: 0.2243
+Epoch 2 | Loss: 0.2277
+Epoch 3 | Loss: 0.2174
+Epoch 4 | Loss: 0.2151
+Epoch 5 | Loss: 0.2180
+Epoch 6 | Loss: 0.2201
+Epoch 7 | Loss: 0.2168
+Epoch 8 | Loss: 0.2150
+Epoch 9 | Loss: 0.2111
+Epoch 10 | Loss: 0.2069
+Epoch 11 | Loss: 0.2138
+Epoch 12 | Loss: 0.2124
+Epoch 13 | Loss: 0.2179
+Epoch 14 | Loss: 0.2152
+Epoch 15 | Loss: 0.2138
+Epoch 16 | Loss: 0.2120
+Epoch 17 | Loss: 0.2035
+Epoch 18 | Loss: 0.2100
+Epoch 19 | Loss: 0.2090
+Epoch 20 | Loss: 0.2152
+Epoch 21 | Loss: 0.2080
+Epoch 22 | Loss: 0.2096
+Epoch 23 | Loss: 0.2080
+Epoch 24 | Loss: 0.2053
+Epoch 25 | Loss: 0.2069
+Epoch 26 | Loss: 0.2165
+Epoch 27 | Loss: 0.2072
+Epoch 28 | Loss: 0.2115
+Epoch 29 | Loss: 0.2068
+Epoch 30 | Loss: 0.2114
+Epoch 31 | Loss: 0.2143
+Epoch 32 | Loss: 0.2117
+Epoch 33 | Loss: 0.2055
+Epoch 34 | Loss: 0.2068
+Epoch 35 | Loss: 0.2118
+Epoch 36 | Loss: 0.2080
+Epoch 37 | Loss: 0.2129
+Epoch 38 | Loss: 0.2057
+Epoch 39 | Loss: 0.2097
+Epoch 40 | Loss: 0.2086
+Epoch 41 | Loss: 0.2083
+Epoch 42 | Loss: 0.2060
+Epoch 43 | Loss: 0.2091
+Epoch 44 | Loss: 0.2103
+Epoch 45 | Loss: 0.2112
+Epoch 46 | Loss: 0.2084
+Epoch 47 | Loss: 0.2111
+Epoch 48 | Loss: 0.2105
+Epoch 49 | Loss: 0.2039
+!!! Final training run detected (val_split=0). Saving final model...
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/swin_closed

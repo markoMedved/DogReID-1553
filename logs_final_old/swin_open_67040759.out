@@ -1,0 +1,33 @@
+Starting Dog Re-ID swin open-Set training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_closed
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : dinov2
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 2e-05
+  epochs          : 2
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 1e-05
+[PATHS]
+  output_dir      : .../dinov2_closed
+==================================================
+
+[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n.pt to 'yolo11n.pt': 37% ━━━━──────── 2.0/5.4MB 19.7MB/s 0.1s<0.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo11n.pt to 'yolo11n.pt': 100% ━━━━━━━━━━━━ 5.4MB 42.1MB/s 0.1s
+--- Data Loading Stats ---
+Training: 2990 samples
+Validation: Query=316, Gallery=450
+Epoch 0 | Loss: 0.2044
+Eval (Closed) -> Rank-1: 61.71%, Rank-5: 82.59%, mAP: 59.27%
+Epoch 1 | Loss: 0.1867
+Eval (Closed) -> Rank-1: 67.41%, Rank-5: 86.08%, mAP: 63.05%

@@ -1,0 +1,50 @@
+Starting Dog Re-ID swinopen-Set training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_closed
+--------------------------------------------------
+[DATA]
+  world           : open
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : swin
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 2e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.25
+  weight_decay    : 5e-05
+[PATHS]
+  output_dir      : .../dinov2_closed
+==================================================
+
+--- Data Loading Stats ---
+Training: 2936 samples
+Validation: Query=297, Gallery=438
+Epoch 0 | Loss: 0.2085
+Eval (Open) -> DIR@1%FAR: 36.36%, DIR@5%FAR: 36.36%, DIR@10%FAR: 36.36%
+Epoch 1 | Loss: 0.2041
+Eval (Open) -> DIR@1%FAR: 36.03%, DIR@5%FAR: 36.03%, DIR@10%FAR: 36.03%
+Epoch 2 | Loss: 0.1979
+Eval (Open) -> DIR@1%FAR: 38.38%, DIR@5%FAR: 38.38%, DIR@10%FAR: 38.38%
+Epoch 3 | Loss: 0.1941
+Eval (Open) -> DIR@1%FAR: 40.74%, DIR@5%FAR: 40.74%, DIR@10%FAR: 40.74%
+Epoch 4 | Loss: 0.1907
+Eval (Open) -> DIR@1%FAR: 41.08%, DIR@5%FAR: 41.08%, DIR@10%FAR: 41.08%
+Epoch 5 | Loss: 0.1962
+Eval (Open) -> DIR@1%FAR: 45.79%, DIR@5%FAR: 45.79%, DIR@10%FAR: 45.79%
+Epoch 6 | Loss: 0.1815
+Eval (Open) -> DIR@1%FAR: 40.74%, DIR@5%FAR: 40.74%, DIR@10%FAR: 40.74%
+Epoch 7 | Loss: 0.1951
+Eval (Open) -> DIR@1%FAR: 45.12%, DIR@5%FAR: 45.12%, DIR@10%FAR: 45.12%
+Epoch 8 | Loss: 0.1938
+Eval (Open) -> DIR@1%FAR: 47.14%, DIR@5%FAR: 47.14%, DIR@10%FAR: 47.14%
+Epoch 9 | Loss: 0.1917
+Eval (Open) -> DIR@1%FAR: 40.74%, DIR@5%FAR: 40.74%, DIR@10%FAR: 40.74%
+Epoch 10 | Loss: 0.1966
+Eval (Open) -> DIR@1%FAR: 45.12%, DIR@5%FAR: 45.12%, DIR@10%FAR: 45.12%

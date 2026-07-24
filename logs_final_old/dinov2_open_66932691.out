@@ -1,0 +1,80 @@
+Starting Dog Re-ID dinov2 Open-Set training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_closed_v1
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : dinov2
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 5e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 1e-05
+[PATHS]
+  output_dir      : .../dinov2_closed
+==================================================
+
+--- Data Loading Stats ---
+Training: 3756 samples
+Validation: Query=0, Gallery=0
+Epoch 0 | Loss: 0.2132
+Epoch 1 | Loss: 0.1666
+Epoch 2 | Loss: 0.1611
+Epoch 3 | Loss: 0.1608
+Epoch 4 | Loss: 0.1492
+Epoch 5 | Loss: 0.1538
+Epoch 6 | Loss: 0.1419
+Epoch 7 | Loss: 0.1511
+Epoch 8 | Loss: 0.1468
+Epoch 9 | Loss: 0.1340
+Epoch 10 | Loss: 0.1193
+Epoch 11 | Loss: 0.1401
+Epoch 12 | Loss: 0.1386
+Epoch 13 | Loss: 0.1267
+Epoch 14 | Loss: 0.1215
+Epoch 15 | Loss: 0.1273
+Epoch 16 | Loss: 0.1251
+Epoch 17 | Loss: 0.1163
+Epoch 18 | Loss: 0.1175
+Epoch 19 | Loss: 0.1101
+Epoch 20 | Loss: 0.1142
+Epoch 21 | Loss: 0.1167
+Epoch 22 | Loss: 0.1148
+Epoch 23 | Loss: 0.1164
+Epoch 24 | Loss: 0.1166
+Epoch 25 | Loss: 0.1064
+Epoch 26 | Loss: 0.1137
+Epoch 27 | Loss: 0.1006
+Epoch 28 | Loss: 0.1048
+Epoch 29 | Loss: 0.1045
+Epoch 30 | Loss: 0.0970
+Epoch 31 | Loss: 0.1066
+Epoch 32 | Loss: 0.0927
+Epoch 33 | Loss: 0.0840
+Epoch 34 | Loss: 0.0870
+Epoch 35 | Loss: 0.0991
+Epoch 36 | Loss: 0.0957
+Epoch 37 | Loss: 0.1000
+Epoch 38 | Loss: 0.0883
+Epoch 39 | Loss: 0.0888
+Epoch 40 | Loss: 0.0951
+Epoch 41 | Loss: 0.0932
+Epoch 42 | Loss: 0.0908
+Epoch 43 | Loss: 0.0953
+Epoch 44 | Loss: 0.0793
+Epoch 45 | Loss: 0.0770
+Epoch 46 | Loss: 0.0890
+Epoch 47 | Loss: 0.0993
+Epoch 48 | Loss: 0.0885
+Epoch 49 | Loss: 0.0797
+!!! Final training run detected (val_split=0). Saving final model...
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_closed

@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/train.py", line 4, in <module>
+    from data.dataloader import build_dataloaders
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/data/dataloader.py", line 4, in <module>
+    from .dataset import DOGVideoREIDDataset
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/data/dataset.py", line 9, in <module>
+    from ultralytics import YOLO
+ModuleNotFoundError: No module named 'ultralytics'

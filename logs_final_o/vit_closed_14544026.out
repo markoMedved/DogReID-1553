@@ -1,0 +1,50 @@
+Starting Dog Re-ID vit closed-Set training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_closed
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : vit
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 2e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 0.0005
+[PATHS]
+  output_dir      : .../dinov2_closed
+==================================================
+
+--- Data Loading Stats ---
+Training: 2990 samples
+Validation: Query=316, Gallery=450
+Epoch 0 | Loss: 0.2404
+Eval (Closed) -> Rank-1: 46.20%, Rank-5: 70.57%, mAP: 43.80%
+Epoch 1 | Loss: 0.2398
+Eval (Closed) -> Rank-1: 47.78%, Rank-5: 73.10%, mAP: 45.51%
+Epoch 2 | Loss: 0.2194
+Eval (Closed) -> Rank-1: 50.63%, Rank-5: 75.00%, mAP: 47.23%
+Epoch 3 | Loss: 0.2256
+Eval (Closed) -> Rank-1: 52.85%, Rank-5: 75.32%, mAP: 48.25%
+Epoch 4 | Loss: 0.2153
+Eval (Closed) -> Rank-1: 50.32%, Rank-5: 75.00%, mAP: 48.10%
+Epoch 5 | Loss: 0.2137
+Eval (Closed) -> Rank-1: 50.63%, Rank-5: 75.32%, mAP: 48.28%
+Epoch 6 | Loss: 0.2210
+Eval (Closed) -> Rank-1: 48.42%, Rank-5: 75.95%, mAP: 48.65%
+Epoch 7 | Loss: 0.2140
+Eval (Closed) -> Rank-1: 53.16%, Rank-5: 76.27%, mAP: 50.12%
+Epoch 8 | Loss: 0.2093
+Eval (Closed) -> Rank-1: 54.11%, Rank-5: 77.22%, mAP: 50.30%
+Epoch 9 | Loss: 0.2030
+Eval (Closed) -> Rank-1: 52.53%, Rank-5: 75.95%, mAP: 50.76%
+Epoch 10 | Loss: 0.2147
+Eval (Closed) -> Rank-1: 53.48%, Rank-5: 75.63%, mAP: 51.28%

@@ -1,0 +1,50 @@
+Starting Dog Re-ID vit open-Set training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_closed
+--------------------------------------------------
+[DATA]
+  world           : open
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : vit
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 2e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 0.0005
+[PATHS]
+  output_dir      : .../dinov2_closed
+==================================================
+
+--- Data Loading Stats ---
+Training: 2936 samples
+Validation: Query=297, Gallery=438
+Epoch 0 | Loss: 0.2365
+Eval (Open) -> DIR@1%FAR: 37.71%, DIR@5%FAR: 37.71%, DIR@10%FAR: 37.71%
+Epoch 1 | Loss: 0.2289
+Eval (Open) -> DIR@1%FAR: 40.07%, DIR@5%FAR: 40.07%, DIR@10%FAR: 40.07%
+Epoch 2 | Loss: 0.2208
+Eval (Open) -> DIR@1%FAR: 40.74%, DIR@5%FAR: 40.74%, DIR@10%FAR: 40.74%
+Epoch 3 | Loss: 0.2153
+Eval (Open) -> DIR@1%FAR: 41.08%, DIR@5%FAR: 41.08%, DIR@10%FAR: 41.08%
+Epoch 4 | Loss: 0.2086
+Eval (Open) -> DIR@1%FAR: 43.10%, DIR@5%FAR: 43.10%, DIR@10%FAR: 43.10%
+Epoch 5 | Loss: 0.2157
+Eval (Open) -> DIR@1%FAR: 45.79%, DIR@5%FAR: 45.79%, DIR@10%FAR: 45.79%
+Epoch 6 | Loss: 0.1978
+Eval (Open) -> DIR@1%FAR: 46.13%, DIR@5%FAR: 46.13%, DIR@10%FAR: 46.13%
+Epoch 7 | Loss: 0.2117
+Eval (Open) -> DIR@1%FAR: 47.14%, DIR@5%FAR: 47.14%, DIR@10%FAR: 47.14%
+Epoch 8 | Loss: 0.2127
+Eval (Open) -> DIR@1%FAR: 45.79%, DIR@5%FAR: 45.79%, DIR@10%FAR: 45.79%
+Epoch 9 | Loss: 0.2066
+Eval (Open) -> DIR@1%FAR: 44.78%, DIR@5%FAR: 44.78%, DIR@10%FAR: 44.78%
+Epoch 10 | Loss: 0.2097
+Eval (Open) -> DIR@1%FAR: 47.81%, DIR@5%FAR: 47.81%, DIR@10%FAR: 47.81%

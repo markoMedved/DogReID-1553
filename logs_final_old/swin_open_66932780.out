@@ -1,0 +1,80 @@
+Starting Dog Re-ID swin Open-Set training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: swin_open_v1
+--------------------------------------------------
+[DATA]
+  world           : open
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : swin
+  embedding_dim   : 1024
+  chunk_size      : 16
+[OPTIM]
+  lr              : 2e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.25
+  weight_decay    : 0.0001
+[PATHS]
+  output_dir      : .../swin_open
+==================================================
+
+--- Data Loading Stats ---
+Training: 3671 samples
+Validation: Query=0, Gallery=0
+Epoch 0 | Loss: 0.2307
+Epoch 1 | Loss: 0.2270
+Epoch 2 | Loss: 0.2284
+Epoch 3 | Loss: 0.2257
+Epoch 4 | Loss: 0.2186
+Epoch 5 | Loss: 0.2180
+Epoch 6 | Loss: 0.2142
+Epoch 7 | Loss: 0.2210
+Epoch 8 | Loss: 0.2180
+Epoch 9 | Loss: 0.2104
+Epoch 10 | Loss: 0.2178
+Epoch 11 | Loss: 0.2105
+Epoch 12 | Loss: 0.2089
+Epoch 13 | Loss: 0.2045
+Epoch 14 | Loss: 0.2104
+Epoch 15 | Loss: 0.2057
+Epoch 16 | Loss: 0.2151
+Epoch 17 | Loss: 0.2096
+Epoch 18 | Loss: 0.2132
+Epoch 19 | Loss: 0.2038
+Epoch 20 | Loss: 0.2102
+Epoch 21 | Loss: 0.2066
+Epoch 22 | Loss: 0.2132
+Epoch 23 | Loss: 0.2074
+Epoch 24 | Loss: 0.2059
+Epoch 25 | Loss: 0.2135
+Epoch 26 | Loss: 0.2048
+Epoch 27 | Loss: 0.2058
+Epoch 28 | Loss: 0.2147
+Epoch 29 | Loss: 0.2074
+Epoch 30 | Loss: 0.2139
+Epoch 31 | Loss: 0.2123
+Epoch 32 | Loss: 0.2144
+Epoch 33 | Loss: 0.2065
+Epoch 34 | Loss: 0.2079
+Epoch 35 | Loss: 0.2135
+Epoch 36 | Loss: 0.2055
+Epoch 37 | Loss: 0.2022
+Epoch 38 | Loss: 0.2064
+Epoch 39 | Loss: 0.2065
+Epoch 40 | Loss: 0.2164
+Epoch 41 | Loss: 0.2065
+Epoch 42 | Loss: 0.2061
+Epoch 43 | Loss: 0.2137
+Epoch 44 | Loss: 0.2138
+Epoch 45 | Loss: 0.2110
+Epoch 46 | Loss: 0.2018
+Epoch 47 | Loss: 0.2096
+Epoch 48 | Loss: 0.2096
+Epoch 49 | Loss: 0.2077
+!!! Final training run detected (val_split=0). Saving final model...
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/swin_open
