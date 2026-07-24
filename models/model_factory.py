@@ -14,7 +14,6 @@ def build_model(cfg):
 
     if cfg.model == "dinov2":
         # Initializes DINOv2 with registers (vitb14_reg)
-        # Registers help the model ignore background artifacts and distractors
         model = DINOv2ReID(variant="vitb14_reg")
 
     elif cfg.model == "vit":

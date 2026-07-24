@@ -48,6 +48,10 @@ def main():
     if args.batch_size: cfg.batch_size = args.batch_size
     if args.k: cfg.k = args.k
 
+    cfg.run_name = f"{cfg.model}_{cfg.world}"
+    cfg.output_dir = cfg.project_root / "trained_models" / cfg.run_name
+    cfg.output_dir.mkdir(parents=True, exist_ok=True)
+
     # print final configuration
     cfg.display()
 

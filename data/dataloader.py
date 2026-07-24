@@ -6,6 +6,8 @@ from .transforms import VideoTransform
 from pytorch_metric_learning.samplers import MPerClassSampler
 
 def build_dataloaders(cfg):
+    """Build the train and validation dataloaders for our experiments"""
+    # Use train transforms, including data augmentation
     transform = VideoTransform()
 
     # --- Global DOG_ID Mapping ---
@@ -34,6 +36,7 @@ def build_dataloaders(cfg):
     np.random.seed(42)
     np.random.shuffle(unique_train_dog_ids)
     
+    # Get the amount of validation ids, as specified in the config file
     val_id_count = int(len(unique_train_dog_ids) * cfg.val_split)
     val_dog_ids = set(unique_train_dog_ids[:val_id_count])
 
@@ -47,6 +50,7 @@ def build_dataloaders(cfg):
     for i in range(len(base_train_dataset)):
         dog_id = base_train_dataset.dog_ids[i]
 
+        # Seperate into scence disjoint groups for query and gallery
         if dog_id in val_dog_ids:
             group_val = base_train_dataset.df.iloc[i]['GROUP']
             if group_val == 1:
@@ -69,7 +73,7 @@ def build_dataloaders(cfg):
         labels=subset_labels,  
         m=cfg.k,
         batch_size=cfg.batch_size,
-        length_before_new_iter=len(train_dataset) 
+        length_before_new_iter=len(train_dataset) # Only use the length of the dataset
     )
 
     # --- Construct DataLoaders ---
@@ -78,6 +82,7 @@ def build_dataloaders(cfg):
         drop_last=True, num_workers=cfg.num_workers
     )
 
+    # For validation we need query and gallery dataloaders
     val_query_loader = DataLoader(
         val_query_dataset, batch_size=cfg.batch_size * 2, 
         shuffle=False, num_workers=cfg.num_workers
@@ -97,6 +102,7 @@ def build_dataloaders(cfg):
 
 def build_test_loaders(cfg, images=False):
     """Test loaders using CSV splits."""
+    # Use test transforms
     transform = VideoTransform(is_training=False)
     full_df = pd.read_csv(cfg.split_file)
     

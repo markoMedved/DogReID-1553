@@ -7,7 +7,7 @@ class Config:
     """
     
     # --- Experiment Settings ---
-    model = "dinov2"       # Options: 'dinov2', 'swin', 'vit'
+    model = "swin"       # Options: 'dinov2', 'swin', 'vit'
     world = "closed"       # Options: 'closed', 'open'
     run_name = f"{model}_{world}"
 
@@ -15,11 +15,11 @@ class Config:
     project_root = Path(__file__).resolve().parent.parent
     data_root    = project_root 
     split_file   = project_root / "splits.csv"
-    output_dir   = project_root / "trained_models" / f"{model}_{world}"
+    output_dir   = project_root / "trained_models" / f"{model}_{world}" # Output for trained model
 
     # --- Hardware & Compute ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_workers = 12     # Number of dataloader workers
+    num_workers = 0    # Number of dataloader workers
     chunk_size  = 16     # Number of frames processed simultaneously
 
     # --- Batch Sampling (PK Strategy) ---
@@ -27,21 +27,21 @@ class Config:
     k = 4                # Number of clips per identity
     num_ids = batch_size // k 
     clip_len = 16        # Frame length of each video clip
-    val_split = 0.2      # Validation set ratio
+    val_split = 0.2   # Validation set ratio
 
     # --- Model Architecture ---
     embedding_dim = 768  # Default embedding dimension
     
     # --- Training & Optimization ---
-    epochs = 2
-    weight_decay = 5e-05
-    margin = 0.25        # Loss margin
+    epochs = 50
+    weight_decay = 1e-05
+    margin = 0.3       # Margin for triplet loss
     lr = 2e-05           # Learning rate
     accum_steps = 8      # Gradient accumulation steps to simulate larger batch
 
     # --- Evaluation ---
-    eval_period = 1      # Epochs between evaluations 
-    eval_only   = False  # Toggle for evaluation-only mode
+    eval_period = 1     # Epochs between evaluations 
+    eval_only   = False  
 
     # Experiment for background noise
     mask_dog = True
@@ -50,6 +50,7 @@ class Config:
         """Create experiment directory and apply model-specific overrides."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Swin has a different embedding dimension
         if self.model == "swin":
             self.embedding_dim = 1024
 

@@ -6,14 +6,15 @@ import numpy as np
 import json
 
 class Trainer:
+    "Class that has the training logic"
     def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner):
         # --- Move Model to Compute Device ---
         self.model = model.to(cfg.device)
 
         # --- Dataloaders ---
         self.train_loader = train_loader
-        self.query_loader = query_loader
-        self.gallery_loader = gallery_loader
+        self.query_loader = query_loader # Validation
+        self.gallery_loader = gallery_loader # Validation
 
         # --- Training Configuration ---
         self.optimizer = optimizer
@@ -24,9 +25,10 @@ class Trainer:
         self.loss_fn = loss_fn
         self.miner = miner
 
+
     def train(self):
-        # --- Initialize Tracking Variables ---
-        best_rank1 = 0.0
+        """Train the model"""
+        # --- Get the validation split ratio ---
         val_split = getattr(self.cfg, 'val_split', 0)
 
         # --- Main Training Loop ---
@@ -38,7 +40,7 @@ class Trainer:
             print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
 
             # --- Validation Evaluation ---
-            if val_split > 0:
+            if val_split > 0 and self.cfg.world == "closed":
                 # Run evaluation only at specified intervals
                 if (epoch + 1) % self.cfg.eval_period == 0:
                     rank1, rank5, mAP = self.evaluate()
@@ -51,10 +53,11 @@ class Trainer:
             self.save_checkpoint("model.pth")
 
     def train_epoch(self, epoch):
-        # --- Setup Training Epoch ---
+        """Train for one epoch"""
+        # --- Put into train mode ---
         self.model.train()
 
-        # Gradient accumulation helps simulate larger batch sizes on constrained hardware
+        # Gradient accumulation helps simulate larger batch sizes
         accum_steps = getattr(self.cfg, 'accum_steps', 8) 
 
         running_loss = 0.0
@@ -117,27 +120,9 @@ class Trainer:
             print(f"Eval (Closed) -> Rank-1: {r1:.2%}, Rank-5: {r5:.2%}, mAP: {mAP:.2%}")
             return r1, r5, mAP
 
-        # --- Open-World Evaluation ---
-        # Assumes some queries may not exist within the gallery
-        else:
-            thresh, dir_curve, far_curve = self.dir_vs_far(q_f, q_pids, g_f, g_pids)
-            
-            # Select DIR values at specific False Accept Rates (FAR)
-            idx_1pct = np.argmin(np.abs(far_curve - 0.01))
-            idx_5pct = np.argmin(np.abs(far_curve - 0.05))
-            idx_10pct = np.argmin(np.abs(far_curve - 0.10))
-            
-            dir_1 = dir_curve[idx_1pct]
-            dir_5 = dir_curve[idx_5pct]
-            dir_10 = dir_curve[idx_10pct]
-
-            print(f"Eval (Open) -> DIR@1%FAR: {dir_1:.2%}, DIR@5%FAR: {dir_5:.2%}, DIR@10%FAR: {dir_10:.2%}")
-            
-            # Returned values are typically logged by the training loop
-            return dir_1, dir_5, dir_10
 
     def _get_features(self, loader, name):
-        # --- Extract Embeddings from Dataloader ---
+        """Extract Embeddings from Dataloader"""
         feats, pids = [], []
 
         for batch in tqdm(loader, desc=name):
@@ -156,7 +141,6 @@ class Trainer:
         return torch.cat(feats, 0), torch.tensor(pids)
 
     def calculate_cmc_map(self, distmat, q_pids, g_pids):
-        # --- Classic Person/Object Re-ID Evaluation Metrics ---
         num_q, num_g = distmat.shape
 
         # Sort the gallery indices by distance for each query
@@ -194,68 +178,6 @@ class Trainer:
         cmc /= len(all_cmc) if len(all_cmc) > 0 else 1
 
         return cmc[0], cmc[4], np.mean(all_AP)
-
-    def dir_vs_far(self, query_features, query_labels, gallery_features, gallery_labels, thresholds=None):
-
-        # --- Open-World Evaluation Metrics ---
-        # DIR = Detection Identification Rate (True Positive Rate)
-        # FAR = False Accept Rate (False Positive Rate)
-
-        if thresholds is None:
-            thresholds = torch.linspace(0, 1, 500)
-        
-        # Ensure features are normalized
-        q_f = F.normalize(query_features, p=2, dim=1)
-        g_f = F.normalize(gallery_features, p=2, dim=1)
-
-        # Calculate similarity matrix via dot product
-        similarity_mat = q_f @ g_f.T 
-
-        q_labels = query_labels.to(q_f.device)
-        g_labels = gallery_labels.to(g_f.device)
-
-        # Matrix indicating which queries match which gallery images
-        match_matrix = q_labels[:, None] == g_labels[None, :]
-
-        # Masks separating known (in gallery) vs unknown (not in gallery) queries
-        known_mask = torch.any(match_matrix, dim=1) 
-        unknown_mask = ~known_mask
-
-        # Filter similarities and matches based on masks
-        known_sims = similarity_mat[known_mask]      
-        known_matches = match_matrix[known_mask]     
-        unknown_sims = similarity_mat[unknown_mask]  
-
-        dir_list, far_list = [], []
-
-        # Find the highest similarity score for known queries
-        max_vals_known, max_idx_known = known_sims.max(dim=1)
-
-        # Verify if the highest scoring gallery image is the correct identity
-        top_is_correct = known_matches.gather(1, max_idx_known.unsqueeze(1)).squeeze(1)
-
-        # Find the highest similarity score for unknown queries
-        max_vals_unknown, _ = unknown_sims.max(dim=1) if unknown_sims.numel() > 0 else (torch.tensor([]), None)
-
-        # Calculate metrics across different thresholds
-        for thresh in thresholds:
-
-            if known_sims.numel() > 0:
-                dir_val = ((max_vals_known > thresh) & top_is_correct).float().mean().item()
-            else:
-                dir_val = 0.0
-
-            dir_list.append(dir_val)
-
-            if unknown_sims.numel() > 0:
-                far_val = (max_vals_unknown > thresh).float().mean().item()
-            else:
-                far_val = 0.0
-
-            far_list.append(far_val)
-
-        return thresholds.cpu().numpy(), np.array(dir_list), np.array(far_list)
-
 
     def save_checkpoint(self, filename):
 

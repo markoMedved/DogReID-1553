@@ -5,184 +5,294 @@ from tqdm import tqdm
 from torch.nn import functional as F
 from pathlib import Path
 
-def extract_features_with_ids(model, dataloader, device):
-    # --- Set Model to Evaluation Mode ---
+def _to_scalar(x):
+    """Get scalar"""
+    return x.item() if hasattr(x, "item") else x
+
+
+def extract_features_with_ids(
+    model: torch.nn.Module,
+    dataloader: torch.utils.data.DataLoader,
+    device: torch.device,
+) -> tuple[torch.Tensor, list[str]]:
+    """Extract features of the samples from the provided ids"""
+
+    # If the model was training, to restore back after
+    was_training = model.training
     model.eval()
-    all_embeddings = []
-    all_ids = []
+
+    all_embeddings: list[torch.Tensor] = []
+    all_ids: list[str] = []
 
     print(f"-> Extracting features for {len(dataloader.dataset)} samples...")
 
-    # --- Feature Extraction Loop ---
-    with torch.no_grad():
-        for batch in tqdm(dataloader):
-            videos, labels, dog_ids, video_ids = batch
-            
-            # Create unique item identifiers
-            item_ids = [f"{d}_{v}" for d, v in zip(dog_ids, video_ids)]
-            videos = videos.to(device)
+    try:
+        with torch.no_grad():
+            # --- Test loop ---
+            for batch in tqdm(dataloader):
+                videos, _labels, dog_ids, video_ids = batch
 
-            # Forward pass to get embeddings
-            embeddings = model(videos)
-            
-            # L2 Normalize embeddings for cosine similarity equivalence
-            embeddings = F.normalize(embeddings, p=2, dim=1)
+                item_ids = [
+                    f"{_to_scalar(d)}_{_to_scalar(v)}"
+                    for d, v in zip(dog_ids, video_ids)
+                ]
 
-            all_embeddings.append(embeddings.cpu())
-            all_ids.extend(item_ids)
+                # Normalize on device, then move to CPU the features that the model produced
+                embeddings = F.normalize(model(videos.to(device)), p=2, dim=1).cpu()
+
+                all_embeddings.append(embeddings)
+                all_ids.extend(item_ids)
+    finally:
+        model.train(was_training)  # always restore original mode
 
     return torch.cat(all_embeddings), all_ids
 
-def generate_distance_csv(model, query_loader, gallery_loader, cfg, filename="dist_matrix.csv"):
-    # --- Extract Features ---
+
+def generate_distance_csv(
+    model: torch.nn.Module,
+    query_loader: torch.utils.data.DataLoader,
+    gallery_loader: torch.utils.data.DataLoader,
+    cfg,
+    filename: str = "dist_matrix.csv",
+) -> Path:
+    """Generate a distance csv from features gotten with model inference"""
+
+    # --- Get teh features for gallery and query samples ---
     q_feat, q_ids = extract_features_with_ids(model, query_loader, cfg.device)
     g_feat, g_ids = extract_features_with_ids(model, gallery_loader, cfg.device)
 
+    # --- Compute the distance matrix ---
     print("-> Computing Distance Matrix...")
-    # Compute L2 distance matrix between query and gallery sets
-    dist_mat = torch.cdist(q_feat, g_feat, p=2).numpy()
+    dist_mat = torch.cdist(
+        q_feat.to(cfg.device),
+        g_feat.to(cfg.device),
+        p=2,
+    ).cpu().numpy()
 
-    # --- Format as DataFrame ---
+    # --- Construct the appropriate csv --- 
     df = pd.DataFrame(dist_mat, columns=g_ids)
-    df.insert(0, 'queryId', q_ids)
+    df.insert(0, "queryId", q_ids)
 
-    # --- Save to CSV ---
+    # --- Create the output path ---
     output_path = Path(cfg.output_dir) / filename
-    # Fixed: writing with a comma
-    df.to_csv(output_path, sep=',', index=False)
-    print(f"Distance CSV successfully created: {output_path}")
+    df.to_csv(output_path, index=False)
+    print(f"-> Distance CSV saved: {output_path}")
+
     return output_path
 
-import pandas as pd
-import numpy as np
-from tqdm import tqdm
-
-def bootstrap_from_csv(csv_path, m=100, mode="closed", random_state=42):
-    # --- Load Distance Matrix ---
-    df_full = pd.read_csv(csv_path, sep=',')
+def bootstrap_from_csv(
+    csv_path: str,
+    m: int = 100,
+    mode: str = "closed",
+    random_state: int = 42,
+) -> dict:
+    """Use boostrap for uncertainty quantification + Full Set evaluation"""
     
-    # Pre-calculate labels as integers for faster comparison
-    get_id = lambda x: int(str(x).split('_')[0])
-    query_labels = np.array([get_id(i) for i in df_full['queryId'].values])
+    if mode not in ("closed", "open"):
+        raise ValueError(f"mode must be 'closed' or 'open', got '{mode}'")
+
+    # --- Load ---
+    df_full = pd.read_csv(csv_path)
+    get_id = lambda x: str(x).rsplit('_', 1)[0]
+
+    query_labels   = np.array([get_id(i) for i in df_full["queryId"].values])
     gallery_labels = np.array([get_id(i) for i in df_full.columns[1:].values])
-    dist_mat = df_full.iloc[:, 1:].values
+    dist_mat       = df_full.iloc[:, 1:].values.astype(np.float32)
 
-    # Pre-calculate Identity Mapping for Sampling
-    unique_ids = np.unique(query_labels)
-    id_to_indices = {id_: np.where(query_labels == id_)[0] for id_ in unique_ids}
+    # --- Precompute/Setup ---
+    unique_ids     = np.unique(query_labels)
+    id_to_indices  = {id_: np.where(query_labels == id_)[0] for id_ in unique_ids}
 
-    # --- Pre-calculate Sorted Match Matrix (CRITICAL FOR SPEED) ---
-    # This identifies where the "hits" are for every query, sorted by distance
-    print("-> Pre-calculating sorted match matrix...")
-    match_matrix = (query_labels[:, None] == gallery_labels[None, :])
-    sort_idx = np.argsort(dist_mat, axis=1)
-    # This is a boolean matrix of shape (Queries, Gallery) sorted by closeness
-    sorted_matches = np.take_along_axis(match_matrix, sort_idx, axis=1)
+    if mode == "closed":
+        match_matrix   = query_labels[:, None] == gallery_labels[None, :]
+        sort_idx       = np.argsort(dist_mat, axis=1)
+        sorted_matches = np.take_along_axis(match_matrix, sort_idx, axis=1)
+        global_thresholds = None
+    else:
+        global_thresholds = np.linspace(dist_mat.min(), dist_mat.max(), _N_THRESHOLDS)
 
+    # --- Run on full set ---
+    print(f"-> Calculating full set metrics ({mode})...")
+    if mode == "closed":
+        full_set_res = _calc_closed_logic(sorted_matches)
+    else:
+        full_set_res = _calc_open_logic(dist_mat, query_labels, gallery_labels, global_thresholds)
+
+    # --- Run bootstrap ---
+    rng = np.random.default_rng(random_state)
     boot_results = []
-    np.random.seed(random_state)
 
-    print(f"-> Bootstrapping {mode} metrics from CSV ({m} iterations)...")
-
-    # --- Bootstrap Sampling Loop ---
+    print(f"-> Bootstrapping '{mode}' metrics ({m} iterations)...")
     for _ in tqdm(range(m)):
-        # Sample identities with replacement
-        sampled_ids = np.random.choice(unique_ids, size=len(unique_ids), replace=True)
-        
-        # Flatten the list of indices for the sampled IDs
-        selected_indices = []
-        for id_ in sampled_ids:
-            selected_indices.extend(id_to_indices[id_])
-        selected_indices = np.array(selected_indices)
+        sampled_ids      = rng.choice(unique_ids, size=len(unique_ids), replace=True)
+        selected_indices = np.concatenate([id_to_indices[id_] for id_ in sampled_ids])
 
-        # --- Evaluate Resampled Data ---
         if mode == "closed":
-            # Pass the pre-sorted matches to the logic function
-            res = _calc_closed_logic_vectorized(sorted_matches[selected_indices])
-            boot_results.append(res)
+            res = _calc_closed_logic(sorted_matches[selected_indices])
         else:
-            # Open world is already relatively fast, but we pass pre-calculated masks
-            res = _calc_open_logic_vectorized(dist_mat[selected_indices], 
-                                              query_labels[selected_indices], 
-                                              gallery_labels)
-            boot_results.append(res)
+            res = _calc_open_logic(
+                dist_mat[selected_indices],
+                query_labels[selected_indices],
+                gallery_labels,
+                global_thresholds
+            )
+        boot_results.append(res)
 
-    return _aggregate_bootstrap_results(boot_results, mode)
+    return _aggregate_bootstrap_results(boot_results, mode, full_set_res)
 
-# -------- VECTORIZED INTERNAL HELPERS --------
 
-def _calc_closed_logic_vectorized(matches):
-    """
-    Lightning fast vectorized CMC and mAP.
-    matches: Boolean array (NumQueries, NumGallery) sorted by distance.
-    """
-    num_queries, num_gallery = matches.shape
+
+
+def _calc_closed_logic(matches: np.ndarray) -> dict:
+    """Calculate cmc and mAP"""
+
+    num_gallery = matches.shape[1]
+    num_query = matches.shape[0]
 
     # --- CMC ---
-    # Find index of first True in each row
+    # Rank of first correct match for each valid query (0-indexed)
     first_match_ranks = np.argmax(matches, axis=1)
-    # Only count queries that actually have a match in gallery
-    has_match = np.any(matches, axis=1)
-    valid_ranks = first_match_ranks[has_match]
-    
-    cmc_counts = np.bincount(valid_ranks, minlength=num_gallery)
-    cmc = np.cumsum(cmc_counts) / len(valid_ranks) if len(valid_ranks) > 0 else np.zeros(num_gallery)
+    cmc_counts        = np.bincount(first_match_ranks, minlength=num_gallery)
+    cmc               = np.cumsum(cmc_counts) / num_query
 
     # --- mAP ---
+    # Precision at each rank, averaged over positions where a match occurs
     cum_matches = np.cumsum(matches, axis=1)
-    precisions = cum_matches / np.arange(1, num_gallery + 1)
-    # Average Precision is mean of precisions at the successful match positions
-    ap = np.sum(precisions * matches, axis=1) / np.maximum(1, np.sum(matches, axis=1))
-    
+    precisions  = cum_matches / np.arange(1, num_gallery + 1)
+    n_relevant  = np.sum(matches, axis=1)                          
+    ap          = np.sum(precisions * matches, axis=1) / n_relevant  
+
     return {
-        "mAP": np.mean(ap[has_match]) if any(has_match) else 0,
-        "cmc": cmc
+        "mAP": float(np.mean(ap)),
+        "cmc": cmc,
     }
 
-def _calc_open_logic_vectorized(dist_mat, q_labels, g_labels):
-    """Vectorized open-world logic."""
-    # Known vs Unknown
-    known_mask = np.isin(q_labels, g_labels)
+
+# ---------------------------------------------------------------------------
+
+# Hyperparameters for evaluating in the open-world setting 
+_DIR_FAR_TARGETS  = (0.01, 0.05, 0.1)
+_FAR_TOLERANCE    = 0.001
+_N_THRESHOLDS     = 1000
+
+
+def _calc_open_logic(dist_mat: np.ndarray, q_labels: np.ndarray, g_labels: np.ndarray, thresholds: np.ndarray) -> dict:
+    """Calculate DIR vs FAR for Rank1 and Rank5"""
+    known_mask   = np.isin(q_labels, g_labels)
     unknown_mask = ~known_mask
 
-    # Best matches
-    best_dist = np.min(dist_mat, axis=1)
-    best_idx = np.argmin(dist_mat, axis=1)
-    correct_match = (g_labels[best_idx] == q_labels)
-
-    thresholds = np.linspace(0, 2, 500)
+    # Get Top-5 indices 
+    top5_idx = np.argsort(dist_mat, axis=1)[:, :5]
     
-    # Broadcast comparison for DIR and FAR
-    # Shape: (500, NumQueries)
-    dirs_at_t = np.array([np.sum((best_dist[known_mask] < t) & correct_match[known_mask]) / np.sum(known_mask) 
-                          if any(known_mask) else 0 for t in thresholds])
-    fars_at_t = np.array([np.sum(best_dist[unknown_mask] < t) / np.sum(unknown_mask) 
-                          if any(unknown_mask) else 0 for t in thresholds])
+    # Minimum distance (Rank-1)
+    best_dist = dist_mat[np.arange(len(dist_mat)), top5_idx[:, 0]]
+    
+    # Rank-1 Match Logic
+    best_idx = top5_idx[:, 0]
+    correct_match_r1 = g_labels[best_idx] == q_labels    
 
-    res = {"dirs": dirs_at_t, "fars": fars_at_t}
-    for target in [0.01, 0.05, 0.1]:
+    # Rank-5 Match Logic: Check if the correct label is in the top 5
+    top5_labels = g_labels[top5_idx]
+    correct_match_r5 = np.any(top5_labels == q_labels[:, None], axis=1)
+
+
+    # Separate Knowns
+    known_dists      = best_dist[known_mask]             
+    known_correct_r1 = correct_match_r1[known_mask]        
+    known_correct_r5 = correct_match_r5[known_mask]
+
+    # Separate Unknowns
+    unknown_dists = best_dist[unknown_mask]           
+
+    n_known   = known_mask.sum()
+    n_unknown = unknown_mask.sum()
+
+    if n_known > 0:
+        # DIR @ Rank-1
+        under_and_correct_r1 = (known_dists[:, None] <= thresholds) & known_correct_r1[:, None]
+        dirs_at_t_r1 = under_and_correct_r1.sum(axis=0) / n_known  
+        
+        # DIR @ Rank-5
+        under_and_correct_r5 = (known_dists[:, None] <= thresholds) & known_correct_r5[:, None]
+        dirs_at_t_r5 = under_and_correct_r5.sum(axis=0) / n_known  
+    else:
+        dirs_at_t_r1 = np.zeros(_N_THRESHOLDS)
+        dirs_at_t_r5 = np.zeros(_N_THRESHOLDS)
+
+    if n_unknown > 0:
+        # FAR: Any "unknown" dog that falls below the distance threshold (false alarm)
+        under_unknown = unknown_dists[:, None] <= thresholds
+        fars_at_t = under_unknown.sum(axis=0) / n_unknown  
+    else:
+        fars_at_t = np.zeros(_N_THRESHOLDS)
+
+    res = {
+        "dirs_r1": dirs_at_t_r1, 
+        "dirs_r5": dirs_at_t_r5, 
+        "fars": fars_at_t
+    }
+
+    # Interpolate DIR at specific FAR points
+    for target in _DIR_FAR_TARGETS:
         idx = np.argmin(np.abs(fars_at_t - target))
-        res[target] = dirs_at_t[idx]
+        achieved_far = fars_at_t[idx]
+        
+        if np.abs(achieved_far - target) <= _FAR_TOLERANCE:
+            # Save both R1 and R5 
+            res[f"r1_{target}"] = float(dirs_at_t_r1[idx])
+            res[f"r5_{target}"] = float(dirs_at_t_r5[idx])
+        else:
+            res[f"r1_{target}"] = float("nan")
+            res[f"r5_{target}"] = float("nan")
+
     return res
 
-def _aggregate_bootstrap_results(results, mode):
-    # (Existing aggregation logic is fine, it just handles the dicts)
+
+# ---------------------------------------------------------------------------
+
+
+def _aggregate_bootstrap_results(results: list[dict], mode: str, full_set_res: dict) -> dict:
+    """Combines full set results with bootstrap statistics"""
+    
+    final_output = {"full_set": full_set_res}
+
     if mode == "closed":
-        maps = [r["mAP"] for r in results]
-        cmcs = np.array([r["cmc"] for r in results])
-        mean_cmc = np.mean(cmcs, axis=0)
-        return {
-            "mAP_mean": np.mean(maps), "mAP_std": np.std(maps),
-            "cmc_mean": mean_cmc, "cmc_lower": np.percentile(cmcs, 2.5, axis=0),
-            "cmc_upper": np.percentile(cmcs, 97.5, axis=0),
-            "ranks": np.arange(1, len(mean_cmc) + 1)
-        }
+        maps = np.array([r["mAP"] for r in results])
+        cmcs = np.array([r["cmc"] for r in results]) 
+
+        final_output.update({
+            "mAP_boot_mean": float(np.mean(maps)),
+            "mAP_std":       float(np.std(maps)),
+            "mAP_ci":        (float(np.percentile(maps, 2.5)), float(np.percentile(maps, 97.5))),
+            "cmc_boot_mean": np.mean(cmcs, axis=0),
+            "cmc_ci_lower":  np.percentile(cmcs, 2.5, axis=0),
+            "cmc_ci_upper":  np.percentile(cmcs, 97.5, axis=0),
+        })
+
     else:
-        all_dirs = np.array([r["dirs"] for r in results])
-        all_fars = np.array([r["fars"] for r in results])
-        return {
-            "mean_fars": np.mean(all_fars, axis=0),
-            "mean_dirs": np.mean(all_dirs, axis=0),
-            "lower_dirs": np.percentile(all_dirs, 2.5, axis=0),
-            "upper_dirs": np.percentile(all_dirs, 97.5, axis=0)
-        }
+        # --- Open world aggregation ---
+        all_dirs_r1 = np.array([r["dirs_r1"] for r in results])
+        all_dirs_r5 = np.array([r["dirs_r5"] for r in results]) # Added this
+        all_fars    = np.array([r["fars"] for r in results])
+
+        final_output.update({
+            "fars_boot_mean":    np.mean(all_fars, axis=0),
+            "dirs_r1_boot_mean": np.mean(all_dirs_r1, axis=0),
+            "dirs_r5_boot_mean": np.mean(all_dirs_r5, axis=0), # Added this
+            # These keys match the tuple-based access used in the updated plot/print code
+            "dirs_r1_ci": (np.percentile(all_dirs_r1, 2.5, axis=0), np.percentile(all_dirs_r1, 97.5, axis=0)),
+            "dirs_r5_ci": (np.percentile(all_dirs_r5, 2.5, axis=0), np.percentile(all_dirs_r5, 97.5, axis=0)),
+        })
+
+        # Targeted FAR points 
+        target_keys = [k for k in results[0].keys() if k.startswith("r1_") or k.startswith("r5_")]
+        for tk in target_keys:
+            vals = np.array([r[tk] for r in results])
+            valid_vals = vals[~np.isnan(vals)]
+            if len(valid_vals) > 0:
+                final_output[f"{tk}_boot_stats"] = {
+                    "mean": float(np.mean(valid_vals)),
+                    "ci": (float(np.percentile(valid_vals, 2.5)), float(np.percentile(valid_vals, 97.5)))
+                }
+
+    return final_output

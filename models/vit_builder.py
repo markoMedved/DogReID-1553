@@ -6,10 +6,8 @@ from torchvision.models import vit_b_16, ViT_B_16_Weights
 
 class TemporalAttentionPool(nn.Module):
     """
-    Learns attention weights across video frames and produces
-    a single feature vector representing the whole clip.
+    Learns attention weights over the temporal dimension of a video.
     """
-
     def __init__(self, dim):
         super().__init__()
 
@@ -23,23 +21,16 @@ class TemporalAttentionPool(nn.Module):
         )
 
     def forward(self, x):
-        # Input shape: (B, T, D)
-
         # --- Compute Attention Weights ---
-        weights = self.attn(x)  # Output shape: (B, T, 1)
+        weights = self.attn(x)  
 
         # --- Apply Weighted Pooling ---
-        # Weighted temporal aggregation via broadcasting
+        # Weighted temporal aggregation
         return (x * weights).sum(dim=1)
 
 
 class VideoViT(nn.Module):
-    """
-    Video ReID model utilizing a ViT-B/16 backbone.
-
-    Pipeline:
-    frames -> ViT backbone -> temporal attention pooling -> BN neck -> L2 normalize
-    """
+    """Model using ViT as the backbone"""
 
     def __init__(self, chunk_size=16):
         super().__init__()
@@ -71,10 +62,6 @@ class VideoViT(nn.Module):
 
     def forward(self, x):
 
-        # Expected input dimensionalities:
-        # Video: (B, T, C, H, W)
-        # Image: (B, C, H, W)
-
         if x.dim() == 5:
 
             B, T, C, H, W = x.shape
@@ -83,7 +70,6 @@ class VideoViT(nn.Module):
             x = x.view(B * T, C, H, W)
 
             # --- Chunked Forward Pass ---
-            # Processing frames in smaller chunks prevents GPU Out-Of-Memory errors on long clips
             chunks = torch.split(x, self.chunk_size, dim=0)
 
             feats = torch.cat(
@@ -106,5 +92,4 @@ class VideoViT(nn.Module):
         feats = self.bn(feats)
 
         # --- L2 Normalization ---
-        # Ensures embeddings lie on a unit hypersphere, making cosine similarity equivalent to the dot product
         return F.normalize(feats, p=2, dim=1)
