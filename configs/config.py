@@ -7,15 +7,15 @@ class Config:
     """
     
     # --- Experiment Settings ---
-    model = "swin"       # Options: 'dinov2', 'swin', 'vit'
+    model = "dinov2"       # Options: 'dinov2', 'swin', 'vit', 'convnetxt'
     world = "closed"       # Options: 'closed', 'open'
-    run_name = f"{model}_{world}"
+    pooling_type = "attention" # Options: 'attention', 'mean', 'max'
+    full_finetune = False
 
     # --- Directory Paths ---
     project_root = Path(__file__).resolve().parent.parent
     data_root    = project_root 
     split_file   = project_root / "splits.csv"
-    output_dir   = project_root / "trained_models" / f"{model}_{world}" # Output for trained model
 
     # --- Hardware & Compute ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -27,45 +27,59 @@ class Config:
     k = 4                # Number of clips per identity
     num_ids = batch_size // k 
     clip_len = 16        # Frame length of each video clip
-    val_split = 0.2   # Validation set ratio
+    img_size = (224, 224) # Spatial resolution (224x224 default, 192x192 for Swin)
+    val_split = 0        # Validation set ratio
 
     # --- Model Architecture ---
-    embedding_dim = 768  # Default embedding dimension
-    
+    embedding_dim = 768  # Output embedding dimension
+    num_classes = 0      # Populated dynamically in train.py from train_loader
+
     # --- Training & Optimization ---
     epochs = 50
     weight_decay = 1e-05
-    margin = 0.3       # Margin for triplet loss
+    margin = 0.3         # Margin for triplet loss
     lr = 5e-05           # Learning rate
     accum_steps = 8      # Gradient accumulation steps to simulate larger batch
 
     # --- Evaluation ---
-    eval_period = 1     # Epochs between evaluations 
+    eval_period = 100    # Epochs between evaluations 
     eval_only   = False  
 
     # Experiment for background noise
     mask_dog = False 
-    bbox_file = "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/bounding_boxes.csv" # TODO hardcoded
+    bbox_file = project_root / "bounding_boxes.csv"
     use_gt_for_query_mask = False
     force_yolo = True
 
-    def __init__(self):
-        """Create experiment directory and apply model-specific overrides."""
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Swin has a different embedding dimension
-        if self.model == "swin":
+    def update_model_settings(self):
+        """
+        Call this after updating self.model via CLI args.
+        Adjusts dimensions, image sizes, and output directories.
+        """
+        self.model = self.model.lower()
+
+        # SwinV2 specific dimension & resolution settings
+        if "swin" in self.model:
             self.embedding_dim = 1024
+            self.img_size = (192, 192)  # Solves the SwinV2 192x192 assertion error
+        else:
+            self.embedding_dim = 768
+            self.img_size = (224, 224)
+
+        # Update run name & output path dynamically
+        self.run_name = f"{self.model}_{self.world}_{self.pooling_type}_finetune_{self.full_finetune}"
+        self.output_dir = self.project_root / "trained_models" / self.run_name
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def display(self):
         """Print a formatted table of the configuration settings."""
         print("\n" + "="*50)
-        print(f"DOG RE-ID CONFIGURATION: {self.run_name}")
+        print(f"DOG RE-ID CONFIGURATION: {getattr(self, 'run_name', self.model)}")
         print("-"*50)
         
         sections = {
-            "DATA": ["world", "batch_size", "k", "clip_len", "num_workers"],
-            "MODEL": ["model", "embedding_dim", "chunk_size"],
+            "DATA": ["world", "batch_size", "k", "clip_len", "img_size", "num_workers"],
+            "MODEL": ["model", "embedding_dim", "num_classes", "pooling_type", "chunk_size", "full_finetune"],
             "OPTIM": ["lr", "epochs", "accum_steps", "margin", "weight_decay"],
             "PATHS": ["output_dir"]
         }
@@ -73,7 +87,7 @@ class Config:
         for section, keys in sections.items():
             print(f"[{section}]")
             for key in keys:
-                val = getattr(self, key)
+                val = getattr(self, key, None)
                 if isinstance(val, Path):
                     val = f".../{val.name}"
                 print(f"  {key:<15} : {val}")
@@ -81,5 +95,4 @@ class Config:
         print("="*50 + "\n")
 
     def __repr__(self):
-        """Return a short summary of the config instance."""
-        return f"<Config: {self.run_name} | Model: {self.model} | Device: {self.device}>"
+        return f"<Config: {getattr(self, 'run_name', self.model)} | Device: {self.device}>"

@@ -99,9 +99,13 @@ def build_dataloaders(cfg):
     return train_loader, val_query_loader, val_gallery_loader
 
 
-def build_test_loaders(cfg, images=False):
-    """Test loaders using CSV splits."""
-    transform = VideoTransform(is_training=False)
+def build_test_loaders(cfg, query_images=False, gallery_images=False):
+    """Test loaders supporting Image-to-Image, Image-to-Video, and Video-to-Video."""
+    
+    # Grab target resolution for SwinV2 compatibility
+    img_size = getattr(cfg, 'img_size', 192)
+    transform = VideoTransform(is_training=False, img_size=img_size)
+    
     full_df = pd.read_csv(cfg.split_file)
     
     # --- Global DOG_ID Mapping ---
@@ -116,28 +120,29 @@ def build_test_loaders(cfg, images=False):
         "world": cfg.world,
         "label_map": global_id_map,
         "mask_dog": getattr(cfg, "mask_dog", False),
-        "bbox_file": getattr(cfg, "bbox_file", None)
+        "bbox_file": getattr(cfg, "bbox_file", None),
     }
 
-    # --- Query and Gallery Datasets ---
+    # --- Query Configuration ---
     query_kwargs = dataset_kwargs.copy()
-    gallery_kwargs = dataset_kwargs.copy()
-
-    # Check our new special config parameter
+    query_kwargs["use_videos"] = not query_images
+    query_kwargs["clip_len"] = 1 if query_images else cfg.clip_len
+    
     use_gt_query = getattr(cfg, "use_gt_for_query_mask", False)
-
-    if images and use_gt_query:
+    if query_images and use_gt_query:
         print("-> [INFO] Special Config Active: Query set will use Ground Truth boxes.")
         query_kwargs["force_yolo"] = False
     else:
         query_kwargs["force_yolo"] = True  # Default to YOLO for normal evaluation
 
+    # --- Gallery Configuration ---
+    gallery_kwargs = dataset_kwargs.copy()
+    gallery_kwargs["use_videos"] = not gallery_images
+    gallery_kwargs["clip_len"] = 1 if gallery_images else cfg.clip_len
     gallery_kwargs["force_yolo"] = True    # Gallery always uses YOLO
 
     query_dataset = DOGVideoREIDDataset(
         split="query", 
-        use_videos=not images, 
-        clip_len=1 if images else cfg.clip_len,
         **query_kwargs
     )
     
@@ -157,7 +162,12 @@ def build_test_loaders(cfg, images=False):
         shuffle=False, num_workers=cfg.num_workers, pin_memory=True
     )
 
+    # --- Print Stats & Mode ---
+    q_mode = "Image" if query_images else "Video"
+    g_mode = "Image" if gallery_images else "Video"
+    
     print(f"--- Test Loaders Ready ---")
+    print(f"Mode: {q_mode}-to-{g_mode}")
     print(f"Query: {len(query_dataset)} | Gallery: {len(gallery_dataset)}")
     print(f"Background Masking Baseline: {dataset_kwargs['mask_dog']}")
 

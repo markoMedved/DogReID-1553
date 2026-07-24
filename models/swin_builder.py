@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import swin_v2_b, Swin_V2_B_Weights
-
+import timm
 
 class TemporalAttentionPool(nn.Module):
     """
@@ -12,40 +11,38 @@ class TemporalAttentionPool(nn.Module):
         super().__init__()
 
         # --- Attention Network ---
-        # Small MLP producing a scalar attention weight per frame
         self.attn = nn.Sequential(
             nn.Linear(dim, 512),
             nn.Tanh(),
             nn.Linear(512, 1),
-            nn.Softmax(dim=1)  
+            nn.Softmax(dim=1)  # Normalize across the time dimension
         )
 
     def forward(self, x):
-        # --- Compute Attention Weights ---
-        weights = self.attn(x)  
-
-        # --- Apply Weighted Pooling ---
         # Broadcasts weights across the feature dimension and sums over time
+        weights = self.attn(x)  
         return (x * weights).sum(dim=1)
 
 
 class VideoSwin(nn.Module):
-    """Model using the frozen swin_v2 backbone"""
-    def __init__(self, num_classes=None, chunk_size=8):
+    """Model using SwinV2-Base (ImageNet-21k/22k) as the backbone"""
+
+    def __init__(self, chunk_size=8):
         super().__init__()
 
-        # --- Load Pretrained Backbone ---
-        # Initializes Swin V2 Base with default ImageNet weights
-        weights = Swin_V2_B_Weights.DEFAULT
-        self.backbone = swin_v2_b(weights=weights)
+        # --- Load Pretrained Backbone (ImageNet-22k / 21k) ---
+        # num_classes=0 strips the final classification head and outputs raw 1024-dim features
+        self.backbone = timm.create_model(
+            'swinv2_base_window12_192', 
+            pretrained=True, 
+            num_classes=0
+        )
 
-        # Remove classification head to extract raw embeddings
-        self.backbone.head = nn.Identity()
-
-        # Swin-B standard output feature dimension
+        # SwinV2-Base feature dimension
         self.dim = 1024
 
         # --- Memory Management ---
+        # Smaller chunk_size recommended for Swin due to window attention memory
         self.chunk_size = chunk_size
 
         # --- Temporal Aggregation ---
@@ -54,13 +51,10 @@ class VideoSwin(nn.Module):
         # --- BN-Neck ---
         # Stabilizes the embedding space before metric learning
         self.bn = nn.BatchNorm1d(self.dim)
-
         self.bn.bias.requires_grad_(False)
 
     def forward(self, x):
-
         if x.dim() == 5:
-
             B, T, C, H, W = x.shape
 
             # Flatten temporal dimension for independent frame processing
@@ -74,11 +68,10 @@ class VideoSwin(nn.Module):
                 dim=0
             )
 
-            # Reshape features back into their original video structure
+            # Reshape features back into original video structure: (B, T, D)
             feats = feats.view(B, T, -1)
 
             # --- Temporal Attention Pooling ---
-            # Aggregate frame-level features into a single clip embedding
             feats = self.temporal_pool(feats)
 
         else:

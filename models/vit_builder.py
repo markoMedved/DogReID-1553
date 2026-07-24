@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import vit_b_16, ViT_B_16_Weights
-
+import timm
 
 class TemporalAttentionPool(nn.Module):
     """
@@ -37,11 +37,14 @@ class VideoViT(nn.Module):
 
         # --- Load Pretrained Backbone ---
         # Initializes Vision Transformer with default ImageNet weights
-        weights = ViT_B_16_Weights.DEFAULT
-        self.backbone = vit_b_16(weights=weights)
+        self.backbone = timm.create_model(
+            'vit_base_patch16_224.orig_in21k', 
+            pretrained=True, 
+            num_classes=0
+        )
 
         # Remove classification head to extract raw embeddings instead of logits
-        self.backbone.heads = nn.Identity()
+        #self.backbone.heads = nn.Identity()
 
         # Feature dimension for standard ViT-B
         self.dim = 768
