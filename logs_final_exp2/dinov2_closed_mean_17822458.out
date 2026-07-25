@@ -1,0 +1,35 @@
+Starting Dog Re-ID DINOv2 Closed-Set Training Job (Max Pooling)...
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_closed_mean_finetune_False
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  img_size        : (224, 224)
+  num_workers     : 12
+[MODEL]
+  model           : dinov2
+  embedding_dim   : 768
+  num_classes     : 0
+  pooling_type    : mean
+  chunk_size      : 16
+  full_finetune   : False
+[OPTIM]
+  lr              : 5e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 1e-05
+[PATHS]
+  output_dir      : .../dinov2_closed_mean_finetune_False
+==================================================
+
+--- Data Loading Stats ---
+Training: 3756 samples
+Validation: Query=0, Gallery=0
+--> Total training dog identities (num_classes): 3756
+Epoch 0 | Loss: 8.5866
+Epoch 1 | Loss: 8.4957

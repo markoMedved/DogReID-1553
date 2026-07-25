@@ -22,8 +22,25 @@ parser.add_argument(
     "--model_name", 
     type=str, 
     default="dinov2", 
-    choices=["dinov2", "swin", "vit", "convnetxt"], 
-    help="Model identifier used for paths and architecture selection"
+    choices=["dinov2", "swin", "vit", "convnetxt", "tfclip"], 
+    help="Base model architecture selection"
+)
+
+# Synchronized with train.py
+parser.add_argument(
+    "--pooling_type",
+    type=str,
+    default="attention",
+    choices=["attention", "mean", "max", "none", "attn"],
+    help="Temporal aggregation method (must match training)"
+)
+
+# Synchronized with train.py
+parser.add_argument(
+    "--full_finetune",
+    action="store_true",
+    default=False,
+    help="Flag indicating whether backbone was completely fine-tuned during training"
 )
 
 parser.add_argument(
@@ -32,6 +49,13 @@ parser.add_argument(
     default="closed", 
     choices=["closed", "open"],
     help="Evaluation environment: 'closed' (all queries in gallery) or 'open' (some not)"
+)
+
+parser.add_argument(
+    "--num_classes",
+    type=int,
+    default=0,
+    help="Number of training identities (set > 0 if model was trained with an identity classification head)"
 )
 
 # --- Cross-Modality Flags ---
@@ -69,9 +93,12 @@ parser.add_argument(
 args = parser.parse_args()
 
 # --- Assign Parsed Arguments ---
-MODEL_NAME = args.model_name
+BASE_MODEL_NAME = args.model_name
+POOLING_TYPE = args.pooling_type
+FULL_FINETUNE = args.full_finetune  # This is now a boolean to match train.py
 WORLD_TYPE = args.world_type
 MASK_DOG = args.mask_dog
+NUM_CLASSES = args.num_classes
 
 # Resolve Query/Gallery Modalities (use_images acts as a master toggle)
 QUERY_IMAGES = args.query_images or args.use_images
@@ -84,34 +111,38 @@ MODALITY_TAG = f"{q_type}2{g_type}"
 
 
 # =================================================================
-# --- CONFIGURABLE SETTINGS ---
+# --- PATH & FOLDER RESOLUTION ---
 # =================================================================
-MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{MODEL_NAME}_{WORLD_TYPE}" / "model.pth")
+# EXACTLY matches train.py logic: cfg.run_name = f"{cfg.model}_{cfg.world}_{cfg.pooling_type}_finetune_{cfg.full_finetune}"
+MODEL_FOLDER_NAME = f"{BASE_MODEL_NAME}_{WORLD_TYPE}_{POOLING_TYPE}_finetune_{FULL_FINETUNE}"
+
+MODEL_PATH = str(ROOT_DIR / "trained_models" / MODEL_FOLDER_NAME / "model.pth")
+base_folder_name = f"{MODEL_FOLDER_NAME}_{MODALITY_TAG}"
 
 
-# --- MODEL ARCHITECTURE SELECTION ---
+# =================================================================
+# --- MODEL ARCHITECTURE IMPORT & SELECTION ---
+# =================================================================
 from models.dinov2_builder import DINOv2ReID
 from models.swin_builder import VideoSwin
 from models.vit_builder import VideoViT
-from models.convnetxt_builder import VideoConvNeXt  # <-- 1. Import your new model
+from models.convnetxt_builder import VideoConvNeXt
 
-if MODEL_NAME == "dinov2":
+if BASE_MODEL_NAME == "dinov2":
     MODEL_CLASS = DINOv2ReID
-elif MODEL_NAME == "swin":
+elif BASE_MODEL_NAME == "swin":
     MODEL_CLASS = VideoSwin
-elif MODEL_NAME == "vit":
+elif BASE_MODEL_NAME == "vit":
     MODEL_CLASS = VideoViT
-elif MODEL_NAME == "convnetxt":                    # <-- FIX: Changed from "convnext" to "convnetxt"
+elif BASE_MODEL_NAME == "convnetxt":
     MODEL_CLASS = VideoConvNeXt
 else:
-    raise ValueError("Invalid model name")
+    raise ValueError(f"Invalid base model name: {BASE_MODEL_NAME}")
 
 
 # =================================================================
 # --- Output Configuration ---
 # =================================================================
-base_folder_name = f"{MODEL_NAME}_{WORLD_TYPE}_{MODALITY_TAG}"
-
 if MASK_DOG and args.use_gt_for_query_mask:
     OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{base_folder_name}_masked_gtq"
     CSV_NAME = f"masked_gtq_{MODALITY_TAG}_{WORLD_TYPE}_dist_matrix.csv"
@@ -132,18 +163,13 @@ from evaluation_utils import generate_distance_csv
 
 # --- Setup Configuration Object ---
 cfg = Config()
-
-# Sync all flags directly with cfg object
 cfg.world = WORLD_TYPE
 cfg.query_images = QUERY_IMAGES
 cfg.gallery_images = GALLERY_IMAGES
 cfg.mask_dog = MASK_DOG 
 cfg.use_gt_for_query_mask = args.use_gt_for_query_mask
 
-# Select device automatically
 cfg.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Output directory for evaluation files
 cfg.output_dir = OUTPUT_FOLDER
 cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -151,9 +177,25 @@ cfg.output_dir.mkdir(parents=True, exist_ok=True)
 # -------------------------------------------------------------
 # --- Initialize Model ---
 # -------------------------------------------------------------
-print(f"-> Initializing Architecture: {MODEL_CLASS.__name__}...")
+print(f"-> Initializing Architecture: {MODEL_CLASS.__name__} (Pooling: {POOLING_TYPE}, Num Classes: {NUM_CLASSES})...")
 
-model = MODEL_CLASS()
+# Pass arguments dynamically based on what the builder supports
+init_kwargs = {}
+init_kwargs["pooling_type"] = "attn" if POOLING_TYPE == "attention" else POOLING_TYPE
+
+if NUM_CLASSES > 0:
+    init_kwargs["num_classes"] = NUM_CLASSES
+
+# ---> ADD THIS BLOCK RIGHT HERE <---
+if BASE_MODEL_NAME == "vit":
+    init_kwargs["backbone_type"] = "timm"
+# -----------------------------------
+
+try:
+    model = MODEL_CLASS(**init_kwargs)
+except TypeError:
+    # Fallback if a specific builder doesn't accept one of the keyword arguments yet
+    model = MODEL_CLASS()
 
 print(f"-> Loading Weights: {MODEL_PATH}")
 
@@ -163,13 +205,23 @@ if not os.path.exists(MODEL_PATH):
 checkpoint = torch.load(MODEL_PATH, map_location=cfg.device)
 state_dict = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
 
-# --- Handle DataParallel / DDP Weights ---
 new_state_dict = OrderedDict()
 for k, v in state_dict.items():
     name = k[7:] if k.startswith('module.') else k
+    
+    # Safely remap attention pool naming mismatch between checkpoint and class definition
+    if name.startswith("temporal_pool."):
+        name = name.replace("temporal_pool.", "temporal_attn.")
+        
     new_state_dict[name] = v
 
-model.load_state_dict(new_state_dict)
+# Use strict=False since we only need the embedding backbone and BN neck for inference distance matrices
+missing_keys, unexpected_keys = model.load_state_dict(new_state_dict, strict=False)
+if missing_keys:
+    print(f"-> Note: Missing keys during load (safe if classifier was omitted): {missing_keys}")
+if unexpected_keys:
+    print(f"-> Note: Ignored extra keys during load (e.g., classifier weights): {unexpected_keys}")
+
 model.to(cfg.device)
 model.eval()
 
@@ -180,7 +232,6 @@ model.eval()
 print(f"-> Preparing {cfg.world.upper()} test dataloaders ({MODALITY_TAG.upper()})...")
 print(f"-> Background Masking Baseline: {'ON' if MASK_DOG else 'OFF'}")
 
-# Pass independent modality toggles to the loader generator
 query_loader, gallery_loader = build_test_loaders(
     cfg, 
     query_images=QUERY_IMAGES, 

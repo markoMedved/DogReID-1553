@@ -47,6 +47,15 @@ class Trainer:
                 # Run evaluation only at specified intervals
                 if (epoch + 1) % self.cfg.eval_period == 0:
                     rank1, rank5, mAP = self.evaluate()
+            # Inside your engine/trainer.py loop:
+            if (epoch + 1) % 10 == 0:
+                checkpoint_path = self.cfg.output_dir / f"model_epoch_{epoch + 1}.pth"
+                torch.save({
+                    'epoch': epoch + 1,
+                    'state_dict': self.model.state_dict(),
+                    'optimizer': self.optimizer.state_dict(),
+                }, checkpoint_path)
+                print(f"--> Saved periodic checkpoint to {checkpoint_path}")
                     
 
         # --- Final Model Saving ---

@@ -3,12 +3,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 # --- Embedding Dimensions ---
+# Maps specific DINOv2 backbone variants to their output feature dimensions
 EMBED_DIMS = {
-    "vits14":     384,
-    "vitb14":     768,
-    "vitl14":    1024,
+    "vits14": 384,
+    "vitb14": 768,
+    "vitl14": 1024,
     "vitb14_reg": 768,
-    "vitl14_reg":1024,
+    "vitl14_reg": 1024,
 }
 
 class TemporalAttentionPool(nn.Module):
@@ -31,15 +32,17 @@ class TemporalAttentionPool(nn.Module):
 
 class DINOv2ReID(nn.Module):
     """
-    Video ReID model utilizing a DINOv2 visual backbone via PyTorch Hub.
-    Supports dual-loss strategy (Triplet Margin + Identity CrossEntropy).
+    Unified Video/Image ReID model utilizing a DINOv2 visual backbone.
+    Supports flexible pooling types ('attn', 'mean', 'max'), chunked VRAM processing,
+    and optional identity classification head for dual-loss setups.
     """
 
     def __init__(
         self, 
         variant: str = "vitb14_reg", 
-        num_classes: int = 0, 
-        chunk_size: int = 32
+        chunk_size: int = 32, 
+        pooling_type: str = "attn",
+        num_classes: int = 0
     ):
         super().__init__()
 
@@ -50,19 +53,23 @@ class DINOv2ReID(nn.Module):
         self.backbone = torch.hub.load("facebookresearch/dinov2", hub_name)
 
         self.chunk_size = chunk_size
+        self.pooling_type = pooling_type.lower()
         self.num_classes = num_classes
 
-        # Retrieve embedding dimension
+        # Retrieve embedding dimension for the selected variant
         D = EMBED_DIMS[variant_key]
 
-        # --- Temporal Aggregation ---
-        self.temporal_attn = TemporalAttentionPool(D)
+        # --- Temporal Aggregation Setup ---
+        if self.pooling_type == "attn":
+            self.temporal_pool = TemporalAttentionPool(D)
+        elif self.pooling_type not in ["mean", "max"]:
+            raise ValueError(f"Invalid pooling_type: '{pooling_type}'. Options are 'attn', 'mean', or 'max'.")
 
         # --- BN-Neck ---
         self.bn = nn.BatchNorm1d(D)
         self.bn.bias.requires_grad_(False)
 
-        # --- Classifier Head for Identity Loss ---
+        # --- Optional Classifier Head for Identity Loss ---
         if self.num_classes > 0:
             self.classifier = nn.Linear(D, self.num_classes, bias=False)
 
@@ -70,20 +77,25 @@ class DINOv2ReID(nn.Module):
         if x.dim() == 5:
             B, T, C, H, W = x.shape
 
-            # Flatten temporal dimension to process frames through 2D backbone
+            # Flatten temporal dimension to process frames independently through the 2D backbone
             x = x.view(B * T, C, H, W)
 
             # --- Chunked Forward Pass ---
             chunks = torch.split(x, self.chunk_size, dim=0)
             feats = torch.cat([self.backbone(c) for c in chunks], dim=0)  
 
-            # Reshape features back to temporal structure
+            # Reshape features back to their original temporal structure [B, T, D]
             feats = feats.view(B, T, -1)
 
-            # Aggregate temporal features
-            feats = self.temporal_attn(feats) 
+            # --- Aggregate temporal features into a single vector per video ---
+            if self.pooling_type == "attn":
+                feats = self.temporal_pool(feats)
+            elif self.pooling_type == "mean":
+                feats = feats.mean(dim=1)
+            elif self.pooling_type == "max":
+                feats = feats.max(dim=1)[0]
         else:
-            # Standard single-image inference
+            # Standard single-image inference [B, C, H, W]
             feats = self.backbone(x)
 
         # --- BN-Neck Application ---
