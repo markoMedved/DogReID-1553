@@ -5,6 +5,7 @@ from .dinov2_builder import DINOv2ReID
 from .convnetxt_builder import VideoConvNeXt
 
 
+#TODO actual reid model
 
 def build_model(cfg):
     """
