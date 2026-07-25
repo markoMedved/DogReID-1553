@@ -113,10 +113,10 @@ MODALITY_TAG = f"{q_type}2{g_type}"
 # =================================================================
 # --- PATH & FOLDER RESOLUTION ---
 # =================================================================
-# EXACTLY matches train.py logic: cfg.run_name = f"{cfg.model}_{cfg.world}_{cfg.pooling_type}_finetune_{cfg.full_finetune}"
 MODEL_FOLDER_NAME = f"{BASE_MODEL_NAME}_{WORLD_TYPE}_{POOLING_TYPE}_finetune_{FULL_FINETUNE}"
 
-MODEL_PATH = str(ROOT_DIR / "trained_models" / MODEL_FOLDER_NAME / "model.pth")
+# Temporarily changed to target model_epoch_10.pth
+MODEL_PATH = str(ROOT_DIR / "trained_models" / MODEL_FOLDER_NAME / "model_epoch_10.pth")
 base_folder_name = f"{MODEL_FOLDER_NAME}_{MODALITY_TAG}"
 
 
@@ -179,23 +179,26 @@ cfg.output_dir.mkdir(parents=True, exist_ok=True)
 # -------------------------------------------------------------
 print(f"-> Initializing Architecture: {MODEL_CLASS.__name__} (Pooling: {POOLING_TYPE}, Num Classes: {NUM_CLASSES})...")
 
-# Pass arguments dynamically based on what the builder supports
 init_kwargs = {}
-init_kwargs["pooling_type"] = "attn" if POOLING_TYPE == "attention" else POOLING_TYPE
 
-if NUM_CLASSES > 0:
-    init_kwargs["num_classes"] = NUM_CLASSES
-
-# ---> ADD THIS BLOCK RIGHT HERE <---
-if BASE_MODEL_NAME == "vit":
+# Set backbone source for timm-based builders
+if BASE_MODEL_NAME in ["vit", "swin"]:
     init_kwargs["backbone_type"] = "timm"
-# -----------------------------------
+
+# Set pooling and num_classes for builders that support them (e.g., DINOv2, ViT)
+if BASE_MODEL_NAME not in ["swin"]:
+    init_kwargs["pooling_type"] = "attn" if POOLING_TYPE == "attention" else POOLING_TYPE
+    if NUM_CLASSES > 0:
+        init_kwargs["num_classes"] = NUM_CLASSES
 
 try:
     model = MODEL_CLASS(**init_kwargs)
 except TypeError:
-    # Fallback if a specific builder doesn't accept one of the keyword arguments yet
-    model = MODEL_CLASS()
+    # Safe fallback with explicit backbone_type if kwargs fail
+    if BASE_MODEL_NAME in ["vit", "swin"]:
+        model = MODEL_CLASS(backbone_type="timm")
+    else:
+        model = MODEL_CLASS()
 
 print(f"-> Loading Weights: {MODEL_PATH}")
 
@@ -214,13 +217,6 @@ for k, v in state_dict.items():
         name = name.replace("temporal_pool.", "temporal_attn.")
         
     new_state_dict[name] = v
-
-# Use strict=False since we only need the embedding backbone and BN neck for inference distance matrices
-missing_keys, unexpected_keys = model.load_state_dict(new_state_dict, strict=False)
-if missing_keys:
-    print(f"-> Note: Missing keys during load (safe if classifier was omitted): {missing_keys}")
-if unexpected_keys:
-    print(f"-> Note: Ignored extra keys during load (e.g., classifier weights): {unexpected_keys}")
 
 model.to(cfg.device)
 model.eval()

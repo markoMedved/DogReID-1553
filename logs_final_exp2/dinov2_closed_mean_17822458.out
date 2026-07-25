@@ -33,3 +33,20 @@ Validation: Query=0, Gallery=0
 --> Total training dog identities (num_classes): 3756
 Epoch 0 | Loss: 8.5866
 Epoch 1 | Loss: 8.4957
+Epoch 2 | Loss: 8.5037
+Epoch 3 | Loss: 8.4527
+Epoch 4 | Loss: 8.4650
+Epoch 5 | Loss: 8.4282
+Epoch 6 | Loss: 8.3749
+Epoch 7 | Loss: 8.3737
+Epoch 8 | Loss: 8.3091
+Epoch 9 | Loss: 8.3122
+--> Saved periodic checkpoint to /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_closed_mean_finetune_False/model_epoch_10.pth
+Epoch 10 | Loss: 8.2216
+Epoch 11 | Loss: 8.2426
+Epoch 12 | Loss: 8.1958
+Epoch 13 | Loss: 8.1907
+Epoch 14 | Loss: 8.1511
+Epoch 15 | Loss: 8.1019
+Epoch 16 | Loss: 8.0838
+Epoch 17 | Loss: 8.0278

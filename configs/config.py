@@ -11,6 +11,7 @@ class Config:
     world = "closed"       # Options: 'closed', 'open'
     pooling_type = "attention" # Options: 'attention', 'mean', 'max'
     full_finetune = False
+    use_id_loss = True    
 
     # --- Directory Paths ---
     project_root = Path(__file__).resolve().parent.parent
@@ -20,11 +21,11 @@ class Config:
     # --- Hardware & Compute ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     num_workers = 12    # Number of dataloader workers
-    chunk_size  = 16     # Number of frames processed simultaneously
+    chunk_size  = 16    # Number of frames processed simultaneously
 
     # --- Batch Sampling (PK Strategy) ---
     batch_size = 16      # Total batch size (P identities × K clips)
-    k = 4                # Number of clips per identity
+    k = 4                  # Number of clips per identity
     num_ids = batch_size // k 
     clip_len = 16        # Frame length of each video clip
     img_size = (224, 224) # Spatial resolution (224x224 default, 192x192 for Swin)
@@ -32,10 +33,10 @@ class Config:
 
     # --- Model Architecture ---
     embedding_dim = 768  # Output embedding dimension
-    num_classes = 0      # Populated dynamically in train.py from train_loader
+    num_classes = 0      # Populated dynamically in train.py from train_loader (required if use_id_loss=True)
 
     # --- Training & Optimization ---
-    epochs = 50
+    epochs = 100
     weight_decay = 1e-05
     margin = 0.3         # Margin for triplet loss
     lr = 5e-05           # Learning rate
@@ -66,8 +67,8 @@ class Config:
             self.embedding_dim = 768
             self.img_size = (224, 224)
 
-        # Update run name & output path dynamically
-        self.run_name = f"{self.model}_{self.world}_{self.pooling_type}_finetune_{self.full_finetune}"
+        # Update run name & output path dynamically (includes id_loss status)
+        self.run_name = f"{self.model}_{self.world}_{self.pooling_type}_finetune_{self.full_finetune}_idloss_{self.use_id_loss}"
         self.output_dir = self.project_root / "trained_models" / self.run_name
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -79,7 +80,7 @@ class Config:
         
         sections = {
             "DATA": ["world", "batch_size", "k", "clip_len", "img_size", "num_workers"],
-            "MODEL": ["model", "embedding_dim", "num_classes", "pooling_type", "chunk_size", "full_finetune"],
+            "MODEL": ["model", "embedding_dim", "num_classes", "pooling_type", "full_finetune", "use_id_loss"],
             "OPTIM": ["lr", "epochs", "accum_steps", "margin", "weight_decay"],
             "PATHS": ["output_dir"]
         }

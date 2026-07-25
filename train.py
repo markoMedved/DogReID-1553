@@ -40,6 +40,13 @@ def main():
         help='Unfreeze the entire backbone for end-to-end fine-tuning'
     )
 
+    parser.add_argument(
+        '--use_id_loss', 
+        action='store_true', 
+        default=False, 
+        help='Enable Identity Classification Loss alongside Triplet Loss'
+    )
+
     args = parser.parse_args()
 
 
@@ -62,38 +69,34 @@ def main():
     if args.batch_size: cfg.batch_size = args.batch_size
     if args.k: cfg.k = args.k
 
-    # Store full_finetune in config
     cfg.pooling_type = args.pooling_type
     cfg.full_finetune = args.full_finetune
-
-    cfg.run_name = f"{cfg.model}_{cfg.world}_{cfg.pooling_type}_finetune_{cfg.full_finetune}"
-    cfg.output_dir = cfg.project_root / "trained_models" / cfg.run_name
-    cfg.output_dir.mkdir(parents=True, exist_ok=True)
-
-
-    # print final configuration
-    cfg.display()
-
+    cfg.use_id_loss = args.use_id_loss
 
     # ------------------------------------------------
-    # BUILD DATA LOADERS
-    # ------------------------------------------------
-    # ------------------------------------------------
-    # BUILD DATA LOADERS
+    # BUILD DATA LOADERS (Must be first to know num_classes)
     # ------------------------------------------------
     train_loader, query_loader, gallery_loader = build_dataloaders(cfg)
 
     # Automatically count unique dog IDs in training set
-    # (Adjust dataset attribute name if yours uses .num_identities or .classes)
     if hasattr(train_loader.dataset, 'pids'):
         cfg.num_classes = len(set(train_loader.dataset.pids))
     elif hasattr(train_loader.dataset, 'classes'):
         cfg.num_classes = len(train_loader.dataset.classes)
     else:
-        # Standard fallback for ImageFolder style datasets
         cfg.num_classes = len(train_loader.dataset.targets if hasattr(train_loader.dataset, 'targets') else train_loader.dataset)
         
     print(f"--> Total training dog identities (num_classes): {cfg.num_classes}")
+
+    # If id_loss is disabled, reset num_classes = 0 so the classifier head isn't built/trained
+    if not cfg.use_id_loss:
+        cfg.num_classes = 0
+
+    # Properly update path and run name via configuration method
+    cfg.update_model_settings()
+
+    # print final configuration
+    cfg.display()
 
 
     # ------------------------------------------------
@@ -119,7 +122,6 @@ def main():
         # Each backbone has a slightly different internal structure
         # ------------------------------------------------
         # --- ConvNeXt Architecture ---
-        # ConvNeXt feature extraction stages are stored in backbone.stages
         if hasattr(model.backbone, 'stages'):
             print("--> Unfreezing final ConvNeXt stage.")
             for p in model.backbone.stages[-1].parameters():
@@ -131,7 +133,6 @@ def main():
                     p.requires_grad = True
 
         # --- Torchvision ViT ---
-        # encoder.layers = transformer blocks
         elif hasattr(model.backbone, 'encoder') and hasattr(model.backbone.encoder, 'layers'):
 
             # unfreeze last 2 transformer blocks
@@ -146,7 +147,6 @@ def main():
 
 
         # --- DINOv2 ---
-        # transformer blocks stored as backbone.blocks
         elif hasattr(model.backbone, 'blocks'):
 
             for block in model.backbone.blocks[-2:]:
@@ -160,7 +160,6 @@ def main():
 
 
         # --- Swin Transformer ---
-        # hierarchical transformer stages
         elif hasattr(model.backbone, 'layers'):
 
             # unfreeze final stage
@@ -173,8 +172,7 @@ def main():
 
 
     # ------------------------------------------------
-    # ALWAYS TRAIN TEMPORAL HEAD
-    # (Temporal attention pooling)
+    # ALWAYS TRAIN TEMPORAL HEAD & CLASSIFIER HEAD (IF ID LOSS)
     # ------------------------------------------------
     pool_layer = getattr(model, 'temporal_pool', getattr(model, 'temporal_attn', None))
 
@@ -187,6 +185,12 @@ def main():
     if hasattr(model, 'bn') and model.bn is not None:
         for p in model.bn.parameters():
             p.requires_grad = True
+
+    # Classifier head must be trainable when identity loss is active
+    if hasattr(model, 'classifier') and model.classifier is not None:
+        for p in model.classifier.parameters():
+            p.requires_grad = True
+
 
     # ------------------------------------------------
     # OPTIMIZER
