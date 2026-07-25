@@ -227,14 +227,19 @@ choices=["dinov2", "swin", "vit", "bot", "transreid"]
 if MODEL_NAME in ("bot", "transreid"):
     from models.reid_model import VideoReID
     cfg.reid_method = MODEL_NAME
-    cfg.num_classes = 0            # heads are unused at inference
+    cfg.num_classes = 776          # must match the training run
     model = VideoReID(cfg)
 else:
     model = MODEL_CLASS()
 ```
 
-`cfg.backbone`, `cfg.img_size` and `cfg.pooling_type` must match the values used
-during training, or the checkpoint will not load.
+`cfg.num_classes` must be the value used during training even though the
+classifiers are unused at inference. Building the model with `num_classes=0`
+omits them, and `load_state_dict` then fails on the unexpected
+`heads.*.classifier.weight` entries in the checkpoint.
+
+`cfg.backbone`, `cfg.img_size`, `cfg.pooling_type` and `cfg.jpm_parts` must also
+match the training run, or the checkpoint will not load.
 
 ---
 
