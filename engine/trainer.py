@@ -7,7 +7,8 @@ import json
 
 class Trainer:
     "Class that has the training logic"
-    def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner):
+    def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner,
+                 scheduler=None):
         # --- Move Model to Compute Device ---
         self.model = model.to(cfg.device)
 
@@ -18,12 +19,18 @@ class Trainer:
 
         # --- Training Configuration ---
         self.optimizer = optimizer
+        self.scheduler = scheduler # Stepped once per epoch, may be None
         self.device = cfg.device
         self.cfg = cfg
-        
+
         # --- Metric Learning Components ---
         self.loss_fn = loss_fn
         self.miner = miner
+
+        # --- Identity Loss ---
+        # Used only when the model exposes a classifier (cfg.num_classes > 0)
+        self.id_loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
+        self.id_loss_weight = getattr(cfg, 'id_loss_weight', 1.0)
 
 
     def train(self):
@@ -37,7 +44,13 @@ class Trainer:
 
             # Run one full training epoch
             avg_loss = self.train_epoch(epoch)
-            print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
+            lr = self.optimizer.param_groups[0]['lr']
+            print(f"Epoch {epoch} | Loss: {avg_loss:.4f} | LR: {lr:.2e}")
+
+            # --- Learning Rate Schedule ---
+            # Stepped per epoch, matching the warmup and milestone units
+            if self.scheduler is not None:
+                self.scheduler.step()
 
             # --- Validation Evaluation ---
             if val_split > 0 and self.cfg.world == "closed":
@@ -74,8 +87,13 @@ class Trainer:
             labels = labels.to(self.device)
 
             # Forward Pass -> Generate embedding vectors
-            embeddings = self.model(videos)
-            
+            # Models with an identity head return (embeddings, logits)
+            outputs = self.model(videos)
+            if isinstance(outputs, tuple):
+                embeddings, logits = outputs
+            else:
+                embeddings, logits = outputs, None
+
             # --- Hard Pair Mining ---
             # Selects the hardest positive/negative pairs to optimize learning
             hard_pairs = self.miner(embeddings, labels)
@@ -83,7 +101,12 @@ class Trainer:
             # --- Metric Learning Loss ---
             # Computes triplet or margin-based loss using the mined pairs
             loss = self.loss_fn(embeddings, labels, hard_pairs)
-            
+
+            # --- Identity Loss ---
+            if logits is not None:
+                loss = loss + self.id_loss_weight * self.id_loss_fn(logits, labels)
+
+
             # --- Backpropagation with Accumulation ---
             # Divides loss by accumulation steps to average gradients correctly
             loss = loss / accum_steps

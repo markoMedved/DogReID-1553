@@ -352,6 +352,63 @@ def test_warmup_scheduler():
     assert seen[4] < seen[3] and seen[7] < seen[4], f"step decay missing: {seen}"
 
 
+def test_trainer_integration():
+    """Trainer must unpack (embeddings, logits), apply the identity loss and
+    step the scheduler once per epoch."""
+    from engine.trainer import Trainer
+
+    model, cfg = make_model("bot", full_ft=True)
+    apply_freezing(model, cfg)
+
+    cfg.device = DEVICE
+    cfg.epochs = 4
+    cfg.val_split = 0.5      # skips the end-of-training checkpoint save
+    cfg.world = "open"       # skips the validation pass
+    cfg.eval_period = 1000
+    cfg.accum_steps = 1
+
+    batches = [
+        (torch.zeros(B, T, 3, H, W), mock_labels().cpu(), ["a"] * B, ["v"] * B)
+        for _ in range(2)
+    ]
+
+    id_loss_calls = []
+    seen_lrs = []
+
+    def loss_fn(embeddings, labels, hard_pairs):
+        seen_lrs.append(optimizer.param_groups[0]["lr"])
+        return embeddings.pow(2).mean()
+
+    def miner(embeddings, labels):
+        return None
+
+    optimizer = torch.optim.SGD(
+        [p for p in model.parameters() if p.requires_grad], lr=1.0
+    )
+    scheduler = WarmupMultiStepLR(optimizer, milestones=(2,), gamma=0.1,
+                                  warmup_factor=0.1, warmup_iters=2)
+
+    trainer = Trainer(model, batches, None, None, optimizer, cfg, loss_fn, miner,
+                      scheduler=scheduler)
+
+    original_id_loss = trainer.id_loss_fn
+    def counting_id_loss(logits, labels):
+        id_loss_calls.append(logits.shape)
+        return original_id_loss(logits, labels)
+    trainer.id_loss_fn = counting_id_loss
+
+    trainer.train()
+
+    assert len(id_loss_calls) == cfg.epochs * len(batches), \
+        f"identity loss applied {len(id_loss_calls)} times, expected {cfg.epochs * len(batches)}"
+    assert all(shape == (B, NUM_CLASSES) for shape in id_loss_calls), id_loss_calls
+
+    # One learning rate per epoch; warmup then decay must produce distinct values
+    per_epoch = [seen_lrs[i * len(batches)] for i in range(cfg.epochs)]
+    assert len(set(per_epoch)) > 1, f"scheduler never changed the learning rate: {per_epoch}"
+    assert per_epoch[1] > per_epoch[0], f"warmup did not ramp: {per_epoch}"
+
+
 TESTS = [
     ("patch shuffle is a permutation", test_shuffle_is_permutation),
     ("bnneck ordering", test_bnneck_ordering),
@@ -365,6 +422,7 @@ TESTS = [
     ("dinov2 adapter token path", test_dinov2_adapter_token_path),
     ("transforms and clip consistency", test_transforms),
     ("warmup scheduler", test_warmup_scheduler),
+    ("trainer integration", test_trainer_integration),
 ]
 
 

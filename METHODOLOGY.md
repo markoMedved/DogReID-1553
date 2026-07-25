@@ -125,7 +125,7 @@ Additional backbones are loaded from `timm` and provide pooled features only.
 
 ## 3. Integration
 
-Four existing files need edits before the methods can be run.
+Five existing files are involved. `engine/trainer.py` is already updated; the rest need edits.
 
 ### 3.1 `configs/config.py`
 
@@ -163,10 +163,25 @@ def build_model(cfg):
     # existing branches follow
 ```
 
-### 3.3 `train.py`
+### 3.3 `engine/trainer.py`
 
-Set `num_classes` from the training split, apply the freezing policy, and attach
-the scheduler. Replace the inline freezing block with:
+Already updated. `Trainer` now takes an optional `scheduler`, steps it once per
+epoch, unpacks models that return `(embeddings, logits)`, and adds the identity
+loss when logits are present:
+
+```python
+Trainer(model, train_loader, query_loader, gallery_loader,
+        optimizer, cfg, loss_fn, miner, scheduler=scheduler)
+```
+
+Models returning a single tensor keep their previous behaviour, so the existing
+builders are unaffected. The identity loss uses cross entropy with label
+smoothing 0.1, weighted by `cfg.id_loss_weight` (default 1.0).
+
+### 3.4 `train.py`
+
+Set `num_classes` from the training split, apply the freezing policy, build the
+scheduler and pass it to the trainer. Replace the inline freezing block with:
 
 ```python
 from models.freezing import apply_freezing, trainable_report
@@ -185,9 +200,9 @@ print(trainable_report(model))
 scheduler = build_scheduler(optimizer, cfg)
 ```
 
-`scheduler.step()` is called once per epoch, after the optimizer step loop.
+and pass `scheduler=scheduler` in the `Trainer(...)` call.
 
-### 3.4 `data/dataloader.py`
+### 3.5 `data/dataloader.py`
 
 Use the re-ID transform pipeline:
 
@@ -198,7 +213,7 @@ train_tf = build_video_transforms(cfg, is_train=True)
 eval_tf  = build_video_transforms(cfg, is_train=False)
 ```
 
-### 3.5 `evaluation/make_csv.py`
+### 3.6 `evaluation/make_csv.py`
 
 The script builds a model with `MODEL_CLASS()` and no arguments. Add a branch
 that constructs `VideoReID` from the configuration instead, and extend the
