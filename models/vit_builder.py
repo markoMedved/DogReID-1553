@@ -30,28 +30,35 @@ class TemporalAttentionPool(nn.Module):
 
 
 class VideoViT(nn.Module):
-    """Model using ViT as the backbone"""
+    """
+    Model using ViT-B/16 as the backbone.
+    Supports switching between 'torchvision' (default) and 'timm' backbones.
+    """
 
-    def __init__(self, chunk_size=16):
+    def __init__(self, chunk_size=16, backbone_type="torchvision"):
         super().__init__()
+        
+        self.chunk_size = chunk_size
+        self.dim = 768  # Feature dimension for standard ViT-B
 
         # --- Load Pretrained Backbone ---
-        # Initializes Vision Transformer with default ImageNet weights
-        self.backbone = timm.create_model(
-            'vit_base_patch16_224.orig_in21k', 
-            pretrained=True, 
-            num_classes=0
-        )
-
-        # Remove classification head to extract raw embeddings instead of logits
-        #self.backbone.heads = nn.Identity()
-
-        # Feature dimension for standard ViT-B
-        self.dim = 768
-
-        # --- Memory Management ---
-        # Process frames in chunks to prevent VRAM overflow
-        self.chunk_size = chunk_size
+        if backbone_type == "torchvision":
+            # 1. Torchvision Backend (Matches your previous weights)
+            self.backbone = vit_b_16(weights=ViT_B_16_Weights.DEFAULT)
+            
+            # Remove classification head to extract raw embeddings instead of logits
+            self.backbone.heads = nn.Identity()
+            
+        elif backbone_type == "timm":
+            # 2. Timm Backend (ImageNet-21k)
+            # num_classes=0 strips the final classification head
+            self.backbone = timm.create_model(
+                'vit_base_patch16_224.orig_in21k', 
+                pretrained=True, 
+                num_classes=0
+            )
+        else:
+            raise ValueError(f"Unsupported backbone_type: {backbone_type}. Use 'torchvision' or 'timm'.")
 
         # --- Temporal Aggregation ---
         self.temporal_pool = TemporalAttentionPool(self.dim)

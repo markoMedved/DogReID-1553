@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import timm
+import torchvision.models as tv_models
 
 class TemporalAttentionPool(nn.Module):
     """
@@ -25,25 +26,35 @@ class TemporalAttentionPool(nn.Module):
 
 
 class VideoSwin(nn.Module):
-    """Model using SwinV2-Base (ImageNet-21k/22k) as the backbone"""
+    """
+    Model using SwinV2-Base as the backbone.
+    Supports switching between 'torchvision' (default) and 'timm' backbones.
+    """
 
-    def __init__(self, chunk_size=8):
+    def __init__(self, chunk_size=8, backbone_type="torchvision"):
         super().__init__()
-
-        # --- Load Pretrained Backbone (ImageNet-22k / 21k) ---
-        # num_classes=0 strips the final classification head and outputs raw 1024-dim features
-        self.backbone = timm.create_model(
-            'swinv2_base_window12_192', 
-            pretrained=True, 
-            num_classes=0
-        )
-
-        # SwinV2-Base feature dimension
-        self.dim = 1024
-
-        # --- Memory Management ---
-        # Smaller chunk_size recommended for Swin due to window attention memory
+        
         self.chunk_size = chunk_size
+        self.dim = 1024  # SwinV2-Base feature dimension
+
+        # --- Load Pretrained Backbone ---
+        if backbone_type == "torchvision":
+            # 1. Torchvision Backend (Matches your previous weights)
+            self.backbone = tv_models.swin_v2_b()
+            
+            # Strip the classification head to output raw 1024-d features
+            self.backbone.head = nn.Identity()
+            
+        elif backbone_type == "timm":
+            # 2. Timm Backend (ImageNet-21k/22k)
+            # num_classes=0 strips the final classification head
+            self.backbone = timm.create_model(
+                'swinv2_base_window12_192', 
+                pretrained=True, 
+                num_classes=0
+            )
+        else:
+            raise ValueError(f"Unsupported backbone_type: {backbone_type}. Use 'torchvision' or 'timm'.")
 
         # --- Temporal Aggregation ---
         self.temporal_pool = TemporalAttentionPool(self.dim)

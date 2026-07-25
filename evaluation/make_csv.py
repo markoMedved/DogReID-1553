@@ -22,7 +22,7 @@ parser.add_argument(
     "--model_name", 
     type=str, 
     default="dinov2", 
-    choices=["dinov2", "swin", "vit"],
+    choices=["dinov2", "swin", "vit", "convnetxt"], 
     help="Model identifier used for paths and architecture selection"
 )
 
@@ -93,6 +93,7 @@ MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{MODEL_NAME}_{WORLD_TYPE}" / "m
 from models.dinov2_builder import DINOv2ReID
 from models.swin_builder import VideoSwin
 from models.vit_builder import VideoViT
+from models.convnetxt_builder import VideoConvNeXt  # <-- 1. Import your new model
 
 if MODEL_NAME == "dinov2":
     MODEL_CLASS = DINOv2ReID
@@ -100,6 +101,8 @@ elif MODEL_NAME == "swin":
     MODEL_CLASS = VideoSwin
 elif MODEL_NAME == "vit":
     MODEL_CLASS = VideoViT
+elif MODEL_NAME == "convnetxt":                    # <-- FIX: Changed from "convnext" to "convnetxt"
+    MODEL_CLASS = VideoConvNeXt
 else:
     raise ValueError("Invalid model name")
 
