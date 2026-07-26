@@ -165,19 +165,17 @@ class DOGVideoREIDDataset(Dataset):
 
         # --- Use the transforms ---
         if self.transform:
-            transformed_frames = []
-            seed = np.random.randint(2147483647)
-
-            for frame in clip:
-                if self.split == "train":
-                    random.seed(seed)
-                    torch.manual_seed(seed)
-                    np.random.seed(seed)
-
-                pil_img = Image.fromarray(frame)
-                transformed_frames.append(self.transform(pil_img))
-
-            clip = torch.stack(transformed_frames)         
+            # Convert all NumPy frames in the clip to PIL Images
+            pil_clip = [Image.fromarray(frame) for frame in clip]
+            
+            # Pass the entire list of frames to reid_transforms at once
+            transformed = self.transform(pil_clip)
+            
+            # Stack the list of frame tensors into a single clip tensor (T, C, H, W)
+            if isinstance(transformed, list):
+                clip = torch.stack(transformed)
+            else:
+                clip = transformed
         else:
             clip = torch.from_numpy(
                 np.array(clip)

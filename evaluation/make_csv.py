@@ -14,7 +14,7 @@ parser.add_argument(
     "--model_name", 
     type=str, 
     default="dinov2", 
-    choices=["dinov2", "swin", "vit"],
+    choices=["dinov2", "swin", "vit", "bot", "transreid"],
     help="Model identifier used for paths and architecture selection"
 )
 
@@ -65,6 +65,8 @@ elif MODEL_NAME == "swin":
     MODEL_CLASS = VideoSwin
 elif MODEL_NAME == "vit":
     MODEL_CLASS = VideoViT
+elif MODEL_NAME in ("bot", "transreid"):
+    MODEL_CLASS = None
 else:
     raise ValueError("Invalid model name")
 
@@ -109,10 +111,16 @@ cfg.output_dir.mkdir(parents=True, exist_ok=True)
 # --- Initialize Model ---
 # -------------------------------------------------------------
 
-print(f"-> Initializing Architecture: {MODEL_CLASS.__name__}...")
-
-# create model instance
-model = MODEL_CLASS()
+if MODEL_NAME in ("bot", "transreid"):
+    from models.reid_model import VideoReID
+    print(f"-> Initializing Architecture: VideoReID ({MODEL_NAME})...")
+    cfg.reid_method = MODEL_NAME
+    cfg.num_classes = 776          # must match the training run
+    model = VideoReID(cfg)
+else:
+    print(f"-> Initializing Architecture: {MODEL_CLASS.__name__}...")
+    # create model instance
+    model = MODEL_CLASS()
 
 
 print(f"-> Loading Weights: {MODEL_PATH}")

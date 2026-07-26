@@ -6,14 +6,14 @@ from models.model_factory import build_model
 from engine.trainer import Trainer
 from pytorch_metric_learning import losses, miners
 
+# --- NEW IMPORTS (Methodology Sec 3.4) ---
+from models.freezing import apply_freezing, trainable_report
+from solver.warmup import build_scheduler
+
 
 def main():
-
     # ------------------------------------------------
     # ARGUMENT PARSING
-    # Allows overriding config values from CLI
-    # Example:
-    # python train.py --model dinov2 --lr 1e-4 --batch_size 32
     # ------------------------------------------------
     parser = argparse.ArgumentParser(description="Dog Re-ID Training")
 
@@ -25,7 +25,10 @@ def main():
     parser.add_argument('--model', type=str, default=None, help="Backbone: 'dinov2', 'swin', 'vit'")
     parser.add_argument('--world', type=str, default=None, help="'closed' or 'open'")
     parser.add_argument('--clip_len', type=int, default=None, help='Frames per video clip')
-
+    
+    # Required for methodology argument parsing
+    parser.add_argument('--reid_method', type=str, default='baseline', help='Which ReID method to use (e.g., bot)')
+    parser.add_argument('--pooling_type', type=str, default='attention', help='Temporal pooling type')
     args = parser.parse_args()
 
 
@@ -34,11 +37,6 @@ def main():
     # ------------------------------------------------
     cfg = Config()
 
-
-    # ------------------------------------------------
-    # OVERRIDE CONFIG WITH CLI ARGUMENTS
-    # Only overwrite values that were provided
-    # ------------------------------------------------
     if args.model: cfg.model = args.model
     if args.world: cfg.world = args.world
     if args.clip_len: cfg.clip_len = args.clip_len
@@ -47,12 +45,20 @@ def main():
     if args.weight_decay: cfg.weight_decay = args.weight_decay
     if args.batch_size: cfg.batch_size = args.batch_size
     if args.k: cfg.k = args.k
+    
+    # Pass new args to config
+    cfg.reid_method = args.reid_method
+    cfg.pooling_type = args.pooling_type
+    
+    # Ensure backbone exists for naming
+    backbone_name = getattr(cfg, 'backbone', cfg.model)
+    full_ft = getattr(cfg, 'full_finetune', True)
 
-    cfg.run_name = f"{cfg.model}_{cfg.world}"
+    # --- UPDATED RUN NAME (Methodology Sec 3.1) ---
+    cfg.run_name = f"{backbone_name}_{cfg.reid_method}_{cfg.world}_{cfg.pooling_type}_finetune_{full_ft}"
     cfg.output_dir = cfg.project_root / "trained_models" / cfg.run_name
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # print final configuration
     cfg.display()
 
 
@@ -62,91 +68,31 @@ def main():
     train_loader, query_loader, gallery_loader = build_dataloaders(cfg)
 
 
+    # --- DYNAMIC NUM_CLASSES (Methodology Sec 3.4) ---
+    # train_loader.dataset is a Subset, so id_map lives one level deeper
+    cfg.num_classes = len(train_loader.dataset.dataset.id_map)
+    print(f"[cfg] num_classes = {cfg.num_classes}")
+
+
     # ------------------------------------------------
     # BUILD MODEL
     # ------------------------------------------------
     model = build_model(cfg).to(cfg.device)
 
 
-    # ------------------------------------------------
-    # FREEZE ENTIRE MODEL FIRST
-    # We selectively unfreeze layers afterwards
-    # ------------------------------------------------
-    for p in model.parameters():
-        p.requires_grad = False
-
-
-    # ------------------------------------------------
-    # ARCHITECTURE-AWARE PARTIAL UNFREEZING
-    # Each backbone has a slightly different internal structure
-    # ------------------------------------------------
-
-    # --- Torchvision ViT ---
-    # encoder.layers = transformer blocks
-    if hasattr(model.backbone, 'encoder') and hasattr(model.backbone.encoder, 'layers'):
-
-        # unfreeze last 2 transformer blocks
-        for layer in model.backbone.encoder.layers[-2:]:
-            for p in layer.parameters():
-                p.requires_grad = True
-
-        # unfreeze final layer normalization
-        if hasattr(model.backbone.encoder, 'ln'):
-            for p in model.backbone.encoder.ln.parameters():
-                p.requires_grad = True
-
-
-    # --- DINOv2 ---
-    # transformer blocks stored as backbone.blocks
-    elif hasattr(model.backbone, 'blocks'):
-
-        for block in model.backbone.blocks[-2:]:
-            for p in block.parameters():
-                p.requires_grad = True
-
-        # final normalization layer
-        if hasattr(model.backbone, 'norm'):
-            for p in model.backbone.norm.parameters():
-                p.requires_grad = True
-
-
-    # --- Swin Transformer ---
-    # hierarchical transformer stages
-    elif hasattr(model.backbone, 'layers'):
-
-        # unfreeze final stage
-        for p in model.backbone.layers[-1].parameters():
-            p.requires_grad = True
-
-        if hasattr(model.backbone, 'norm'):
-            for p in model.backbone.norm.parameters():
-                p.requires_grad = True
-
-
-    # ------------------------------------------------
-    # ALWAYS TRAIN TEMPORAL HEAD
-    # (Temporal attention pooling)
-    # ------------------------------------------------
-    pool_layer = getattr(model, 'temporal_pool', getattr(model, 'temporal_attn', None))
-
-    if pool_layer:
-        for p in pool_layer.parameters():
-            p.requires_grad = True
-
-
-    # BN neck is also always trainable
-    for p in model.bn.parameters():
-        p.requires_grad = True
+    # --- DELEGATE FREEZING (Methodology Sec 3.4) ---
+    # This replaces all the manual requires_grad loops and prevents the model.bn crash
+    model = apply_freezing(model, cfg)
+    print(trainable_report(model))
 
 
     # ------------------------------------------------
     # OPTIMIZER
-    # Different learning rates for backbone vs head
     # ------------------------------------------------
-
+    # We still use custom parameter groups, but rely entirely on apply_freezing's output
     backbone_params = [
-        p for p in model.backbone.parameters()
-        if p.requires_grad
+        p for n, p in model.named_parameters()
+        if p.requires_grad and 'backbone' in n
     ]
 
     head_params = [
@@ -156,21 +102,20 @@ def main():
 
     optimizer = torch.optim.AdamW(
         [
-            {"params": backbone_params, "lr": cfg.lr * 0.1},  # smaller LR
-            {"params": head_params, "lr": cfg.lr}             # larger LR
+            {"params": backbone_params, "lr": cfg.lr * 0.1},
+            {"params": head_params, "lr": cfg.lr}
         ],
         weight_decay=cfg.weight_decay
     )
+
+    # --- BUILD SCHEDULER (Methodology Sec 3.4) ---
+    scheduler = build_scheduler(optimizer, cfg)
 
 
     # ------------------------------------------------
     # METRIC LEARNING SETUP
     # ------------------------------------------------
-
-    # hard triplet mining within batch
     miner = miners.BatchHardMiner()
-
-    # triplet margin loss
     loss_fn = losses.TripletMarginLoss(margin=cfg.margin)
 
 
@@ -185,15 +130,11 @@ def main():
         optimizer=optimizer,
         loss_fn=loss_fn,
         miner=miner,
-        cfg=cfg
+        cfg=cfg,
+        scheduler=scheduler  # Added per doc
     )
 
-
-    # ------------------------------------------------
-    # TRAIN LOOP
-    # ------------------------------------------------
     trainer.train()
-
 
 if __name__ == "__main__":
     main()
