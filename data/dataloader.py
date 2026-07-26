@@ -139,7 +139,18 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False):
     gallery_kwargs = dataset_kwargs.copy()
     gallery_kwargs["use_videos"] = not gallery_images
     gallery_kwargs["clip_len"] = 1 if gallery_images else cfg.clip_len
-    gallery_kwargs["force_yolo"] = True    # Gallery always uses YOLO
+    
+    # --- Gallery Configuration ---
+    gallery_kwargs = dataset_kwargs.copy()
+    gallery_kwargs["use_videos"] = not gallery_images
+    gallery_kwargs["clip_len"] = 1 if gallery_images else cfg.clip_len
+    
+    use_gt_gallery = getattr(cfg, "use_gt_for_gallery_mask", False)
+    if gallery_images and use_gt_gallery:
+        print("-> [INFO] Special Config Active: Gallery set will use Ground Truth boxes.")
+        gallery_kwargs["force_yolo"] = False
+    else:
+        gallery_kwargs["force_yolo"] = True  # Default to YOLO for normal evaluation
 
     query_dataset = DOGVideoREIDDataset(
         split="query", 

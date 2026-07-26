@@ -90,6 +90,12 @@ parser.add_argument(
     help="Use Ground Truth bounding boxes specifically for masking the query set."
 )
 
+parser.add_argument(
+    "--use_gt_for_gallery_mask", 
+    action="store_true", 
+    help="Use Ground Truth bounding boxes specifically for masking the gallery set."
+)
+
 args = parser.parse_args()
 
 # --- Assign Parsed Arguments ---
@@ -116,7 +122,7 @@ MODALITY_TAG = f"{q_type}2{g_type}"
 MODEL_FOLDER_NAME = f"{BASE_MODEL_NAME}_{WORLD_TYPE}_{POOLING_TYPE}_finetune_{FULL_FINETUNE}"
 
 # Temporarily changed to target model_epoch_10.pth
-MODEL_PATH = str(ROOT_DIR / "trained_models" / MODEL_FOLDER_NAME / "model_epoch_10.pth")
+MODEL_PATH = str(ROOT_DIR / "trained_models" / MODEL_FOLDER_NAME / "model.pth")
 base_folder_name = f"{MODEL_FOLDER_NAME}_{MODALITY_TAG}"
 
 
@@ -143,15 +149,22 @@ else:
 # =================================================================
 # --- Output Configuration ---
 # =================================================================
-if MASK_DOG and args.use_gt_for_query_mask:
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{base_folder_name}_masked_gtq"
-    CSV_NAME = f"masked_gtq_{MODALITY_TAG}_{WORLD_TYPE}_dist_matrix.csv"
-elif MASK_DOG:
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{base_folder_name}_masked"
-    CSV_NAME = f"masked_{MODALITY_TAG}_{WORLD_TYPE}_dist_matrix.csv"
+# Build a dynamic suffix based on what flags are active
+suffix = ""
+if MASK_DOG:
+    suffix += "_masked"
+
+if args.use_gt_for_query_mask and args.use_gt_for_gallery_mask:
+    suffix += "_gtboth"
 elif args.use_gt_for_query_mask:
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{base_folder_name}_gtq"
-    CSV_NAME = f"gtq_{MODALITY_TAG}_{WORLD_TYPE}_dist_matrix.csv"
+    suffix += "_gtq"
+elif args.use_gt_for_gallery_mask:
+    suffix += "_gtg"
+
+# Apply the suffix to the folder and filename
+if suffix:
+    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{base_folder_name}{suffix}"
+    CSV_NAME = f"{suffix.lstrip('_')}_{MODALITY_TAG}_{WORLD_TYPE}_dist_matrix.csv"
 else:
     OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / base_folder_name
     CSV_NAME = f"{MODALITY_TAG}_{WORLD_TYPE}_dist_matrix.csv"
@@ -168,6 +181,7 @@ cfg.query_images = QUERY_IMAGES
 cfg.gallery_images = GALLERY_IMAGES
 cfg.mask_dog = MASK_DOG 
 cfg.use_gt_for_query_mask = args.use_gt_for_query_mask
+cfg.use_gt_for_gallery_mask = args.use_gt_for_gallery_mask  # <-- ADD THIS LINE
 
 cfg.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 cfg.output_dir = OUTPUT_FOLDER

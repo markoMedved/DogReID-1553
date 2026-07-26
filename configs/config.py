@@ -50,6 +50,7 @@ class Config:
     mask_dog = False 
     bbox_file = project_root / "bounding_boxes.csv"
     use_gt_for_query_mask = False
+    use_gt_for_gallery_mask = False
     force_yolo = True
 
     def update_model_settings(self):
