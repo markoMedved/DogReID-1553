@@ -1,0 +1,96 @@
+Starting Dog Re-ID DINOv2 open-Set Training Job (bot)...
+==================================================
+Assigned GPU Hardware:
+Sun Jul 26 10:25:59 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 610.43.02              KMD Version: 610.43.02     CUDA UMD Version: 13.3     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:E3:00.0 Off |                    0 |
+| N/A   36C    P0             70W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+==================================================
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_bot_open_attention_finetune_False
+--------------------------------------------------
+[DATA]
+  world           : open
+  batch_size      : 32
+  k               : 4
+  num_ids         : 8
+  clip_len        : 8
+  img_size        : (224, 224)
+  num_workers     : 12
+[MODEL]
+  backbone        : dinov2
+  reid_method     : bot
+  pooling_type    : attention
+  full_finetune   : False
+  unfreeze_blocks : 2
+  jpm_parts       : 4
+  chunk_size      : 16
+[OPTIM]
+  lr              : 2e-05
+  epochs          : 51
+  warmup_epochs   : 5
+  lr_milestones   : (25, 35)
+  accum_steps     : 2
+  margin          : 0.3
+  weight_decay    : 1e-05
+  id_loss_weight  : 1.0
+  amp             : bf16
+[AUGMENTATION]
+  aug_pad         : 10
+  re_prob         : 0.5
+[PATHS]
+  output_dir      : .../dinov2_bot_open_attention_finetune_False
+==================================================
+
+--- Data Loading Stats ---
+Training: 3671 samples
+Validation: Query=0, Gallery=0
+[cfg] num_classes = 1553
+[freeze] trainable 15,768,833 / 88,172,033 params (17.9%)
+[optim] pretrained 14,180,352 params @ lr*0.1 | heads 1,588,481 params @ lr
+[amp] mixed precision enabled (bf16)
+Epoch 0 | Loss: 7.6383 | LR: 2.00e-08
+Epoch 1 | Loss: 7.6360 | LR: 4.16e-07
+Epoch 2 | Loss: 7.6065 | LR: 8.12e-07
+Epoch 3 | Loss: 7.5571 | LR: 1.21e-06
+Epoch 4 | Loss: 7.5131 | LR: 1.60e-06
+Epoch 5 | Loss: 7.4448 | LR: 2.00e-06
+Epoch 6 | Loss: 7.3764 | LR: 2.00e-06
+Epoch 7 | Loss: 7.3137 | LR: 2.00e-06
+Epoch 8 | Loss: 7.2670 | LR: 2.00e-06
+Epoch 9 | Loss: 7.1839 | LR: 2.00e-06
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_bot_open_attention_finetune_False
+Epoch 10 | Loss: 7.1143 | LR: 2.00e-06
+Epoch 11 | Loss: 7.0503 | LR: 2.00e-06
+Epoch 12 | Loss: 6.9450 | LR: 2.00e-06
+Epoch 13 | Loss: 6.8840 | LR: 2.00e-06
+Epoch 14 | Loss: 6.8160 | LR: 2.00e-06
+Epoch 15 | Loss: 6.7428 | LR: 2.00e-06
+Epoch 16 | Loss: 6.6363 | LR: 2.00e-06
+Epoch 17 | Loss: 6.5861 | LR: 2.00e-06
+Epoch 18 | Loss: 6.4663 | LR: 2.00e-06
+Epoch 19 | Loss: 6.3926 | LR: 2.00e-06
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_bot_open_attention_finetune_False
+Epoch 20 | Loss: 6.3212 | LR: 2.00e-06
+Epoch 21 | Loss: 6.2584 | LR: 2.00e-06
+Epoch 22 | Loss: 6.1526 | LR: 2.00e-06
+Epoch 23 | Loss: 6.0913 | LR: 2.00e-06
+Epoch 24 | Loss: 5.9914 | LR: 2.00e-06
+Epoch 25 | Loss: 5.9834 | LR: 2.00e-07

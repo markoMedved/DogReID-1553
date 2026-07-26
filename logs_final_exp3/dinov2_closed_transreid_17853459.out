@@ -1,0 +1,95 @@
+Starting Dog Re-ID DINOv2 closed-Set Training Job (transreid)...
+==================================================
+Assigned GPU Hardware:
+Sun Jul 26 10:26:29 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 610.43.02              KMD Version: 610.43.02     CUDA UMD Version: 13.3     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:04:00.0 Off |                    0 |
+| N/A   37C    P0             70W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+==================================================
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_transreid_closed_attention_finetune_False
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 32
+  k               : 4
+  num_ids         : 8
+  clip_len        : 8
+  img_size        : (224, 224)
+  num_workers     : 12
+[MODEL]
+  backbone        : dinov2
+  reid_method     : transreid
+  pooling_type    : attention
+  full_finetune   : False
+  unfreeze_blocks : 2
+  jpm_parts       : 4
+  chunk_size      : 16
+[OPTIM]
+  lr              : 2e-05
+  epochs          : 51
+  warmup_epochs   : 5
+  lr_milestones   : (25, 35)
+  accum_steps     : 2
+  margin          : 0.3
+  weight_decay    : 1e-05
+  id_loss_weight  : 1.0
+  amp             : bf16
+[AUGMENTATION]
+  aug_pad         : 10
+  re_prob         : 0.5
+[PATHS]
+  output_dir      : .../dinov2_transreid_closed_attention_finetune_False
+==================================================
+
+--- Data Loading Stats ---
+Training: 3756 samples
+Validation: Query=0, Gallery=0
+[cfg] num_classes = 1553
+[freeze] trainable 29,213,701 / 101,616,901 params (28.7%)
+[optim] pretrained 21,271,296 params @ lr*0.1 | heads 7,942,405 params @ lr
+[amp] mixed precision enabled (bf16)
+Epoch 0 | Loss: 7.6395 | LR: 2.00e-08
+Epoch 1 | Loss: 7.6378 | LR: 4.16e-07
+Epoch 2 | Loss: 7.5979 | LR: 8.12e-07
+Epoch 3 | Loss: 7.5586 | LR: 1.21e-06
+Epoch 4 | Loss: 7.5158 | LR: 1.60e-06
+Epoch 5 | Loss: 7.4576 | LR: 2.00e-06
+Epoch 6 | Loss: 7.4082 | LR: 2.00e-06
+Epoch 7 | Loss: 7.3353 | LR: 2.00e-06
+Epoch 8 | Loss: 7.2804 | LR: 2.00e-06
+Epoch 9 | Loss: 7.2070 | LR: 2.00e-06
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_transreid_closed_attention_finetune_False
+Epoch 10 | Loss: 7.1326 | LR: 2.00e-06
+Epoch 11 | Loss: 7.0304 | LR: 2.00e-06
+Epoch 12 | Loss: 6.9498 | LR: 2.00e-06
+Epoch 13 | Loss: 6.8972 | LR: 2.00e-06
+Epoch 14 | Loss: 6.8203 | LR: 2.00e-06
+Epoch 15 | Loss: 6.6841 | LR: 2.00e-06
+Epoch 16 | Loss: 6.6332 | LR: 2.00e-06
+Epoch 17 | Loss: 6.5451 | LR: 2.00e-06
+Epoch 18 | Loss: 6.4910 | LR: 2.00e-06
+Epoch 19 | Loss: 6.4008 | LR: 2.00e-06
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_transreid_closed_attention_finetune_False
+Epoch 20 | Loss: 6.2925 | LR: 2.00e-06
+Epoch 21 | Loss: 6.2310 | LR: 2.00e-06
+Epoch 22 | Loss: 6.1434 | LR: 2.00e-06
+Epoch 23 | Loss: 6.0827 | LR: 2.00e-06
+Epoch 24 | Loss: 6.0176 | LR: 2.00e-06

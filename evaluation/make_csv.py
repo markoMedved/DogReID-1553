@@ -4,6 +4,7 @@ import torch
 import argparse
 from pathlib import Path
 from collections import OrderedDict
+import re
 
 # =================================================================
 # --- COMMAND-LINE ARGUMENTS ---
@@ -104,7 +105,34 @@ elif MODEL_NAME in ("bot", "transreid"):
 else:
     RUN_NAME = f"{MODEL_NAME}_{WORLD_TYPE}"
 
-MODEL_PATH = str(ROOT_DIR / "trained_models" / RUN_NAME / "model.pth")
+
+# --- Smart Checkpoint Resolution ---
+checkpoint_dir = ROOT_DIR / "trained_models" / RUN_NAME
+default_path = checkpoint_dir / "model.pth"
+
+if default_path.exists():
+    MODEL_PATH = str(default_path)
+else:
+    # Find all .pth files in the directory
+    all_checkpoints = list(checkpoint_dir.glob("*.pth"))
+    
+    max_epoch = -1
+    latest_ckpt = None
+    
+    for ckpt in all_checkpoints:
+        # Extract the first sequence of numbers from the filename (e.g., '60' from 'model_60.pth')
+        match = re.search(r'(\d+)', ckpt.name)
+        if match:
+            epoch = int(match.group(1))
+            if epoch > max_epoch:
+                max_epoch = epoch
+                latest_ckpt = ckpt
+                
+    if latest_ckpt:
+        MODEL_PATH = str(latest_ckpt)
+        print(f"-> 'model.pth' not found. Auto-selected latest checkpoint: {latest_ckpt.name}")
+    else:
+        raise FileNotFoundError(f"No valid model checkpoints (.pth) found in {checkpoint_dir}")
 
 
 # --- MODEL ARCHITECTURE SELECTION ---
