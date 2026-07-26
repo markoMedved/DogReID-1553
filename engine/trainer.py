@@ -32,6 +32,17 @@ class Trainer:
         self.id_loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
         self.id_loss_weight = getattr(cfg, 'id_loss_weight', 1.0)
 
+        # --- Mixed Precision ---
+        # Only active on CUDA. bfloat16 needs no gradient scaler; float16 does.
+        amp = getattr(cfg, 'amp', 'bf16')
+        self.amp_dtype = {'bf16': torch.bfloat16, 'fp16': torch.float16}.get(amp)
+        self.amp_enabled = self.amp_dtype is not None and self.device.type == 'cuda'
+        self.scaler = torch.cuda.amp.GradScaler(
+            enabled=self.amp_enabled and self.amp_dtype is torch.float16
+        )
+        if self.amp_enabled:
+            print(f"[amp] mixed precision enabled ({amp})")
+
 
     def train(self):
         """Train the model"""
@@ -88,11 +99,21 @@ class Trainer:
 
             # Forward Pass -> Generate embedding vectors
             # Models with an identity head return (embeddings, logits)
-            outputs = self.model(videos)
+            with torch.autocast(device_type=self.device.type,
+                                dtype=self.amp_dtype,
+                                enabled=self.amp_enabled):
+                outputs = self.model(videos)
+
             if isinstance(outputs, tuple):
                 embeddings, logits = outputs
             else:
                 embeddings, logits = outputs, None
+
+            # Losses are computed in float32; metric learning is sensitive to
+            # reduced precision in the distance matrix
+            embeddings = embeddings.float()
+            if logits is not None:
+                logits = logits.float()
 
             # --- Hard Pair Mining ---
             # Selects the hardest positive/negative pairs to optimize learning
@@ -110,12 +131,15 @@ class Trainer:
             # --- Backpropagation with Accumulation ---
             # Divides loss by accumulation steps to average gradients correctly
             loss = loss / accum_steps
-            loss.backward()
+            self.scaler.scale(loss).backward()
 
             # Update weights only after specified accumulation steps
             if (i + 1) % accum_steps == 0:
+                # Gradients must be unscaled before clipping
+                self.scaler.unscale_(self.optimizer)
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                self.optimizer.step()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
                 self.optimizer.zero_grad()
 
             # --- Update Progress Logging ---
