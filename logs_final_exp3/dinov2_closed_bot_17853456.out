@@ -1,0 +1,84 @@
+Starting Dog Re-ID DINOv2 closed-Set Training Job (bot)...
+==================================================
+Assigned GPU Hardware:
+Sun Jul 26 10:25:40 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 610.43.02              KMD Version: 610.43.02     CUDA UMD Version: 13.3     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 PCIe               On  |   00000000:A1:00.0 Off |                    0 |
+| N/A   36C    P0             51W /  350W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+==================================================
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_bot_closed_attention_finetune_False
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 32
+  k               : 4
+  num_ids         : 8
+  clip_len        : 8
+  img_size        : (224, 224)
+  num_workers     : 12
+[MODEL]
+  backbone        : dinov2
+  reid_method     : bot
+  pooling_type    : attention
+  full_finetune   : False
+  unfreeze_blocks : 2
+  jpm_parts       : 4
+  chunk_size      : 16
+[OPTIM]
+  lr              : 2e-05
+  epochs          : 51
+  warmup_epochs   : 5
+  lr_milestones   : (25, 35)
+  accum_steps     : 2
+  margin          : 0.3
+  weight_decay    : 1e-05
+  id_loss_weight  : 1.0
+  amp             : bf16
+[AUGMENTATION]
+  aug_pad         : 10
+  re_prob         : 0.5
+[PATHS]
+  output_dir      : .../dinov2_bot_closed_attention_finetune_False
+==================================================
+
+--- Data Loading Stats ---
+Training: 3756 samples
+Validation: Query=0, Gallery=0
+[cfg] num_classes = 1553
+[freeze] trainable 15,768,833 / 88,172,033 params (17.9%)
+[optim] pretrained 14,180,352 params @ lr*0.1 | heads 1,588,481 params @ lr
+[amp] mixed precision enabled (bf16)
+Epoch 0 | Loss: 7.6393 | LR: 2.00e-08
+Epoch 1 | Loss: 7.6330 | LR: 4.16e-07
+Epoch 2 | Loss: 7.5981 | LR: 8.12e-07
+Epoch 3 | Loss: 7.5564 | LR: 1.21e-06
+Epoch 4 | Loss: 7.5053 | LR: 1.60e-06
+Epoch 5 | Loss: 7.4367 | LR: 2.00e-06
+Epoch 6 | Loss: 7.3783 | LR: 2.00e-06
+Epoch 7 | Loss: 7.3113 | LR: 2.00e-06
+Epoch 8 | Loss: 7.2598 | LR: 2.00e-06
+Epoch 9 | Loss: 7.1950 | LR: 2.00e-06
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_bot_closed_attention_finetune_False
+Epoch 10 | Loss: 7.1205 | LR: 2.00e-06
+Epoch 11 | Loss: 7.0182 | LR: 2.00e-06
+Epoch 12 | Loss: 6.9508 | LR: 2.00e-06
+Epoch 13 | Loss: 6.8960 | LR: 2.00e-06
+Epoch 14 | Loss: 6.8128 | LR: 2.00e-06
