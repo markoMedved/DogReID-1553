@@ -116,7 +116,37 @@ aspect ratio against 0.381 for a square resize. This is reported as an ablation
 adopted as the default, because changing it would add a confound between the new
 results and the published ones.
 
-### 2.4 Backbones and other references
+### 2.4 OSNet (`backbone="osnet"`)
+
+Zhou, Yang, Cavallaro, Xiang. *Omni-Scale Feature Learning for Person
+Re-Identification.* ICCV 2019, extended in TPAMI 2021. arXiv:1905.00953.
+Library: Zhou and Xiang. *Torchreid: A Library for Deep Learning Person
+Re-Identification in Pytorch.* arXiv:1910.10093.
+https://github.com/KaiyangZhou/deep-person-reid
+
+A re-identification-specific CNN rather than a general-purpose backbone: its
+omni-scale residual blocks aggregate features over multiple receptive-field
+scales, and it is small (2.2M parameters against 86M for DINOv2 ViT-B/14).
+It produces 512-dimensional features and works under `reid_method="bot"`; it has
+no token sequence, so `transreid` is rejected with an explicit error.
+
+`osnet_weights` may point to a Torchreid model-zoo checkpoint, which initializes
+from person re-ID training on Market1501 or MSMT17 instead of ImageNet. That
+turns the run into a transfer question: whether person re-ID pretraining carries
+over to dogs. The classifier is dropped on load, since identity logits come from
+the BNNeck head.
+
+Report this as "OSNet (Zhou et al., ICCV 2019), as implemented in Torchreid",
+not as "Torchreid" — the latter is a library, not a method.
+
+Installing it pulls in scipy, opencv, tensorboard and gdown, and may upgrade
+numpy:
+
+```bash
+pip install torchreid scipy opencv-python-headless tensorboard gdown
+```
+
+### 2.5 Backbones and other references
 
 - Oquab et al. *DINOv2: Learning Robust Visual Features without Supervision.*
   TMLR 2024. arXiv:2304.07193
@@ -323,6 +353,13 @@ python evaluation/make_csv.py --model_name bot --world_type closed
 python evaluation/make_csv.py --model_name bot --world_type closed --use_images
 python evaluation/make_csv.py --model_name bot --world_type open
 python evaluation/make_csv.py --model_name bot --world_type open   --use_images
+```
+
+The backbone, pooling and fine-tuning flags are part of the checkpoint directory
+name, so a run that did not use the config defaults must pass them here too:
+
+```bash
+python evaluation/make_csv.py --model_name bot --world_type closed --backbone osnet
 ```
 
 Then run `evaluation/closed_set_plots.ipynb` and `evaluation/open_set_plots.ipynb`

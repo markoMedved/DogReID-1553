@@ -72,6 +72,15 @@ def _unfreeze_last_blocks(net, n=2):
             _unfreeze(getattr(net, "norm", None))
         return True
 
+    # --- OSNet (Torchreid) ---
+    # Convolutional stages conv1..conv5 plus an fc bottleneck; unfrozen one
+    # stage at a time, so n is not used
+    if hasattr(net, "conv5") and hasattr(net, "global_avgpool"):
+        if n > 0:
+            _unfreeze(net.conv5)
+            _unfreeze(getattr(net, "fc", None))
+        return True
+
     # --- ConvNeXt ---
     if hasattr(net, "stages"):
         if n > 0:
