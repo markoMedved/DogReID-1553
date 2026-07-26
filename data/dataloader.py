@@ -2,13 +2,13 @@ import pandas as pd
 import numpy as np
 from torch.utils.data import DataLoader, Subset
 from .dataset import DOGVideoREIDDataset
-from .transforms import VideoTransform
 from pytorch_metric_learning.samplers import MPerClassSampler
+from data.reid_transforms import build_video_transforms
 
 def build_dataloaders(cfg):
     """Build the train and validation dataloaders for our experiments"""
-    # Use train transforms, including data augmentation
-    transform = VideoTransform()
+    
+    train_tf = build_video_transforms(cfg, is_train=True)
 
     # --- Global DOG_ID Mapping ---
     full_df = pd.read_csv(cfg.split_file)
@@ -20,7 +20,7 @@ def build_dataloaders(cfg):
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
         "clip_len": cfg.clip_len,
-        "transform": transform,
+        "transform": train_tf,
         "world": cfg.world,
         "label_map": global_id_map
     }
@@ -101,8 +101,8 @@ def build_dataloaders(cfg):
 
 def build_test_loaders(cfg, images=False):
     """Test loaders using CSV splits."""
-    # Use test transforms
-    transform = VideoTransform(is_training=False)
+    eval_tf  = build_video_transforms(cfg, is_train=False)
+    
     full_df = pd.read_csv(cfg.split_file)
     
     # --- Global DOG_ID Mapping ---
@@ -113,7 +113,7 @@ def build_test_loaders(cfg, images=False):
     dataset_kwargs = {
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
-        "transform": transform,
+        "transform": eval_tf,
         "world": cfg.world,
         "label_map": global_id_map
     }

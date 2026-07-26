@@ -58,6 +58,9 @@ class Trainer:
                 if (epoch + 1) % self.cfg.eval_period == 0:
                     rank1, rank5, mAP = self.evaluate()
                     
+            save_period = getattr(self.cfg, 'save_period', 10)
+            if (epoch + 1) % save_period == 0:
+                self.save_checkpoint(f"checkpoint_epoch_{epoch+1}.pth")        
 
         # --- Final Model Saving ---
         # Automatically saves the model if trained on the full dataset
