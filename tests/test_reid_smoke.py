@@ -344,6 +344,66 @@ def test_parameter_name_prefixes():
     assert jpm_names, "JPM parameters missing from the trainable set"
 
 
+def test_osnet_backbone():
+    """OSNet from Torchreid: pooled features only, rejects transreid, and the
+    freezing policy recognises its conv-stage layout. Skipped when torchreid is
+    not installed."""
+    try:
+        import importlib
+        importlib.import_module("torchreid.reid.models.osnet")
+    except ImportError:
+        print("      (skipped: torchreid not installed)", end="")
+        return
+
+    from configs.config import Config
+    cfg = Config()
+    cfg.backbone = "osnet"
+    cfg.reid_method = "bot"
+    cfg.num_classes = NUM_CLASSES
+    cfg.osnet_pretrained = False       # no download in tests
+    cfg.chunk_size = 4
+
+    model = VideoReID(cfg).to(DEVICE)
+    assert model.embed_dim == 512, model.embed_dim
+
+    apply_freezing(model, cfg)
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in model.parameters())
+    assert 0 < trainable < total, f"{trainable}/{total}"
+
+    x = torch.zeros(2, 4, 3, 224, 224, device=DEVICE)
+    model.train()
+    emb, logits = model(x)
+    assert emb.shape == (2, 512) and logits.shape == (2, NUM_CLASSES)
+    model.eval()
+    with torch.no_grad():
+        assert model(x).shape == (2, 512)
+
+    cfg.reid_method = "transreid"
+    try:
+        VideoReID(cfg)
+    except ValueError:
+        return
+    raise AssertionError("transreid should be rejected on a CNN backbone")
+
+
+def test_checkpoint_classifier_keys():
+    """evaluation/make_csv.py recovers num_classes from the checkpoint by
+    matching 'heads.*.classifier.weight'. A backbone that ships its own
+    classifier would otherwise be picked up instead, so the state_dict must
+    contain no other classifier weights."""
+    model, _ = make_model("transreid", full_ft=False)
+    state = model.state_dict()
+
+    all_cls = [k for k in state if k.endswith("classifier.weight")]
+    head_cls = [k for k in all_cls if k.startswith("heads.")]
+    assert all_cls == head_cls, f"non-head classifier weights in checkpoint: {set(all_cls) - set(head_cls)}"
+    assert head_cls, "no classifier weights saved"
+
+    detected = state[head_cls[0]].shape[0]
+    assert detected == NUM_CLASSES, f"detected {detected}, expected {NUM_CLASSES}"
+
+
 def test_unknown_backbone_layout_raises():
     class UnknownAdapter(nn.Module):
         def __init__(self):
@@ -525,6 +585,8 @@ TESTS = [
     ("unfreeze_blocks count", test_unfreeze_blocks_count),
     ("frozen prefix: no_grad split", test_frozen_prefix_saves_memory_without_changing_output),
     ("parameter name prefixes", test_parameter_name_prefixes),
+    ("osnet backbone (torchreid)", test_osnet_backbone),
+    ("checkpoint classifier keys", test_checkpoint_classifier_keys),
     ("unknown backbone layout raises", test_unknown_backbone_layout_raises),
     ("dinov2 adapter token path", test_dinov2_adapter_token_path),
     ("transforms and clip consistency", test_transforms),

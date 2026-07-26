@@ -50,6 +50,14 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--backbone",
+    type=str,
+    default=None,
+    choices=["dinov2", "osnet", "vit", "swin", "convnext"],
+    help="Backbone used during training; defaults to the value in configs/config.py"
+)
+
+parser.add_argument(
     "--run_name",
     type=str,
     default=None,
@@ -79,11 +87,15 @@ if str(ROOT_DIR) not in sys.path:
 # rather than assumed equal.
 from configs.config import Config as _Config  # noqa: E402
 
+# The backbone is part of the run name, so evaluating an OSNet run requires
+# passing --backbone osnet; otherwise the config default is assumed.
+BACKBONE = args.backbone or _Config.backbone
+
 if args.run_name is not None:
     RUN_NAME = args.run_name
 elif MODEL_NAME in ("bot", "transreid"):
     RUN_NAME = _Config.compose_run_name(
-        backbone=_Config.backbone,
+        backbone=BACKBONE,
         reid_method=MODEL_NAME,
         world=WORLD_TYPE,
         pooling_type=args.pooling_type,
@@ -155,8 +167,10 @@ cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
 if MODEL_NAME in ("bot", "transreid"):
     from models.reid_model import VideoReID
-    print(f"-> Initializing Architecture: VideoReID ({MODEL_NAME}, {args.pooling_type})...")
+    print(f"-> Initializing Architecture: VideoReID ({BACKBONE}, {MODEL_NAME}, {args.pooling_type})...")
     cfg.reid_method = MODEL_NAME
+    cfg.backbone = BACKBONE
+    cfg.model = BACKBONE
     cfg.pooling_type = args.pooling_type
 
     # The classifiers are unused at inference, but omitting them makes
@@ -164,7 +178,10 @@ if MODEL_NAME in ("bot", "transreid"):
     # Read the identity count off the checkpoint rather than hardcoding it.
     _ckpt = torch.load(MODEL_PATH, map_location="cpu")
     _sd = _ckpt.get('model', _ckpt.get('state_dict', _ckpt))
-    _cls = [v for k, v in _sd.items() if k.endswith("classifier.weight")]
+    # Match the BNNeck head specifically. Some backbones ship their own
+    # classifier, so a bare '*.classifier.weight' match can find the wrong one.
+    _cls = [v for k, v in _sd.items()
+            if k.startswith("heads.") and k.endswith("classifier.weight")]
     cfg.num_classes = _cls[0].shape[0] if _cls else 0
     print(f"-> num_classes from checkpoint: {cfg.num_classes}")
     del _ckpt, _sd, _cls

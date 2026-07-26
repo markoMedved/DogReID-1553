@@ -7,7 +7,7 @@ class Config:
     """
     
     # --- Experiment Settings ---
-    backbone      = "dinov2"      # Options: 'dinov2', 'vit', 'swin', 'convnext'
+    backbone      = "dinov2"      # Options: 'dinov2', 'osnet', 'vit', 'swin', 'convnext'
     reid_method   = "bot"         # Options: 'bot', 'transreid'
     world         = "closed"      # Options: 'closed', 'open'
     pooling_type  = "attention"   # Options: 'attention', 'mean', 'max'
@@ -27,6 +27,15 @@ class Config:
     # separate ablation rather than changed by default.
     img_size        = (224, 224)
     dinov2_variant  = "vitb14_reg"
+
+    # OSNet (Torchreid). osnet_weights may point to a model-zoo checkpoint for
+    # person-re-ID-pretrained rather than ImageNet-pretrained initialization.
+    # AIN is the variant designed for cross-domain generalization (TPAMI 2021),
+    # which is the relevant property here since dogs are an unseen domain.
+    # See models/osnet_weights.py for the checkpoint choice and how to fetch it.
+    osnet_variant    = "osnet_ain_x1_0"   # also x0_25/0_5/0_75/x1_0, ibn_x1_0, ain_*
+    osnet_pretrained = True               # ImageNet init when osnet_weights is None
+    osnet_weights    = None               # e.g. "pretrained/osnet_ain_ms_d_c.pth"
 
     # TransReID Jigsaw Patch Module
     jpm_parts          = 4        # local branches

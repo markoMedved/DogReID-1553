@@ -97,6 +97,82 @@ class TimmAdapter(nn.Module):
         return self.net(x)
 
 
+class OSNetAdapter(nn.Module):
+    """OSNet from Torchreid, a re-identification-specific architecture.
+
+    Zhou, Yang, Cavallaro, Xiang. "Omni-Scale Feature Learning for Person
+    Re-Identification", ICCV 2019, extended in TPAMI 2021. arXiv:1905.00953
+    Library: Zhou and Xiang, "Torchreid", arXiv:1910.10093
+    https://github.com/KaiyangZhou/deep-person-reid
+
+    Unlike the other backbones here this is a CNN designed for re-ID rather than
+    a general-purpose feature extractor, so it provides pooled features only.
+
+    `weights` may point to a checkpoint from the Torchreid model zoo, which
+    gives person-re-ID-pretrained rather than ImageNet-pretrained initialization.
+    """
+
+    def __init__(self, name: str = "osnet_x1_0", pretrained: bool = True, weights: str = None):
+        super().__init__()
+
+        try:
+            import importlib
+            # The AIN variants live in a separate module from the base ones
+            modules = [importlib.import_module(f"torchreid.reid.models.{m}")
+                       for m in ("osnet", "osnet_ain")]
+        except ImportError as exc:
+            raise ImportError(
+                "backbone='osnet' requires torchreid. Importing it also pulls in "
+                "scipy, opencv, tensorboard and gdown:\n"
+                "  pip install torchreid scipy opencv-python-headless tensorboard gdown"
+            ) from exc
+
+        factory = next((getattr(m, name) for m in modules if hasattr(m, name)), None)
+        if factory is None:
+            available = sorted({n for m in modules for n in dir(m) if n.startswith("osnet_")})
+            raise ValueError(f"Unknown OSNet variant {name!r}; available: {available}")
+
+        # num_classes is a placeholder: identity logits come from BNNeckHead.
+        # Torchreid's own classifier is then discarded, both because it is
+        # unused and because leaving it in the state_dict gives the checkpoint
+        # two different '*.classifier.weight' entries.
+        # An explicit checkpoint supersedes the ImageNet initialization, so skip
+        # that download: it would be overwritten anyway, and it fails on compute
+        # nodes without outbound network access.
+        imagenet_init = pretrained and not weights
+
+        self.net = factory(num_classes=1, loss="triplet", pretrained=imagenet_init)
+        self.net.classifier = nn.Identity()
+        self.dim = self.net.feature_dim
+
+        if weights:
+            self._load_reid_weights(weights)
+
+    def _load_reid_weights(self, path):
+        """Load a Torchreid model-zoo checkpoint, ignoring its classifier."""
+        ckpt = torch.load(path, map_location="cpu")
+        state = ckpt.get("state_dict", ckpt)
+        state = {k[7:] if k.startswith("module.") else k: v for k, v in state.items()}
+        state = {k: v for k, v in state.items() if not k.startswith("classifier.")}
+        missing, unexpected = self.net.load_state_dict(state, strict=False)
+        print(f"[osnet] loaded {path}: {len(missing)} missing, {len(unexpected)} unexpected keys")
+
+    def penultimate(self, x, n_grad=None):
+        raise NotImplementedError(
+            "OSNet is a CNN and exposes no flat token sequence. "
+            "reid_method='transreid' requires a ViT-family backbone."
+        )
+
+    def pooled(self, x, n_grad=None):
+        # Bypass the Torchreid head, which returns (logits, features) in train
+        # mode and features in eval mode
+        f = self.net.featuremaps(x)
+        v = self.net.global_avgpool(f).view(f.size(0), -1)
+        if self.net.fc is not None:
+            v = self.net.fc(v)
+        return v
+
+
 TIMM_BACKBONES = {
     "vit":       "vit_base_patch16_224.augreg_in21k",
     "swin":      "swinv2_base_window12_192.ms_in22k",
@@ -111,6 +187,13 @@ def build_backbone(cfg):
 
     if name == "dinov2":
         return DINOv2Adapter(getattr(cfg, "dinov2_variant", "vitb14_reg"))
+
+    if name == "osnet":
+        return OSNetAdapter(
+            getattr(cfg, "osnet_variant", "osnet_x1_0"),
+            pretrained=getattr(cfg, "osnet_pretrained", True),
+            weights=getattr(cfg, "osnet_weights", None),
+        )
 
     if name in TIMM_BACKBONES:
         return TimmAdapter(TIMM_BACKBONES[name])
