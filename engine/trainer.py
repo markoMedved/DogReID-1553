@@ -55,8 +55,9 @@ class Trainer:
 
             # Run one full training epoch
             avg_loss = self.train_epoch(epoch)
-            lr = self.optimizer.param_groups[0]['lr']
-            print(f"Epoch {epoch} | Loss: {avg_loss:.4f} | LR: {lr:.2e}")
+            # One learning rate per parameter group: pretrained first, heads second
+            lrs = " / ".join(f"{g['lr']:.2e}" for g in self.optimizer.param_groups)
+            print(f"Epoch {epoch} | Loss: {avg_loss:.4f} | LR: {lrs}")
 
             # --- Learning Rate Schedule ---
             # Stepped per epoch, matching the warmup and milestone units
