@@ -1,1 +1,56 @@
 Starting Dog Re-ID DINOv2 Closed-Set Training Job (Attention Pooling + ID Loss)...
+--- Data Loading Stats ---
+Training: 3756 samples
+Validation: Query=0, Gallery=0
+--> Total training dog identities (num_classes): 3756
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_closed_attention_finetune_False_idloss_True
+--------------------------------------------------
+[DATA]
+  world           : closed
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  img_size        : (224, 224)
+  num_workers     : 12
+[MODEL]
+  model           : dinov2
+  embedding_dim   : 768
+  num_classes     : 3756
+  pooling_type    : attention
+  full_finetune   : False
+  use_id_loss     : True
+[OPTIM]
+  lr              : 0.0001
+  epochs          : 100
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 1e-05
+[PATHS]
+  output_dir      : .../dinov2_closed_attention_finetune_False_idloss_True
+==================================================
+
+Epoch 0 | Loss: 8.4913
+Epoch 1 | Loss: 8.2277
+Epoch 2 | Loss: 7.9905
+Epoch 3 | Loss: 7.7402
+Epoch 4 | Loss: 7.5000
+Epoch 5 | Loss: 7.3089
+Epoch 6 | Loss: 7.0522
+Epoch 7 | Loss: 6.8262
+Epoch 8 | Loss: 6.5890
+Epoch 9 | Loss: 6.3954
+--> Saved periodic checkpoint to /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_closed_attention_finetune_False_idloss_True/model_epoch_10.pth
+Epoch 10 | Loss: 6.1581
+Epoch 11 | Loss: 5.9396
+Epoch 12 | Loss: 5.7486
+Epoch 13 | Loss: 5.5387
+Epoch 14 | Loss: 5.3732
+Epoch 15 | Loss: 5.1706
+Epoch 16 | Loss: 4.9963
+Epoch 17 | Loss: 4.7534
+Epoch 18 | Loss: 4.6056
+Epoch 19 | Loss: 4.4573
+--> Saved periodic checkpoint to /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_closed_attention_finetune_False_idloss_True/model_epoch_20.pth
+Epoch 20 | Loss: 4.3417

@@ -50,3 +50,35 @@ Epoch 14 | Loss: 8.1511
 Epoch 15 | Loss: 8.1019
 Epoch 16 | Loss: 8.0838
 Epoch 17 | Loss: 8.0278
+Epoch 18 | Loss: 8.0409
+Epoch 19 | Loss: 7.9948
+--> Saved periodic checkpoint to /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_closed_mean_finetune_False/model_epoch_20.pth
+Epoch 20 | Loss: 7.9899
+Epoch 21 | Loss: 7.9367
+Epoch 22 | Loss: 7.9064
+Epoch 23 | Loss: 7.8958
+Epoch 24 | Loss: 7.8465
+Epoch 25 | Loss: 7.8334
+Epoch 26 | Loss: 7.8064
+Epoch 27 | Loss: 7.8006
+Epoch 28 | Loss: 7.7338
+Epoch 29 | Loss: 7.7102
+--> Saved periodic checkpoint to /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_closed_mean_finetune_False/model_epoch_30.pth
+Epoch 30 | Loss: 7.6994
+Epoch 31 | Loss: 7.6734
+Epoch 32 | Loss: 7.6616
+Epoch 33 | Loss: 7.5638
+Epoch 34 | Loss: 7.5884
+Epoch 35 | Loss: 7.5370
+Epoch 36 | Loss: 7.5421
+Epoch 37 | Loss: 7.4859
+Epoch 38 | Loss: 7.4387
+Epoch 39 | Loss: 7.4613
+--> Saved periodic checkpoint to /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/dinov2_closed_mean_finetune_False/model_epoch_40.pth
+Epoch 40 | Loss: 7.4334
+Epoch 41 | Loss: 7.4018
+Epoch 42 | Loss: 7.4008
+Epoch 43 | Loss: 7.3426
+Epoch 44 | Loss: 7.3156
+Epoch 45 | Loss: 7.2951
+Epoch 46 | Loss: 7.2546
