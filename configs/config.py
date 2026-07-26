@@ -60,7 +60,7 @@ class Config:
     # --- Training & Optimization ---
     # Milestones are epoch indices and must fit inside `epochs`; rescale both
     # together or the learning rate never decays.
-    epochs        = 40
+    epochs        = 51
     warmup_epochs = 5
     lr_milestones = (25, 35)
     lr_gamma      = 0.1
