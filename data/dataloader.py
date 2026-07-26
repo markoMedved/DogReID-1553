@@ -76,20 +76,26 @@ def build_dataloaders(cfg):
     )
 
     # --- Construct DataLoaders ---
+    # persistent_workers avoids respawning workers every epoch, which is
+    # expensive here because each one holds a YOLO detector
+    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
+    if cfg.num_workers > 0:
+        loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
+
     train_loader = DataLoader(
-        train_dataset, batch_size=cfg.batch_size, sampler=sampler, 
-        drop_last=True, num_workers=cfg.num_workers
+        train_dataset, batch_size=cfg.batch_size, sampler=sampler,
+        drop_last=True, **loader_kwargs
     )
 
     # For validation we need query and gallery dataloaders
     val_query_loader = DataLoader(
-        val_query_dataset, batch_size=cfg.batch_size * 2, 
-        shuffle=False, num_workers=cfg.num_workers
+        val_query_dataset, batch_size=cfg.batch_size * 2,
+        shuffle=False, **loader_kwargs
     )
     
     val_gallery_loader = DataLoader(
-        val_gallery_dataset, batch_size=cfg.batch_size * 2, 
-        shuffle=False, num_workers=cfg.num_workers
+        val_gallery_dataset, batch_size=cfg.batch_size * 2,
+        shuffle=False, **loader_kwargs
     )
 
     print(f"--- Data Loading Stats ---")
@@ -110,33 +116,42 @@ def build_test_loaders(cfg, images=False):
     global_id_map = {dog_id: i for i, dog_id in enumerate(all_unique_ids)}
 
     # --- Shared Dataset Parameters ---
+    # clip_len belongs here: leaving it out made the gallery fall back to the
+    # dataset default instead of cfg.clip_len, so query and gallery clips were
+    # different lengths.
     dataset_kwargs = {
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
+        "clip_len": cfg.clip_len,
         "transform": eval_tf,
         "world": cfg.world,
         "label_map": global_id_map
     }
 
     # --- Query and Gallery Datasets ---
+    # The gallery is always video; only the query modality varies.
+    query_kwargs = {**dataset_kwargs, "clip_len": 1 if images else cfg.clip_len}
     query_dataset = DOGVideoREIDDataset(
-            split="query", 
-            use_videos=not images, 
-            clip_len=1 if images else cfg.clip_len,
-            **dataset_kwargs
+            split="query",
+            use_videos=not images,
+            **query_kwargs
         )
-    
+
     gallery_dataset = DOGVideoREIDDataset(split="gallery", **dataset_kwargs)
 
     # --- Construct Test DataLoaders ---
+    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
+    if cfg.num_workers > 0:
+        loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
+
     query_loader = DataLoader(
-        query_dataset, batch_size=cfg.batch_size * 2, 
-        shuffle=False, num_workers=cfg.num_workers, pin_memory=True
+        query_dataset, batch_size=cfg.batch_size * 2,
+        shuffle=False, **loader_kwargs
     )
-    
+
     gallery_loader = DataLoader(
         gallery_dataset, batch_size=cfg.batch_size * 2,
-        shuffle=False, num_workers=cfg.num_workers, pin_memory=True
+        shuffle=False, **loader_kwargs
     )
 
     print(f"--- Test Loaders Ready ---")

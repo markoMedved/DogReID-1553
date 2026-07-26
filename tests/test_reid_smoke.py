@@ -84,30 +84,14 @@ class StubViT(nn.Module):
         return self.norm(t)[:, 0]
 
 
-class StubAdapter(nn.Module):
-    """Backbone adapter over StubViT."""
+class StubAdapter(reid_model.DINOv2Adapter):
+    """StubViT behind the real DINOv2 adapter, so penultimate(), pooled() and
+    the no_grad split under test are production code rather than a copy."""
 
     def __init__(self):
-        super().__init__()
+        nn.Module.__init__(self)
         self.net = StubViT()
         self.dim = D
-
-    @property
-    def last_block(self):
-        return self.net.blocks[-1]
-
-    @property
-    def final_norm(self):
-        return self.net.norm
-
-    def penultimate(self, x):
-        t = self.net.prepare_tokens_with_masks(x, None)
-        for block in self.net.blocks[:-1]:
-            t = block(t)
-        return t
-
-    def pooled(self, x):
-        return self.net(x)
 
 
 class PooledOnlyAdapter(nn.Module):
@@ -118,10 +102,10 @@ class PooledOnlyAdapter(nn.Module):
         self.net = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Linear(3, D))
         self.dim = D
 
-    def penultimate(self, x):
+    def penultimate(self, x, n_grad=None):
         raise NotImplementedError
 
-    def pooled(self, x):
+    def pooled(self, x, n_grad=None):
         return self.net(x)
 
 
@@ -300,6 +284,66 @@ def test_unfreeze_blocks_count():
     assert all(p.requires_grad for p in model.heads[0].bottleneck.parameters())
 
 
+def test_frozen_prefix_saves_memory_without_changing_output():
+    """Running the frozen leading blocks under no_grad must not change the
+    result, and must leave those blocks out of the autograd graph."""
+    torch.manual_seed(0)
+    model, cfg = make_model("bot", full_ft=False)
+    cfg.unfreeze_blocks = 2
+    apply_freezing(model, cfg)
+    model.train()
+
+    x = torch.randn(B, T, 3, H, W, device=DEVICE)
+
+    # Same arithmetic with and without the no_grad split
+    model.n_grad = None
+    full_graph = model(x)[0]
+    model.n_grad = 2
+    split_graph = model(x)[0]
+    assert torch.allclose(full_graph, split_graph, atol=1e-5), \
+        (full_graph - split_graph).abs().max().item()
+
+    # Only the trailing blocks should receive gradient
+    model.zero_grad()
+    split_graph.pow(2).mean().backward()
+    blocks = model.backbone.net.blocks
+    got_grad = [any(p.grad is not None and p.grad.abs().sum() > 0 for p in b.parameters())
+                for b in blocks]
+    assert got_grad[-1], "last block should receive gradient"
+    assert not got_grad[0], "frozen leading block should be outside the graph"
+
+
+def test_parameter_name_prefixes():
+    """train.py splits learning rates by parameter name: 'backbone*' and 'jpm*'
+    are pretrained and get the reduced rate, everything else is randomly
+    initialized and gets the full rate. If a module is renamed, that split
+    silently mis-assigns learning rates, so the prefixes are pinned here."""
+    expected_pretrained = {"backbone", "jpm"}
+    expected_random = {"heads", "pools"}
+
+    for method in ("bot", "transreid"):
+        model, cfg = make_model(method, full_ft=False)
+        apply_freezing(model, cfg)
+        prefixes = {n.split(".")[0] for n, p in model.named_parameters() if p.requires_grad}
+        unknown = prefixes - expected_pretrained - expected_random
+        assert not unknown, f"{method}: unrecognised parameter prefixes {unknown}"
+
+        # Coverage: the two groups must partition the trainable parameters
+        pre = [p for n, p in model.named_parameters()
+               if p.requires_grad and (n.startswith("backbone") or n.startswith("jpm."))]
+        rnd = [p for n, p in model.named_parameters()
+               if p.requires_grad and not (n.startswith("backbone") or n.startswith("jpm."))]
+        total = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        assert sum(p.numel() for p in pre) + sum(p.numel() for p in rnd) == total, method
+
+    # TransReID's JPM copy must be counted as pretrained, not as a fresh head
+    model, cfg = make_model("transreid", full_ft=False)
+    apply_freezing(model, cfg)
+    jpm_names = [n for n, p in model.named_parameters()
+                 if p.requires_grad and n.startswith("jpm.")]
+    assert jpm_names, "JPM parameters missing from the trainable set"
+
+
 def test_unknown_backbone_layout_raises():
     class UnknownAdapter(nn.Module):
         def __init__(self):
@@ -354,6 +398,45 @@ def test_transforms():
     assert clip.shape == (5, 3, 64, 48), clip.shape
     assert torch.allclose(clip[0], clip[-1], atol=1e-6), \
         "augmentation must be identical across frames of one clip"
+
+
+def test_run_name_round_trip():
+    """The checkpoint directory written by training must be the one evaluation
+    looks for, otherwise a finished run is unreadable."""
+    from configs.config import Config
+
+    cfg = Config()
+    training_name = cfg.run_name
+
+    # Evaluation rebuilds the name from its own flags
+    eval_name = Config.compose_run_name(
+        backbone=Config.backbone,
+        reid_method=cfg.reid_method,
+        world=cfg.world,
+        pooling_type=cfg.pooling_type,
+        full_finetune=cfg.full_finetune,
+    )
+    assert training_name == eval_name, f"{training_name!r} != {eval_name!r}"
+
+    # Overrides must propagate into the name, not leave a stale one behind
+    cfg.reid_method = "transreid"
+    cfg.world = "open"
+    cfg.batch_size, cfg.k = 12, 3
+    cfg.refresh_run_name(make_dir=False)
+    assert cfg.run_name == "dinov2_transreid_open_attention_finetune_False", cfg.run_name
+    assert cfg.num_ids == 4, cfg.num_ids
+    assert cfg.output_dir.name == cfg.run_name
+
+
+def test_schedule_fits_epochs():
+    """Milestones outside the run length mean the learning rate never decays."""
+    from configs.config import Config
+
+    cfg = Config()
+    assert any(m < cfg.epochs for m in cfg.lr_milestones), \
+        f"lr_milestones {cfg.lr_milestones} never fire within epochs={cfg.epochs}"
+    assert cfg.warmup_epochs < min(cfg.lr_milestones), \
+        "warmup should finish before the first decay"
 
 
 def test_warmup_scheduler():
@@ -440,9 +523,13 @@ TESTS = [
     ("full fine-tune unfreezes everything", test_full_finetune_unfreezes_everything),
     ("partial fine-tune keeps heads trainable", test_partial_finetune_keeps_heads_trainable),
     ("unfreeze_blocks count", test_unfreeze_blocks_count),
+    ("frozen prefix: no_grad split", test_frozen_prefix_saves_memory_without_changing_output),
+    ("parameter name prefixes", test_parameter_name_prefixes),
     ("unknown backbone layout raises", test_unknown_backbone_layout_raises),
     ("dinov2 adapter token path", test_dinov2_adapter_token_path),
     ("transforms and clip consistency", test_transforms),
+    ("run name round trip", test_run_name_round_trip),
+    ("schedule fits epochs", test_schedule_fits_epochs),
     ("warmup scheduler", test_warmup_scheduler),
     ("trainer integration", test_trainer_integration),
 ]

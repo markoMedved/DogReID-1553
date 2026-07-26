@@ -1,8 +1,14 @@
+import contextlib
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from .reid_heads import JPM, BNNeckHead
+
+
+def _null_context():
+    return contextlib.nullcontext()
 
 
 # --- Backbone Adapters ---
@@ -35,14 +41,41 @@ class DINOv2Adapter(nn.Module):
     def final_norm(self):
         return self.net.norm
 
-    def penultimate(self, x):
-        tokens = self.net.prepare_tokens_with_masks(x, None)
-        for block in self.net.blocks[:-1]:
+    @property
+    def depth(self):
+        return len(self.net.blocks)
+
+    def _run_blocks(self, tokens, blocks, n_grad):
+        """Run blocks, keeping the autograd graph only for the last n_grad.
+
+        Frozen leading blocks do not need stored activations, so running them
+        under no_grad cuts activation memory without changing the result.
+        """
+        split = max(len(blocks) - n_grad, 0) if n_grad is not None else 0
+
+        if split:
+            with torch.no_grad():
+                for block in blocks[:split]:
+                    tokens = block(tokens)
+        for block in blocks[split:]:
             tokens = block(tokens)
         return tokens
 
-    def pooled(self, x):
-        return self.net(x)
+    def penultimate(self, x, n_grad=None):
+        # The final block is applied by JPM, so one fewer trainable block here
+        n_grad_here = None if n_grad is None else max(n_grad - 1, 0)
+        with torch.no_grad() if n_grad_here == 0 else _null_context():
+            tokens = self.net.prepare_tokens_with_masks(x, None)
+        return self._run_blocks(tokens, self.net.blocks[:-1], n_grad_here)
+
+    def pooled(self, x, n_grad=None):
+        if n_grad is None:
+            return self.net(x)
+
+        with torch.no_grad():
+            tokens = self.net.prepare_tokens_with_masks(x, None)
+        tokens = self._run_blocks(tokens, self.net.blocks, n_grad)
+        return self.net.norm(tokens)[:, 0]
 
 
 class TimmAdapter(nn.Module):
@@ -54,13 +87,13 @@ class TimmAdapter(nn.Module):
         self.net = timm.create_model(name, pretrained=True, num_classes=0)
         self.dim = self.net.num_features
 
-    def penultimate(self, x):
+    def penultimate(self, x, n_grad=None):
         raise NotImplementedError(
             "This backbone exposes no flat token sequence. "
             "reid_method='transreid' requires a ViT-family backbone."
         )
 
-    def pooled(self, x):
+    def pooled(self, x, n_grad=None):
         return self.net(x)
 
 
@@ -131,6 +164,13 @@ class VideoReID(nn.Module):
         self.num_classes = getattr(cfg, "num_classes", 0)
         self.embed_dim = self.backbone.dim
 
+        # --- Activation Memory ---
+        # Under partial fine-tuning the leading blocks are frozen, so their
+        # activations need not be retained. n_grad = None means "keep
+        # everything", which is what full fine-tuning requires.
+        self.n_grad = (None if getattr(cfg, "full_finetune", False)
+                       else getattr(cfg, "unfreeze_blocks", 2))
+
         # --- Branch Configuration ---
         if self.method == "transreid":
             if not (hasattr(self.backbone, "last_block") and hasattr(self.backbone, "final_norm")):
@@ -165,9 +205,10 @@ class VideoReID(nn.Module):
 
     def _frame_features(self, x):
         """Extract one feature per branch for a batch of frames."""
+        n_grad = self.n_grad if self.training else 0
         if self.jpm is None:
-            return [self.backbone.pooled(x)]
-        return self.jpm(self.backbone.penultimate(x))
+            return [self.backbone.pooled(x, n_grad=n_grad)]
+        return self.jpm(self.backbone.penultimate(x, n_grad=n_grad))
 
     def forward(self, x):
         if x.dim() == 5:

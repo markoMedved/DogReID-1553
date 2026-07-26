@@ -27,9 +27,33 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--use_images", 
-    action="store_true", 
+    "--use_images",
+    action="store_true",
     help="Include this flag to evaluate on images. Omit it to evaluate on videos."
+)
+
+# --- Checkpoint Identification ---
+# These must match the training run, both to locate the checkpoint and to
+# rebuild an architecture whose state_dict keys line up.
+parser.add_argument(
+    "--pooling_type",
+    type=str,
+    default="attention",
+    choices=["attention", "mean", "max"],
+    help="Temporal pooling used during training"
+)
+
+parser.add_argument(
+    "--full_finetune",
+    action="store_true",
+    help="Set if the checkpoint was trained with full fine-tuning"
+)
+
+parser.add_argument(
+    "--run_name",
+    type=str,
+    default=None,
+    help="Override the derived checkpoint directory name"
 )
 
 args = parser.parse_args()
@@ -50,7 +74,25 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
 # path to trained checkpoint
-MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{MODEL_NAME}_{WORLD_TYPE}" / "model.pth")
+# The legacy builders were saved under "{model}_{world}". Runs produced by
+# VideoReID use Config.compose_run_name, so the two are derived separately
+# rather than assumed equal.
+from configs.config import Config as _Config  # noqa: E402
+
+if args.run_name is not None:
+    RUN_NAME = args.run_name
+elif MODEL_NAME in ("bot", "transreid"):
+    RUN_NAME = _Config.compose_run_name(
+        backbone=_Config.backbone,
+        reid_method=MODEL_NAME,
+        world=WORLD_TYPE,
+        pooling_type=args.pooling_type,
+        full_finetune=args.full_finetune,
+    )
+else:
+    RUN_NAME = f"{MODEL_NAME}_{WORLD_TYPE}"
+
+MODEL_PATH = str(ROOT_DIR / "trained_models" / RUN_NAME / "model.pth")
 
 
 # --- MODEL ARCHITECTURE SELECTION ---
@@ -113,9 +155,20 @@ cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
 if MODEL_NAME in ("bot", "transreid"):
     from models.reid_model import VideoReID
-    print(f"-> Initializing Architecture: VideoReID ({MODEL_NAME})...")
+    print(f"-> Initializing Architecture: VideoReID ({MODEL_NAME}, {args.pooling_type})...")
     cfg.reid_method = MODEL_NAME
-    cfg.num_classes = 776          # must match the training run
+    cfg.pooling_type = args.pooling_type
+
+    # The classifiers are unused at inference, but omitting them makes
+    # load_state_dict fail on the checkpoint's heads.*.classifier entries.
+    # Read the identity count off the checkpoint rather than hardcoding it.
+    _ckpt = torch.load(MODEL_PATH, map_location="cpu")
+    _sd = _ckpt.get('model', _ckpt.get('state_dict', _ckpt))
+    _cls = [v for k, v in _sd.items() if k.endswith("classifier.weight")]
+    cfg.num_classes = _cls[0].shape[0] if _cls else 0
+    print(f"-> num_classes from checkpoint: {cfg.num_classes}")
+    del _ckpt, _sd, _cls
+
     model = VideoReID(cfg)
 else:
     print(f"-> Initializing Architecture: {MODEL_CLASS.__name__}...")

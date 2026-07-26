@@ -256,9 +256,21 @@ class Trainer:
 
         # --- Metadata Saving ---
         # Save specific config parameters alongside the model for reproducibility
-        allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size', 
-                        'k', 'model', 'world', 'clip_len', 'epochs',
-                        "accum_steps", "num_workers", "chunk_size"]
+        # Everything needed to reproduce the run and to fill in the settings
+        # column of a results table
+        allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size',
+                        'k', 'num_ids', 'model', 'world', 'clip_len', 'epochs',
+                        "accum_steps", "num_workers", "chunk_size",
+                        # Re-ID method and architecture
+                        "backbone", "reid_method", "pooling_type", "img_size",
+                        "num_classes", "dinov2_variant",
+                        "jpm_parts", "jpm_shift", "jpm_shuffle_groups",
+                        # Optimization
+                        "full_finetune", "unfreeze_blocks", "id_loss_weight",
+                        "warmup_epochs", "warmup_factor", "lr_milestones",
+                        "lr_gamma", "amp",
+                        # Augmentation
+                        "aug_pad", "re_prob", "run_name"]
 
         params_to_save = {}
 

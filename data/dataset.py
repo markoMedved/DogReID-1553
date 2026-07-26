@@ -19,6 +19,39 @@ def load_yolo(model_name: str = "yolo11n.pt", device: torch.device = None) -> YO
     return model
 
 
+def _best_dog_box(result, conf_threshold: float = 0.3):
+    """Pick the highest-confidence dog box from one YOLO result."""
+    best_box = None
+    best_conf = conf_threshold
+
+    for box in result.boxes:
+        cls = int(box.cls.item())
+        conf = float(box.conf.item())
+        if cls == COCO_DOG_CLASS and conf > best_conf:
+            best_conf = conf
+            best_box = tuple(map(int, box.xyxy[0].tolist()))
+
+    return best_box
+
+
+def detect_dog_boxes(
+    yolo: YOLO,
+    frames: list,
+    conf_threshold: float = 0.3,
+) -> list:
+    """
+    Run YOLO once over a whole clip and return one box per frame.
+
+    Detection dominates data loading cost, so the frames of a clip are batched
+    into a single call instead of one call per frame.
+    """
+    if not frames:
+        return []
+
+    results = yolo(frames, verbose=False)
+    return [_best_dog_box(r, conf_threshold) for r in results]
+
+
 def detect_dog_box(
     yolo: YOLO,
     frame: Image.Image,
@@ -154,14 +187,15 @@ class DOGVideoREIDDataset(Dataset):
             clip = [np.array(img)]
 
         # --- YOLO detected bounging box crop ---
+        # The whole clip is detected in one batched call; per-frame calls made
+        # detection the dominant cost of data loading.
         if self.yolo is not None:
-            cropped_clip = []
-            for frame_arr in clip:
-                pil_frame  = Image.fromarray(frame_arr)
-                box        = detect_dog_box(self.yolo, pil_frame) 
-                pil_frame  = crop_frame(pil_frame, box)             
-                cropped_clip.append(np.array(pil_frame))            
-            clip = cropped_clip
+            pil_frames = [Image.fromarray(frame_arr) for frame_arr in clip]
+            boxes = detect_dog_boxes(self.yolo, pil_frames)
+            clip = [
+                np.array(crop_frame(pil_frame, box))
+                for pil_frame, box in zip(pil_frames, boxes)
+            ]
 
         # --- Use the transforms ---
         if self.transform:

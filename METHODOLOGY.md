@@ -105,10 +105,16 @@ temporal pooling as the other benchmark models, applied per branch.
 
 ### 2.3 Input resolution
 
+The default is 224x224, matching the published experiments, so that the new runs
+differ from them on as few axes as possible.
+
 The dog bounding boxes in `bounding_boxes.csv` have a geometric-mean
-width:height ratio of 0.81 across all 7,463 annotated frames, so the default
-input is non-square. Use 256x192 for patch-16 backbones and 252x182 for DINOv2,
-whose patch size is 14.
+width:height ratio of 0.81 across all 7,463 annotated frames, so a non-square
+input fits the data better: mean anisotropic distortion is 0.330 at a 0.75
+aspect ratio against 0.381 for a square resize. This is reported as an ablation
+(252x182 for DINOv2 at patch 14, 256x192 for patch-16 backbones) rather than
+adopted as the default, because changing it would add a confound between the new
+results and the published ones.
 
 ### 2.4 Backbones and other references
 
@@ -129,30 +135,55 @@ Five existing files are involved. `engine/trainer.py` is already updated; the re
 
 ### 3.1 `configs/config.py`
 
-Add the following fields:
+Already updated. Current values:
 
 ```python
-backbone      = "dinov2"      # dinov2, vit, swin, convnext
-reid_method   = "bot"         # bot, transreid
-img_size      = (252, 182)    # 256x192 for patch-16 backbones
-full_finetune = True     # True ignores unfreeze_blocks entirely
-unfreeze_blocks = 2      # trailing backbone blocks left trainable when
-                         # full_finetune is False; 0 freezes the whole backbone
-jpm_parts     = 4
+backbone        = "dinov2"
+reid_method     = "bot"     # bot, transreid
+pooling_type    = "attention"
+img_size        = (224, 224)     # matches the published runs; see Sec. 2.3
 
-warmup_epochs = 10
-lr_milestones = (40, 70)
-lr_gamma      = 0.1
-aug_pad       = 10
-re_prob       = 0.5
+full_finetune   = False          # True trains everything, ignores unfreeze_blocks
+unfreeze_blocks = 2              # matches the original experiments
+
+batch_size      = 32             # -> 8 identities per batch
+k               = 4              # clips per identity
+clip_len        = 8
+chunk_size      = 16
+num_workers     = 12
+amp             = "bf16"         # bf16, fp16 or None. CUDA only.
+
+epochs          = 40
+warmup_epochs   = 5
+warmup_factor   = 0.01
+lr_milestones   = (25, 35)
+lr_gamma        = 0.1
+lr              = 2e-05
+accum_steps     = 2
+id_loss_weight  = 1.0
+
+jpm_parts          = 4
+jpm_shift          = 5
+jpm_shuffle_groups = 2
+
+aug_pad         = 10
+re_prob         = 0.5
 ```
 
-Extend `run_name` so that `reid_method` and `backbone` appear in output paths:
+Notes on the values that are easy to get wrong:
 
-```python
-self.run_name = (f"{self.backbone}_{self.reid_method}_{self.world}"
-                 f"_{self.pooling_type}_finetune_{self.full_finetune}")
-```
+- **Milestones must fit inside `epochs`.** `train.py` raises if none of them
+  fire, because a schedule that never decays looks like a normal run and
+  silently underperforms.
+- **Identities per batch is what drives triplet mining**, not the effective
+  batch size reached through accumulation: mining happens within a single
+  forward pass. `batch_size // k` = 8 here.
+- **Activation memory scales with what is trainable.** Under
+  `full_finetune=False` the frozen leading blocks run under `no_grad`, which is
+  what allows a batch of 32. Setting `full_finetune=True` removes that
+  saving, so the batch size has to come down and must be recorded per row.
+- `Config.refresh_run_name()` recomputes `run_name`, `output_dir` and `num_ids`
+  after any override; `train.py` calls it once the CLI flags are applied.
 
 ### 3.2 `models/model_factory.py`
 
@@ -168,8 +199,8 @@ def build_model(cfg):
 ### 3.3 `engine/trainer.py`
 
 Already updated. `Trainer` now takes an optional `scheduler`, steps it once per
-epoch, unpacks models that return `(embeddings, logits)`, and adds the identity
-loss when logits are present:
+epoch, unpacks models that return `(embeddings, logits)`, adds the identity loss
+when logits are present, and runs the forward pass under `torch.autocast`:
 
 ```python
 Trainer(model, train_loader, query_loader, gallery_loader,
@@ -179,6 +210,12 @@ Trainer(model, train_loader, query_loader, gallery_loader,
 Models returning a single tensor keep their previous behaviour, so the existing
 builders are unaffected. The identity loss uses cross entropy with label
 smoothing 0.1, weighted by `cfg.id_loss_weight` (default 1.0).
+
+Mixed precision is controlled by `cfg.amp` and applies to the forward pass only;
+embeddings and logits are cast back to float32 before the losses, because the
+triplet distance matrix is sensitive to reduced precision. bfloat16 needs no
+gradient scaler, float16 uses one, and both are disabled outside CUDA, so CPU and
+MPS runs are unaffected.
 
 ### 3.4 `train.py`
 
@@ -297,14 +334,18 @@ Main results, four trainings:
 
 | Run | backbone | reid_method | full_finetune | pooling | Purpose |
 |---|---|---|---|---|---|
-| A | dinov2 | bot | True | attention | Strong baseline, main result |
-| B | dinov2 | transreid | True | attention | Method result, main result |
+| A | dinov2 | bot | False | attention | Strong baseline, main result |
+| B | dinov2 | transreid | False | attention | Method result, main result |
+
+Runs A and B use the same freezing policy as the original experiments
+(`unfreeze_blocks = 2`), so they are directly comparable to the published rows on
+that axis. Full fine-tuning is reported as ablation C rather than as the default.
 
 Ablations, each varying one field from run A:
 
 | Run | Field changed | Purpose |
 |---|---|---|
-| C | `full_finetune = False` | Frozen versus fully fine-tuned backbone. Sweep `unfreeze_blocks` in 0, 2, 4 for a curve rather than two points |
+| C | `full_finetune = True`, or sweep `unfreeze_blocks` in 0, 2, 4 | How much fine-tuning depth is worth; answers the frozen-backbone question with a curve rather than two points |
 | D | `cfg.num_classes = 0` after the assignment in `train.py` | Triplet loss only, without the identity loss |
 | E | `pooling_type = "mean"` | Temporal aggregation |
 | F | `pooling_type = "max"` | Temporal aggregation |
@@ -374,8 +415,15 @@ State these alongside the results so the runs can be reproduced:
 | JPM | k=4 groups, shift 5, 2 shuffle groups |
 | SIE | not used, see Sec. 2.2 |
 
-Comparisons across runs are only valid at a fixed input size. If run G is
-included, report the input size in every row.
+Comparisons are only valid at fixed input size, clip length and augmentation.
+The runs in this table share all three, so they are internally comparable; the
+previously published results use `clip_len=16`, 224x224 and a different
+augmentation policy, and should be reported in a separate table with a settings
+column rather than placed alongside these rows.
+
+Run D is the control for runs A and B: it holds resolution, augmentation, clip
+length and freezing fixed and removes only the identity loss, so any difference
+is attributable to the method rather than to the training setup.
 
 ---
 
