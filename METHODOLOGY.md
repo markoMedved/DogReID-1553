@@ -135,7 +135,9 @@ Add the following fields:
 backbone      = "dinov2"      # dinov2, vit, swin, convnext
 reid_method   = "bot"         # bot, transreid
 img_size      = (252, 182)    # 256x192 for patch-16 backbones
-full_finetune = True
+full_finetune = True     # True ignores unfreeze_blocks entirely
+unfreeze_blocks = 2      # trailing backbone blocks left trainable when
+                         # full_finetune is False; 0 freezes the whole backbone
 jpm_parts     = 4
 
 warmup_epochs = 10
@@ -302,7 +304,7 @@ Ablations, each varying one field from run A:
 
 | Run | Field changed | Purpose |
 |---|---|---|
-| C | `full_finetune = False` | Frozen versus fully fine-tuned backbone |
+| C | `full_finetune = False` | Frozen versus fully fine-tuned backbone. Sweep `unfreeze_blocks` in 0, 2, 4 for a curve rather than two points |
 | D | `cfg.num_classes = 0` after the assignment in `train.py` | Triplet loss only, without the identity loss |
 | E | `pooling_type = "mean"` | Temporal aggregation |
 | F | `pooling_type = "max"` | Temporal aggregation |

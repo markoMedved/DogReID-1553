@@ -279,6 +279,27 @@ def test_partial_finetune_keeps_heads_trainable():
     assert "trainable" in report and "%" in report, report
 
 
+def test_unfreeze_blocks_count():
+    """cfg.unfreeze_blocks controls how many trailing backbone blocks train.
+    n=0 must unfreeze none of them, not all of them."""
+    def backbone_trainable(n):
+        model, cfg = make_model("bot", full_ft=False)
+        cfg.unfreeze_blocks = n
+        apply_freezing(model, cfg)
+        blocks = model.backbone.net.blocks
+        return [any(p.requires_grad for p in b.parameters()) for b in blocks]
+
+    assert backbone_trainable(0) == [False, False, False], backbone_trainable(0)
+    assert backbone_trainable(1) == [False, False, True], backbone_trainable(1)
+    assert backbone_trainable(2) == [False, True, True], backbone_trainable(2)
+
+    # Heads stay trainable regardless of the backbone setting
+    model, cfg = make_model("bot", full_ft=False)
+    cfg.unfreeze_blocks = 0
+    apply_freezing(model, cfg)
+    assert all(p.requires_grad for p in model.heads[0].bottleneck.parameters())
+
+
 def test_unknown_backbone_layout_raises():
     class UnknownAdapter(nn.Module):
         def __init__(self):
@@ -418,6 +439,7 @@ TESTS = [
     ("transreid requires token backbone", test_transreid_requires_token_backbone),
     ("full fine-tune unfreezes everything", test_full_finetune_unfreezes_everything),
     ("partial fine-tune keeps heads trainable", test_partial_finetune_keeps_heads_trainable),
+    ("unfreeze_blocks count", test_unfreeze_blocks_count),
     ("unknown backbone layout raises", test_unknown_backbone_layout_raises),
     ("dinov2 adapter token path", test_dinov2_adapter_token_path),
     ("transforms and clip consistency", test_transforms),

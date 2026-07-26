@@ -28,8 +28,20 @@ def _core_network(model):
     return backbone
 
 
+def _last_n(modules, n):
+    """Return the final n modules, or none at all when n <= 0.
+
+    Slicing with [-0:] returns the whole sequence, so n <= 0 is handled
+    explicitly to mean "unfreeze no backbone blocks".
+    """
+    return modules[-n:] if n > 0 else []
+
+
 def _unfreeze_last_blocks(net, n=2):
     """Unfreeze the final n blocks and the final normalization layer.
+
+    Swin and ConvNeXt are unfrozen one stage at a time rather than one block at
+    a time, so n is not used for those backbones.
 
     Returns False if the backbone layout is not recognized.
     """
@@ -38,30 +50,34 @@ def _unfreeze_last_blocks(net, n=2):
 
     # --- DINOv2 / timm ViT ---
     if hasattr(net, "blocks"):
-        for block in net.blocks[-n:]:
+        for block in _last_n(net.blocks, n):
             _unfreeze(block)
-        _unfreeze(getattr(net, "norm", None))
+        if n > 0:
+            _unfreeze(getattr(net, "norm", None))
         return True
 
     # --- Torchvision ViT ---
     encoder = getattr(net, "encoder", None)
     if encoder is not None and hasattr(encoder, "layers"):
-        for layer in encoder.layers[-n:]:
+        for layer in _last_n(encoder.layers, n):
             _unfreeze(layer)
-        _unfreeze(getattr(encoder, "ln", None))
+        if n > 0:
+            _unfreeze(getattr(encoder, "ln", None))
         return True
 
     # --- Swin Transformer (hierarchical stages) ---
     if hasattr(net, "layers"):
-        _unfreeze(net.layers[-1])
-        _unfreeze(getattr(net, "norm", None))
+        if n > 0:
+            _unfreeze(net.layers[-1])
+            _unfreeze(getattr(net, "norm", None))
         return True
 
     # --- ConvNeXt ---
     if hasattr(net, "stages"):
-        _unfreeze(net.stages[-1])
-        _unfreeze(getattr(net, "norm_pre", None))
-        _unfreeze(getattr(net, "head", None))
+        if n > 0:
+            _unfreeze(net.stages[-1])
+            _unfreeze(getattr(net, "norm_pre", None))
+            _unfreeze(getattr(net, "head", None))
         return True
 
     return False
