@@ -14,8 +14,8 @@ parser = argparse.ArgumentParser(description="Evaluate Dog Re-ID Models")
 parser.add_argument(
     "--model_name", 
     type=str, 
-    default="dinov2", 
-    choices=["dinov2", "swin", "vit", "bot", "transreid"],
+    default="dinov2",
+    choices=["dinov2", "swin", "vit", "megadescriptor", "miewid", "bot", "transreid"],
     help="Model identifier used for paths and architecture selection"
 )
 
@@ -60,7 +60,7 @@ parser.add_argument(
     "--backbone",
     type=str,
     default=None,
-    choices=["dinov2", "osnet", "vit", "swin", "convnext"],
+    choices=["dinov2", "osnet", "megadescriptor", "vit", "swin", "convnext"],
     help="Backbone used during training; defaults to the value in configs/config.py"
 )
 
@@ -151,6 +151,8 @@ else:
 from models.dinov2_builder import DINOv2ReID
 from models.swin_builder import VideoSwin
 from models.vit_builder import VideoViT
+from models.megadescriptor_builder import MegaDescriptor
+from models.miewid_builder import MiewIDReID
 
 if MODEL_NAME == "dinov2":
     MODEL_CLASS = DINOv2ReID
@@ -158,6 +160,10 @@ elif MODEL_NAME == "swin":
     MODEL_CLASS = VideoSwin
 elif MODEL_NAME == "vit":
     MODEL_CLASS = VideoViT
+elif MODEL_NAME == "megadescriptor":
+    MODEL_CLASS = MegaDescriptor
+elif MODEL_NAME == "miewid":
+    MODEL_CLASS = MiewIDReID
 elif MODEL_NAME in ("bot", "transreid"):
     MODEL_CLASS = None
 else:
@@ -188,9 +194,16 @@ cfg = Config()
 
 cfg.model = MODEL_NAME
 
-# FIX: Explicitly set the image size based on the model name here 
+# FIX: Explicitly set the image size based on the model name here
 # instead of relying on the missing update_model_settings() method.
-if "swin" in MODEL_NAME.lower():
+# MegaDescriptor runs at its variant's native resolution (384 for L-384),
+# whether used standalone or as a BoT backbone.
+_is_mega = MODEL_NAME == "megadescriptor" or (
+    MODEL_NAME in ("bot", "transreid") and BACKBONE == "megadescriptor"
+)
+if _is_mega:
+    cfg.img_size = (384, 384) if "384" in _Config.megadescriptor_variant else (224, 224)
+elif "swin" in MODEL_NAME.lower():
     cfg.img_size = (192, 192)
 else:
     cfg.img_size = (224, 224)
@@ -232,6 +245,9 @@ if MODEL_NAME in ("bot", "transreid"):
     del _ckpt, _sd, _cls
 
     model = VideoReID(cfg)
+elif MODEL_NAME == "megadescriptor":
+    print(f"-> Initializing Architecture: MegaDescriptor ({_Config.megadescriptor_variant})...")
+    model = MegaDescriptor(variant=_Config.megadescriptor_variant)
 else:
     print(f"-> Initializing Architecture: {MODEL_CLASS.__name__}...")
     # create model instance

@@ -20,7 +20,10 @@ def _core_network(model):
     if backbone is None:
         return None
 
-    for attr in ("net", "visual"):
+    # Adapters expose the real network under `.net`/`.visual`; MiewID's HF
+    # wrapper (MiewIdNet) nests its timm EfficientNet under `.backbone`, so
+    # descend one more level to reach a layout _unfreeze_last_blocks knows.
+    for attr in ("net", "visual", "backbone"):
         inner = getattr(backbone, attr, None)
         if isinstance(inner, nn.Module):
             return inner
@@ -47,6 +50,19 @@ def _unfreeze_last_blocks(net, n=2):
     """
     if net is None:
         return False
+
+    # --- timm EfficientNet / EfficientNetV2 (MiewID's backbone) ---
+    # Layout: conv_stem -> bn1 -> blocks (stages) -> conv_head -> bn2 -> pool.
+    # EfficientNet also exposes `.blocks`, so this must precede the ViT branch;
+    # `.conv_head` is the distinguishing attribute. Unfreeze the last stage plus
+    # the final conv projection, one stage at a time like the other CNNs, so n
+    # is not used here beyond the "unfreeze nothing" case.
+    if hasattr(net, "blocks") and hasattr(net, "conv_head"):
+        if n > 0:
+            _unfreeze(net.blocks[-1])
+            _unfreeze(getattr(net, "conv_head", None))
+            _unfreeze(getattr(net, "bn2", None))
+        return True
 
     # --- DINOv2 / timm ViT ---
     if hasattr(net, "blocks"):

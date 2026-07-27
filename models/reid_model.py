@@ -195,6 +195,14 @@ def build_backbone(cfg):
             weights=getattr(cfg, "osnet_weights", None),
         )
 
+    if name == "megadescriptor":
+        # A wildlife-re-ID-pretrained Swin fetched from the HuggingFace hub
+        # through timm. Swin exposes no flat token sequence, so this pairs with
+        # reid_method='bot' only; 'transreid' is rejected in VideoReID.
+        return TimmAdapter(
+            getattr(cfg, "megadescriptor_variant", "hf-hub:BVRA/MegaDescriptor-L-224")
+        )
+
     if name in TIMM_BACKBONES:
         return TimmAdapter(TIMM_BACKBONES[name])
 

@@ -264,7 +264,7 @@ class Trainer:
                         "accum_steps", "num_workers", "chunk_size",
                         # Re-ID method and architecture
                         "backbone", "reid_method", "pooling_type", "img_size",
-                        "num_classes", "dinov2_variant",
+                        "num_classes", "dinov2_variant", "megadescriptor_variant",
                         "jpm_parts", "jpm_shift", "jpm_shuffle_groups",
                         # Optimization
                         "full_finetune", "unfreeze_blocks", "id_loss_weight",

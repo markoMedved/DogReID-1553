@@ -7,7 +7,7 @@ class Config:
     """
     
     # --- Experiment Settings ---
-    backbone      = "dinov2"      # Options: 'dinov2', 'osnet', 'vit', 'swin', 'convnext'
+    backbone      = "dinov2"      # Options: 'dinov2', 'osnet', 'megadescriptor', 'vit', 'swin', 'convnext', 'miewid'
     reid_method   = "bot"         # Options: 'bot', 'transreid'
     world         = "closed"      # Options: 'closed', 'open'
     pooling_type  = "attention"   # Options: 'attention', 'mean', 'max'
@@ -36,6 +36,18 @@ class Config:
     osnet_variant    = "osnet_ain_x1_0"   # also x0_25/0_5/0_75/x1_0, ibn_x1_0, ain_*
     osnet_pretrained = True               # ImageNet init when osnet_weights is None
     osnet_weights    = None               # e.g. "pretrained/osnet_ain_ms_d_c.pth"
+
+    # MegaDescriptor (Čermák et al.): a Swin Transformer pretrained on a large
+    # multi-species wildlife re-ID corpus, distributed on the HuggingFace hub
+    # under the BVRA namespace and loaded via timm. Its features already target
+    # the re-ID metric task, which is the relevant property for the unseen dog
+    # domain. Used both as a standalone extractor (reid_method != 'bot') and as
+    # a BoT backbone (reid_method='bot').
+    # 'L-224' is Swin-L at 224px (1536-dim), matching this pipeline's default
+    # img_size so no resolution change is needed. Other options: 'L-384' (same
+    # capacity, 384px native -> also set img_size=(384, 384)), 'B-224', 'S-224',
+    # 'T-224'. Keep img_size aligned with the variant's native resolution.
+    megadescriptor_variant = "hf-hub:BVRA/MegaDescriptor-L-224"
 
     # TransReID Jigsaw Patch Module
     jpm_parts          = 4        # local branches

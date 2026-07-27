@@ -387,6 +387,161 @@ def test_osnet_backbone():
     raise AssertionError("transreid should be rejected on a CNN backbone")
 
 
+def test_megadescriptor_backbones():
+    """MegaDescriptor (wildlife-pretrained Swin fetched from the HuggingFace hub
+    via timm), both variants: the standalone 'without BoT' builder and the
+    'with BoT' VideoReID backbone. timm.create_model is stubbed with a tiny
+    Swin-shaped module so the test needs no network access or pretrained
+    weights."""
+    import types
+
+    class FakeSwin(nn.Module):
+        """Minimal stand-in exposing timm SwinTransformer's surface: a pooled
+        forward, .num_features, and the .layers/.norm layout the freezer walks."""
+
+        def __init__(self, dim=D):
+            super().__init__()
+            self.num_features = dim
+            self.proj = nn.Linear(3, dim)
+            # Two stages plus a final norm, matching what _unfreeze_last_blocks
+            # looks for on a Swin backbone.
+            self.layers = nn.Sequential(nn.Linear(dim, dim), nn.Linear(dim, dim))
+            self.norm = nn.LayerNorm(dim)
+
+        def forward(self, x):
+            # (N, 3, H, W) -> global-pool over space -> (N, dim)
+            return self.proj(x.mean(dim=(2, 3)))
+
+    fake_timm = types.ModuleType("timm")
+    fake_timm.create_model = lambda name, pretrained=True, num_classes=0: FakeSwin(D)
+
+    saved = sys.modules.get("timm")
+    sys.modules["timm"] = fake_timm
+    try:
+        # --- without BoT: standalone builder ---
+        from models.megadescriptor_builder import MegaDescriptor
+        mega = MegaDescriptor(variant="hf-hub:BVRA/MegaDescriptor-L-224", chunk_size=4).to(DEVICE)
+        assert mega.dim == D, mega.dim
+        mega.eval()
+        with torch.no_grad():
+            out = mega(mock_clip())
+        assert out.shape == (B, D), out.shape
+        # Output must be L2-normalized for cosine retrieval
+        assert torch.allclose(out.norm(dim=-1), torch.ones(B, device=DEVICE), atol=1e-4)
+
+        # --- with BoT: VideoReID backbone ---
+        from configs.config import Config
+        cfg = Config()
+        cfg.backbone = "megadescriptor"
+        cfg.reid_method = "bot"
+        cfg.num_classes = NUM_CLASSES
+        cfg.chunk_size = 4
+
+        model = VideoReID(cfg).to(DEVICE)
+        assert model.embed_dim == D, model.embed_dim
+
+        apply_freezing(model, cfg)
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in model.parameters())
+        assert 0 < trainable < total, f"{trainable}/{total}"
+
+        model.train()
+        emb, logits = model(mock_clip())
+        assert emb.shape == (B, D) and logits.shape == (B, NUM_CLASSES)
+        model.eval()
+        with torch.no_grad():
+            assert model(mock_clip()).shape == (B, D)
+
+        # Swin exposes no flat token sequence, so transreid must be rejected
+        cfg.reid_method = "transreid"
+        try:
+            VideoReID(cfg)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("transreid should be rejected on a Swin backbone")
+    finally:
+        if saved is not None:
+            sys.modules["timm"] = saved
+        else:
+            del sys.modules["timm"]
+
+
+def test_miewid_efficientnet_freezing():
+    """MiewID wraps a timm EfficientNetV2 under `.backbone` inside its HF module
+    (MiewIdNet). The freezer must descend through that wrapper and unfreeze the
+    last conv stage + final projection rather than raise 'unrecognized layout'.
+    transformers is stubbed so the test needs neither the package nor network."""
+    import types
+
+    class FakeEffNet(nn.Module):
+        """timm EfficientNet surface: conv_stem -> blocks -> conv_head -> bn2 -> pool."""
+
+        def __init__(self, dim=D):
+            super().__init__()
+            self.conv_stem = nn.Conv2d(3, dim, 3, padding=1)
+            self.blocks = nn.Sequential(nn.Conv2d(dim, dim, 1), nn.Conv2d(dim, dim, 1))
+            self.conv_head = nn.Conv2d(dim, dim, 1)
+            self.bn2 = nn.BatchNorm2d(dim)
+            self.global_pool = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Flatten())
+
+        def forward(self, x):
+            x = self.blocks(self.conv_stem(x))
+            x = self.bn2(self.conv_head(x))
+            return self.global_pool(x)
+
+    class FakeMiewIdNet(nn.Module):
+        """Mimics HF MiewIdNet: timm backbone under `.backbone` plus a BN neck."""
+
+        def __init__(self, dim=D):
+            super().__init__()
+            self.backbone = FakeEffNet(dim)
+            self.bn = nn.BatchNorm1d(dim)
+
+        def forward(self, x):
+            return self.bn(self.backbone(x))
+
+    def fake_from_pretrained(*args, **kwargs):
+        # transformers.from_pretrained returns eval mode; mirror it so the
+        # builder's batch-1 dimension probe does not trip BatchNorm1d.
+        model = FakeMiewIdNet(D)
+        model.eval()
+        return model
+
+    fake_tf = types.ModuleType("transformers")
+    fake_tf.AutoModel = types.SimpleNamespace(from_pretrained=fake_from_pretrained)
+
+    saved = sys.modules.get("transformers")
+    sys.modules["transformers"] = fake_tf
+    try:
+        from models.miewid_builder import MiewIDReID
+        model = MiewIDReID(chunk_size=4).to(DEVICE)
+        assert model.dim == D, model.dim
+
+        cfg = types.SimpleNamespace(full_finetune=False, unfreeze_blocks=2)
+        # Must not raise "Unrecognized backbone layout"
+        apply_freezing(model, cfg)
+
+        effnet = model.backbone.backbone
+        assert any(p.requires_grad for p in effnet.blocks[-1].parameters()), "last stage frozen"
+        assert any(p.requires_grad for p in effnet.conv_head.parameters()), "conv_head frozen"
+        assert not any(p.requires_grad for p in effnet.conv_stem.parameters()), \
+            "stem should stay frozen"
+        assert all(p.requires_grad for p in model.temporal_pool.parameters()), "temporal pool frozen"
+        assert model.bn.weight.requires_grad, "neck bn frozen"
+
+        model.eval()
+        with torch.no_grad():
+            out = model(mock_clip())
+        assert out.shape == (B, D), out.shape
+        assert torch.allclose(out.norm(dim=-1), torch.ones(B, device=DEVICE), atol=1e-4)
+    finally:
+        if saved is not None:
+            sys.modules["transformers"] = saved
+        else:
+            del sys.modules["transformers"]
+
+
 def test_checkpoint_classifier_keys():
     """evaluation/make_csv.py recovers num_classes from the checkpoint by
     matching 'heads.*.classifier.weight'. A backbone that ships its own
@@ -586,6 +741,8 @@ TESTS = [
     ("frozen prefix: no_grad split", test_frozen_prefix_saves_memory_without_changing_output),
     ("parameter name prefixes", test_parameter_name_prefixes),
     ("osnet backbone (torchreid)", test_osnet_backbone),
+    ("megadescriptor backbones (with/without bot)", test_megadescriptor_backbones),
+    ("miewid efficientnet freezing", test_miewid_efficientnet_freezing),
     ("checkpoint classifier keys", test_checkpoint_classifier_keys),
     ("unknown backbone layout raises", test_unknown_backbone_layout_raises),
     ("dinov2 adapter token path", test_dinov2_adapter_token_path),
