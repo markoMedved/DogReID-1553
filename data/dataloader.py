@@ -105,7 +105,7 @@ def build_dataloaders(cfg):
     return train_loader, val_query_loader, val_gallery_loader
 
 
-def build_test_loaders(cfg, images=False):
+def build_test_loaders(cfg, query_images=False, gallery_images=False):
     """Test loaders using CSV splits."""
     eval_tf  = build_video_transforms(cfg, is_train=False)
     
@@ -116,28 +116,29 @@ def build_test_loaders(cfg, images=False):
     global_id_map = {dog_id: i for i, dog_id in enumerate(all_unique_ids)}
 
     # --- Shared Dataset Parameters ---
-    # clip_len belongs here: leaving it out made the gallery fall back to the
-    # dataset default instead of cfg.clip_len, so query and gallery clips were
-    # different lengths.
     dataset_kwargs = {
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
-        "clip_len": cfg.clip_len,
         "transform": eval_tf,
         "world": cfg.world,
         "label_map": global_id_map
     }
 
     # --- Query and Gallery Datasets ---
-    # The gallery is always video; only the query modality varies.
-    query_kwargs = {**dataset_kwargs, "clip_len": 1 if images else cfg.clip_len}
+    # Dynamically adjust clip_len and use_videos based on the specific modality flags
     query_dataset = DOGVideoREIDDataset(
-            split="query",
-            use_videos=not images,
-            **query_kwargs
-        )
+        split="query",
+        use_videos=not query_images,
+        clip_len=1 if query_images else cfg.clip_len,
+        **dataset_kwargs
+    )
 
-    gallery_dataset = DOGVideoREIDDataset(split="gallery", **dataset_kwargs)
+    gallery_dataset = DOGVideoREIDDataset(
+        split="gallery",
+        use_videos=not gallery_images,
+        clip_len=1 if gallery_images else cfg.clip_len,
+        **dataset_kwargs
+    )
 
     # --- Construct Test DataLoaders ---
     loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
@@ -155,6 +156,7 @@ def build_test_loaders(cfg, images=False):
     )
 
     print(f"--- Test Loaders Ready ---")
-    print(f"Query: {len(query_dataset)} | Gallery: {len(gallery_dataset)}")
+    print(f"Query ({'IMG' if query_images else 'VID'}): {len(query_dataset)} | "
+          f"Gallery ({'IMG' if gallery_images else 'VID'}): {len(gallery_dataset)}")
 
     return query_loader, gallery_loader

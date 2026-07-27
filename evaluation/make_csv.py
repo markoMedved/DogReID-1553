@@ -28,9 +28,15 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--use_images",
+    "--query_images",
     action="store_true",
-    help="Include this flag to evaluate on images. Omit it to evaluate on videos."
+    help="Use images instead of videos for the query set."
+)
+
+parser.add_argument(
+    "--gallery_images",
+    action="store_true",
+    help="Use images instead of videos for the gallery set."
 )
 
 # --- Checkpoint Identification ---
@@ -70,7 +76,8 @@ args = parser.parse_args()
 # --- Assign parsed arguments to variables ---
 MODEL_NAME = args.model_name
 WORLD_TYPE = args.world_type
-USE_IMAGES = args.use_images
+QUERY_IMAGES = args.query_images
+GALLERY_IMAGES = args.gallery_images
 
 # =================================================================
 # --- CONFIGURABLE SETTINGS ---
@@ -108,31 +115,35 @@ else:
 
 # --- Smart Checkpoint Resolution ---
 checkpoint_dir = ROOT_DIR / "trained_models" / RUN_NAME
-default_path = checkpoint_dir / "model.pth"
+all_checkpoints = list(checkpoint_dir.glob("*.pth"))
 
-if default_path.exists():
-    MODEL_PATH = str(default_path)
+max_epoch = -1
+latest_ckpt = None
+
+for ckpt in all_checkpoints:
+    # Skip 'model.pth' while searching for numbered epoch files
+    if ckpt.name == "model.pth":
+        continue
+        
+    # Extract the first sequence of numbers from the filename (e.g., '50' from 'model_50.pth')
+    match = re.search(r'(\d+)', ckpt.name)
+    if match:
+        epoch = int(match.group(1))
+        if epoch > max_epoch:
+            max_epoch = epoch
+            latest_ckpt = ckpt
+
+# Priority 1: Use the checkpoint with the highest epoch number
+if latest_ckpt:
+    MODEL_PATH = str(latest_ckpt)
+    print(f"-> Selected latest epoch checkpoint: {latest_ckpt.name}")
+# Priority 2: Fallback to 'model.pth' if no numbered checkpoints exist
+elif (checkpoint_dir / "model.pth").exists():
+    MODEL_PATH = str(checkpoint_dir / "model.pth")
+    print("-> No numbered epoch checkpoints found. Falling back to 'model.pth'.")
+# Failsafe: Raise an error if the directory contains no valid .pth files
 else:
-    # Find all .pth files in the directory
-    all_checkpoints = list(checkpoint_dir.glob("*.pth"))
-    
-    max_epoch = -1
-    latest_ckpt = None
-    
-    for ckpt in all_checkpoints:
-        # Extract the first sequence of numbers from the filename (e.g., '60' from 'model_60.pth')
-        match = re.search(r'(\d+)', ckpt.name)
-        if match:
-            epoch = int(match.group(1))
-            if epoch > max_epoch:
-                max_epoch = epoch
-                latest_ckpt = ckpt
-                
-    if latest_ckpt:
-        MODEL_PATH = str(latest_ckpt)
-        print(f"-> 'model.pth' not found. Auto-selected latest checkpoint: {latest_ckpt.name}")
-    else:
-        raise FileNotFoundError(f"No valid model checkpoints (.pth) found in {checkpoint_dir}")
+    raise FileNotFoundError(f"No valid model checkpoints (.pth) found in {checkpoint_dir}")
 
 
 # --- MODEL ARCHITECTURE SELECTION ---
@@ -155,11 +166,8 @@ else:
 
 # --- Output Configuration ---
 # where evaluation CSV files will be stored
-if USE_IMAGES:
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_image"
-else:
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}"
-
+modality_str = f"{'img' if QUERY_IMAGES else 'vid'}2{'img' if GALLERY_IMAGES else 'vid'}"
+OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{RUN_NAME}_{modality_str}"
 
 # name of generated distance matrix
 CSV_NAME = f"{WORLD_TYPE}_dist_matrix.csv"
@@ -177,6 +185,15 @@ from evaluation_utils import (
 # --- Setup Configuration Object ---
 # create configuration object
 cfg = Config()
+
+cfg.model = MODEL_NAME
+
+# FIX: Explicitly set the image size based on the model name here 
+# instead of relying on the missing update_model_settings() method.
+if "swin" in MODEL_NAME.lower():
+    cfg.img_size = (192, 192)
+else:
+    cfg.img_size = (224, 224)
 
 # specify open/closed world evaluation
 cfg.world = WORLD_TYPE
@@ -255,10 +272,12 @@ model.eval()
 
 print(f"-> Preparing {cfg.world.upper()} test dataloaders...")
 
-if USE_IMAGES:
-    query_loader, gallery_loader = build_test_loaders(cfg, images=True)
-else:
-    query_loader, gallery_loader = build_test_loaders(cfg)
+# Pass the updated flags to build_test_loaders
+query_loader, gallery_loader = build_test_loaders(
+    cfg, 
+    query_images=QUERY_IMAGES, 
+    gallery_images=GALLERY_IMAGES
+)
 
 
 # -------------------------------------------------------------
