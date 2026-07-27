@@ -73,8 +73,8 @@ class Config:
     # activation memory is a fraction of a full fine-tune and the batch can be
     # far larger. Raise batch_size until it no longer fits; more identities per
     # batch is the single biggest lever on triplet mining quality.
-    batch_size = 32              # Total batch size (P identities × K clips)
-    k          = 4               # Clips per identity -> 8 identities per batch
+    batch_size = 16              # Total batch size (P identities × K clips)
+    k          = 4               # Clips per identity -> 4 identities per batch
     clip_len   = 8               # Frames per video clip
     val_split  = 0               # Validation set ratio
 
