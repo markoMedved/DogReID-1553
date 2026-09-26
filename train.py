@@ -25,6 +25,7 @@ def main():
     parser.add_argument('--model', type=str, default=None, help="Backbone: 'dinov2', 'swin', 'vit', 'convnetxt'")
     parser.add_argument('--world', type=str, default=None, help="'closed' or 'open'")
     parser.add_argument('--clip_len', type=int, default=None, help='Frames per video clip')
+    parser.add_argument('--epochs', type=int, default=None, help='Number of training epochs')
     # Toggle full backbone fine-tuning via CLI flag
     parser.add_argument(
         '--pooling_type', 
@@ -68,6 +69,7 @@ def main():
     if args.weight_decay: cfg.weight_decay = args.weight_decay
     if args.batch_size: cfg.batch_size = args.batch_size
     if args.k: cfg.k = args.k
+    if args.epochs: cfg.epochs = args.epochs
 
     cfg.pooling_type = args.pooling_type
     cfg.full_finetune = args.full_finetune
