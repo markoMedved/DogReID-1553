@@ -2,6 +2,8 @@
 from .vit_builder import VideoViT
 from .swin_builder import VideoSwin
 from .dinov2_builder import DINOv2ReID
+from .convnetxt_builder import VideoConvNeXt
+
 
 
 def build_model(cfg):
@@ -12,9 +14,17 @@ def build_model(cfg):
 
     # --- Model Selection Routing ---
 
+    # if cfg.model == "dinov2":
+    #     # Initializes DINOv2 with registers (vitb14_reg)
+    #     model = DINOv2ReID(variant="vitb14_reg")
     if cfg.model == "dinov2":
         # Initializes DINOv2 with registers (vitb14_reg)
-        model = DINOv2ReID(variant="vitb14_reg")
+        model = DINOv2ReID(
+            variant="vitb14_reg", 
+            num_classes=getattr(cfg, "num_classes", 0), 
+            chunk_size=getattr(cfg, "chunk_size", 32),
+            pooling_type=getattr(cfg, "pooling_type", "attn")
+        )
 
     elif cfg.model == "vit":
         # Initializes a standard Vision Transformer adapted for video processing
@@ -23,6 +33,9 @@ def build_model(cfg):
     elif cfg.model == "swin":
         # Initializes a Swin Transformer backbone for hierarchical video feature extraction
         model = VideoSwin()
+
+    elif cfg.model == "convnetxt":
+        model = VideoConvNeXt()
 
     else:
         # Fallback for unsupported or misspelled model configurations

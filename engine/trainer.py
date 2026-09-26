@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
 import json
+import torch.nn as nn
 
 class Trainer:
     "Class that has the training logic"
@@ -25,6 +26,8 @@ class Trainer:
         self.loss_fn = loss_fn
         self.miner = miner
 
+        self.id_loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
+
 
     def train(self):
         """Train the model"""
@@ -44,6 +47,15 @@ class Trainer:
                 # Run evaluation only at specified intervals
                 if (epoch + 1) % self.cfg.eval_period == 0:
                     rank1, rank5, mAP = self.evaluate()
+            # Inside your engine/trainer.py loop:
+            if (epoch + 1) % 10 == 0:
+                checkpoint_path = self.cfg.output_dir / f"model_epoch_{epoch + 1}.pth"
+                torch.save({
+                    'epoch': epoch + 1,
+                    'state_dict': self.model.state_dict(),
+                    'optimizer': self.optimizer.state_dict(),
+                }, checkpoint_path)
+                print(f"--> Saved periodic checkpoint to {checkpoint_path}")
                     
 
         # --- Final Model Saving ---
@@ -74,20 +86,31 @@ class Trainer:
             labels = labels.to(self.device)
 
             # Forward Pass -> Generate embedding vectors
-            embeddings = self.model(videos)
+            outputs = self.model(videos)
+
+            # Unpack dual outputs (embeddings, logits) or single tensor
+            if isinstance(outputs, tuple):
+                embeddings, logits = outputs
+            else:
+                embeddings, logits = outputs, None
             
             # --- Hard Pair Mining ---
             # Selects the hardest positive/negative pairs to optimize learning
             hard_pairs = self.miner(embeddings, labels)
+            loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
 
             # --- Metric Learning Loss ---
             # Computes triplet or margin-based loss using the mined pairs
-            loss = self.loss_fn(embeddings, labels, hard_pairs)
+            if logits is not None and getattr(self.cfg, 'num_classes', 0) > 0:
+                loss_id = self.id_loss_fn(logits, labels)
+                total_loss = loss_triplet + loss_id
+            else:
+                total_loss = loss_triplet
             
             # --- Backpropagation with Accumulation ---
             # Divides loss by accumulation steps to average gradients correctly
-            loss = loss / accum_steps
-            loss.backward()
+            total_loss = total_loss / accum_steps
+            total_loss.backward()
 
             # Update weights only after specified accumulation steps
             if (i + 1) % accum_steps == 0:
@@ -96,8 +119,8 @@ class Trainer:
                 self.optimizer.zero_grad()
 
             # --- Update Progress Logging ---
-            running_loss += loss.item() * accum_steps
-            pbar.set_postfix(loss=loss.item() * accum_steps)
+            running_loss += total_loss.item() * accum_steps
+            pbar.set_postfix(loss=total_loss.item() * accum_steps)
 
         return running_loss / len(self.train_loader)
 
@@ -131,6 +154,9 @@ class Trainer:
 
             # Forward pass to get features
             f = self.model(clips)
+
+            if isinstance(f, tuple):
+                f = f[0]
 
             # Normalize embeddings -> Allows cosine similarity via dot product
             f = F.normalize(f, p=2, dim=1)

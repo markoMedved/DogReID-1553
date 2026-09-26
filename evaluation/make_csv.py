@@ -22,8 +22,25 @@ parser.add_argument(
     "--model_name", 
     type=str, 
     default="dinov2", 
-    choices=["dinov2", "swin", "vit"],
-    help="Model identifier used for paths and architecture selection"
+    choices=["dinov2", "swin", "vit", "convnetxt", "tfclip"], 
+    help="Base model architecture selection"
+)
+
+# Synchronized with train.py
+parser.add_argument(
+    "--pooling_type",
+    type=str,
+    default="attention",
+    choices=["attention", "mean", "max", "none", "attn"],
+    help="Temporal aggregation method (must match training)"
+)
+
+# Synchronized with train.py
+parser.add_argument(
+    "--full_finetune",
+    action="store_true",
+    default=False,
+    help="Flag indicating whether backbone was completely fine-tuned during training"
 )
 
 parser.add_argument(
@@ -35,12 +52,32 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--use_images", 
-    action="store_true", 
-    help="Include this flag to evaluate on images. Omit it to evaluate on videos."
+    "--num_classes",
+    type=int,
+    default=0,
+    help="Number of training identities (set > 0 if model was trained with an identity classification head)"
 )
 
-# --- ADDED MASK DOG ARGUMENT ---
+# --- Cross-Modality Flags ---
+parser.add_argument(
+    "--use_images", 
+    action="store_true", 
+    help="Shortcut: Sets BOTH query and gallery to images (Image-to-Image)."
+)
+
+parser.add_argument(
+    "--query_images", 
+    action="store_true", 
+    help="Evaluate query set using single images instead of video clips."
+)
+
+parser.add_argument(
+    "--gallery_images", 
+    action="store_true", 
+    help="Evaluate gallery set using single images instead of video clips."
+)
+
+# --- Masking Baseline Flags ---
 parser.add_argument(
     "--mask_dog", 
     action="store_true", 
@@ -53,66 +90,84 @@ parser.add_argument(
     help="Use Ground Truth bounding boxes specifically for masking the query set."
 )
 
+parser.add_argument(
+    "--use_gt_for_gallery_mask", 
+    action="store_true", 
+    help="Use Ground Truth bounding boxes specifically for masking the gallery set."
+)
 
 args = parser.parse_args()
 
-# --- Assign parsed arguments to variables ---
-MODEL_NAME = args.model_name
+# --- Assign Parsed Arguments ---
+BASE_MODEL_NAME = args.model_name
+POOLING_TYPE = args.pooling_type
+FULL_FINETUNE = args.full_finetune  # This is now a boolean to match train.py
 WORLD_TYPE = args.world_type
-USE_IMAGES = args.use_images
 MASK_DOG = args.mask_dog
+NUM_CLASSES = args.num_classes
+
+# Resolve Query/Gallery Modalities (use_images acts as a master toggle)
+QUERY_IMAGES = args.query_images or args.use_images
+GALLERY_IMAGES = args.gallery_images or args.use_images
+
+# Descriptive string representation (e.g., "img2vid", "img2img")
+q_type = "img" if QUERY_IMAGES else "vid"
+g_type = "img" if GALLERY_IMAGES else "vid"
+MODALITY_TAG = f"{q_type}2{g_type}"
 
 
 # =================================================================
-# --- CONFIGURABLE SETTINGS ---
+# --- PATH & FOLDER RESOLUTION ---
 # =================================================================
-# --- Path Configuration ---
-CURRENT_DIR = Path(__file__).resolve().parent
-ROOT_DIR = CURRENT_DIR.parent
+MODEL_FOLDER_NAME = f"{BASE_MODEL_NAME}_{WORLD_TYPE}_{POOLING_TYPE}_finetune_{FULL_FINETUNE}"
 
-# path to trained checkpoint
-MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{MODEL_NAME}_{WORLD_TYPE}" / "model.pth")
+# Temporarily changed to target model_epoch_10.pth
+MODEL_PATH = str(ROOT_DIR / "trained_models" / MODEL_FOLDER_NAME / "model.pth")
+base_folder_name = f"{MODEL_FOLDER_NAME}_{MODALITY_TAG}"
 
 
-# --- MODEL ARCHITECTURE SELECTION ---
-# swapping this class switches the backbone
+# =================================================================
+# --- MODEL ARCHITECTURE IMPORT & SELECTION ---
+# =================================================================
 from models.dinov2_builder import DINOv2ReID
 from models.swin_builder import VideoSwin
 from models.vit_builder import VideoViT
+from models.convnetxt_builder import VideoConvNeXt
 
-if MODEL_NAME == "dinov2":
+if BASE_MODEL_NAME == "dinov2":
     MODEL_CLASS = DINOv2ReID
-elif MODEL_NAME == "swin":
+elif BASE_MODEL_NAME == "swin":
     MODEL_CLASS = VideoSwin
-elif MODEL_NAME == "vit":
+elif BASE_MODEL_NAME == "vit":
     MODEL_CLASS = VideoViT
+elif BASE_MODEL_NAME == "convnetxt":
+    MODEL_CLASS = VideoConvNeXt
 else:
-    raise ValueError("Invalid model name")
+    raise ValueError(f"Invalid base model name: {BASE_MODEL_NAME}")
 
 
 # =================================================================
 # --- Output Configuration ---
 # =================================================================
-mode_str = f"{MODEL_NAME}_{WORLD_TYPE}_image" if USE_IMAGES else f"{MODEL_NAME}_{WORLD_TYPE}"
+# Build a dynamic suffix based on what flags are active
+suffix = ""
+if MASK_DOG:
+    suffix += "_masked"
 
-if MASK_DOG and args.use_gt_for_query_mask:
-    mask_folder_suffix = "_image_masked_gtq" if USE_IMAGES else "_video_masked_gtq"
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_{mode_str.split('_')[-1]}_masked_gtq"
-    CSV_NAME = f"masked_gtq_image_{WORLD_TYPE}_dist_matrix.csv" if USE_IMAGES else f"masked_gtq_{WORLD_TYPE}_dist_matrix.csv"
-elif MASK_DOG:
-    mask_folder_suffix = "_image_masked" if USE_IMAGES else "_masked"
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}{mask_folder_suffix}"
-    CSV_NAME = f"masked_image_{WORLD_TYPE}_dist_matrix.csv" if USE_IMAGES else f"masked_dog_{WORLD_TYPE}_dist_matrix.csv"
+if args.use_gt_for_query_mask and args.use_gt_for_gallery_mask:
+    suffix += "_gtboth"
 elif args.use_gt_for_query_mask:
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_image_gtq"
-    CSV_NAME = f"gtq_image_{WORLD_TYPE}_dist_matrix.csv"
-elif USE_IMAGES:
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_image"
-    CSV_NAME = f"image_{WORLD_TYPE}_dist_matrix.csv"
-else:
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}"
-    CSV_NAME = f"{WORLD_TYPE}_dist_matrix.csv"
+    suffix += "_gtq"
+elif args.use_gt_for_gallery_mask:
+    suffix += "_gtg"
 
+# Apply the suffix to the folder and filename
+if suffix:
+    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{base_folder_name}{suffix}"
+    CSV_NAME = f"{suffix.lstrip('_')}_{MODALITY_TAG}_{WORLD_TYPE}_dist_matrix.csv"
+else:
+    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / base_folder_name
+    CSV_NAME = f"{MODALITY_TAG}_{WORLD_TYPE}_dist_matrix.csv"
 
 
 from data.dataloader import build_test_loaders
@@ -121,18 +176,14 @@ from evaluation_utils import generate_distance_csv
 
 # --- Setup Configuration Object ---
 cfg = Config()
-
-# Sync all flags directly with cfg object
 cfg.world = WORLD_TYPE
-cfg.use_images = USE_IMAGES
-cfg.use_gt_for_query_mask = args.use_gt_for_query_mask
+cfg.query_images = QUERY_IMAGES
+cfg.gallery_images = GALLERY_IMAGES
 cfg.mask_dog = MASK_DOG 
 cfg.use_gt_for_query_mask = args.use_gt_for_query_mask
+cfg.use_gt_for_gallery_mask = args.use_gt_for_gallery_mask  # <-- ADD THIS LINE
 
-# Select device automatically
 cfg.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Output directory for evaluation files
 cfg.output_dir = OUTPUT_FOLDER
 cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -140,36 +191,46 @@ cfg.output_dir.mkdir(parents=True, exist_ok=True)
 # -------------------------------------------------------------
 # --- Initialize Model ---
 # -------------------------------------------------------------
+print(f"-> Initializing Architecture: {MODEL_CLASS.__name__} (Pooling: {POOLING_TYPE}, Num Classes: {NUM_CLASSES})...")
 
-print(f"-> Initializing Architecture: {MODEL_CLASS.__name__}...")
+init_kwargs = {}
 
-# create model instance
-model = MODEL_CLASS()
+# Set backbone source for timm-based builders
+if BASE_MODEL_NAME in ["vit", "swin"]:
+    init_kwargs["backbone_type"] = "timm"
 
+# Set pooling and num_classes for builders that support them (e.g., DINOv2, ViT)
+if BASE_MODEL_NAME not in ["swin"]:
+    init_kwargs["pooling_type"] = "attn" if POOLING_TYPE == "attention" else POOLING_TYPE
+    if NUM_CLASSES > 0:
+        init_kwargs["num_classes"] = NUM_CLASSES
+
+try:
+    model = MODEL_CLASS(**init_kwargs)
+except TypeError:
+    # Safe fallback with explicit backbone_type if kwargs fail
+    if BASE_MODEL_NAME in ["vit", "swin"]:
+        model = MODEL_CLASS(backbone_type="timm")
+    else:
+        model = MODEL_CLASS()
 
 print(f"-> Loading Weights: {MODEL_PATH}")
 
-# safety check
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"Model checkpoint not found at: {MODEL_PATH}")
 
-# --- Load Checkpoint ---
 checkpoint = torch.load(MODEL_PATH, map_location=cfg.device)
-
-# support different checkpoint formats
 state_dict = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
 
-
-# --- Handle DataParallel / DDP Weights ---
 new_state_dict = OrderedDict()
-
 for k, v in state_dict.items():
     name = k[7:] if k.startswith('module.') else k
+    
+    # Safely remap attention pool naming mismatch between checkpoint and class definition
+    if name.startswith("temporal_pool."):
+        name = name.replace("temporal_pool.", "temporal_attn.")
+        
     new_state_dict[name] = v
-
-
-# load weights into model
-model.load_state_dict(new_state_dict)
 
 model.to(cfg.device)
 model.eval()
@@ -178,21 +239,20 @@ model.eval()
 # -------------------------------------------------------------
 # --- Build Query / Gallery Dataloaders ---
 # -------------------------------------------------------------
-
-print(f"-> Preparing {cfg.world.upper()} test dataloaders...")
+print(f"-> Preparing {cfg.world.upper()} test dataloaders ({MODALITY_TAG.upper()})...")
 print(f"-> Background Masking Baseline: {'ON' if MASK_DOG else 'OFF'}")
 
-if USE_IMAGES:
-    query_loader, gallery_loader = build_test_loaders(cfg, images=True)
-else:
-    query_loader, gallery_loader = build_test_loaders(cfg)
+query_loader, gallery_loader = build_test_loaders(
+    cfg, 
+    query_images=QUERY_IMAGES, 
+    gallery_images=GALLERY_IMAGES
+)
 
 
 # -------------------------------------------------------------
 # --- Run Inference and Generate Distance Matrix ---
 # -------------------------------------------------------------
-
-print(f"-> Running Inference...")
+print(f"-> Running Inference ({q_type.upper()} Query -> {g_type.upper()} Gallery)...")
 
 csv_path = generate_distance_csv(
     model,

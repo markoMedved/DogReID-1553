@@ -1,0 +1,49 @@
+Using cache found in /d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main
+/d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+  0%|          | 0/77 [00:00<?, ?it/s]  0%|          | 0/77 [00:07<?, ?it/s]
+Traceback (most recent call last):
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/evaluation/make_csv.py", line 243, in <module>
+    csv_path = generate_distance_csv(
+        model,
+    ...<3 lines>...
+        filename=CSV_NAME
+    )
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/evaluation/evaluation_utils.py", line 61, in generate_distance_csv
+    q_feat, q_ids = extract_features_with_ids(model, query_loader, cfg.device)
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/evaluation/evaluation_utils.py", line 41, in extract_features_with_ids
+    embeddings = F.normalize(model(videos.to(device)), p=2, dim=1).cpu()
+                             ~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/models/dinov2_builder.py", line 85, in forward
+    feats = torch.cat([self.backbone(c) for c in chunks], dim=0)
+                       ~~~~~~~~~~~~~^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main/dinov2/models/vision_transformer.py", line 349, in forward
+    ret = self.forward_features(*args, **kwargs)
+  File "/d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main/dinov2/models/vision_transformer.py", line 261, in forward_features
+    x = self.prepare_tokens_with_masks(x, masks)
+  File "/d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main/dinov2/models/vision_transformer.py", line 218, in prepare_tokens_with_masks
+    x = self.patch_embed(x)
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main/dinov2/layers/patch_embed.py", line 72, in forward
+    assert H % patch_H == 0, f"Input image height {H} is not a multiple of patch height {patch_H}"
+           ^^^^^^^^^^^^^^^^
+AssertionError: Input image height 192 is not a multiple of patch height 14

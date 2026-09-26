@@ -1,0 +1,43 @@
+  0%|          | 0/77 [00:00<?, ?it/s]  0%|          | 0/77 [00:13<?, ?it/s]
+Traceback (most recent call last):
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/evaluation/make_csv.py", line 243, in <module>
+    csv_path = generate_distance_csv(
+        model,
+    ...<3 lines>...
+        filename=CSV_NAME
+    )
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/evaluation/evaluation_utils.py", line 61, in generate_distance_csv
+    q_feat, q_ids = extract_features_with_ids(model, query_loader, cfg.device)
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/evaluation/evaluation_utils.py", line 41, in extract_features_with_ids
+    embeddings = F.normalize(model(videos.to(device)), p=2, dim=1).cpu()
+                             ~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/models/vit_builder.py", line 86, in forward
+    [self.backbone(c) for c in chunks],
+     ~~~~~~~~~~~~~^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/timm/models/vision_transformer.py", line 853, in forward
+    x = self.forward_features(x)
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/timm/models/vision_transformer.py", line 827, in forward_features
+    x = self.patch_embed(x)
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/timm/layers/patch_embed.py", line 116, in forward
+    _assert(H == self.img_size[0], f"Input height ({H}) doesn't match model ({self.img_size[0]}).")
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/__init__.py", line 2150, in _assert
+    assert condition, message
+           ^^^^^^^^^
+AssertionError: Input height (192) doesn't match model (224).
