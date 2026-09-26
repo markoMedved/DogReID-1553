@@ -1,0 +1,48 @@
+Using cache found in /d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main
+/d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/d/hpc/home/mm12755/.cache/torch/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+  0%|          | 0/53 [00:00<?, ?it/s]  0%|          | 0/53 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/evaluation/make_csv.py", line 136, in <module>
+    csv_path = generate_distance_csv(
+        model,
+    ...<3 lines>...
+        filename=CSV_NAME
+    )
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/evaluation/evaluation_utils.py", line 55, in generate_distance_csv
+    q_feat, q_ids = extract_features_with_ids(model, query_loader, cfg.device)
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/evaluation/evaluation_utils.py", line 29, in extract_features_with_ids
+    for batch in tqdm(dataloader):
+                 ~~~~^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/tqdm/std.py", line 1181, in __iter__
+    for obj in iterable:
+               ^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/utils/data/dataloader.py", line 733, in __next__
+    data = self._next_data()
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/utils/data/dataloader.py", line 1515, in _next_data
+    return self._process_data(data, worker_id)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/utils/data/dataloader.py", line 1550, in _process_data
+    data.reraise()
+    ~~~~~~~~~~~~^^
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/_utils.py", line 750, in reraise
+    raise exception
+TypeError: Caught TypeError in DataLoader worker process 0.
+Original Traceback (most recent call last):
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/utils/data/_utils/worker.py", line 349, in _worker_loop
+    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]
+  File "/d/hpc/home/mm12755/.conda/envs/project/lib/python3.13/site-packages/torch/utils/data/_utils/fetch.py", line 52, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+            ~~~~~~~~~~~~^^^^^
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/data/dataset.py", line 174, in __getitem__
+    box        = detect_dog_box(self.yolo, pil_frame)
+  File "/d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/data/dataset.py", line 38, in detect_dog_box
+    results = yolo(frame, verbose=False)[0]
+              ~~~~^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'tuple' object is not callable
+

@@ -1,0 +1,32 @@
+Starting Dog Re-ID swin open-Set training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_closed
+--------------------------------------------------
+[DATA]
+  world           : open
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : dinov2
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 5e-05
+  epochs          : 2
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 1e-05
+[PATHS]
+  output_dir      : .../dinov2_closed
+==================================================
+
+--- Data Loading Stats ---
+Training: 2936 samples
+Validation: Query=297, Gallery=438
+Epoch 0 | Loss: 0.1919
+Eval (Open) -> DIR@1%FAR: 59.26%, DIR@5%FAR: 59.26%, DIR@10%FAR: 59.26%
+Epoch 1 | Loss: 0.1554
+Eval (Open) -> DIR@1%FAR: 65.99%, DIR@5%FAR: 65.99%, DIR@10%FAR: 65.99%

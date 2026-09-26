@@ -1,0 +1,3 @@
+Running on wn210.arnes.si with Tesla V100S-PCIE-32GB
+-> Initializing Architecture: VideoSwin...
+-> Loading Weights: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/vit_open/model.pth

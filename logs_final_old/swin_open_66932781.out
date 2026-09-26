@@ -1,0 +1,80 @@
+Starting Dog Re-ID swin Open-Set training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: vit_open_v1
+--------------------------------------------------
+[DATA]
+  world           : open
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : vit
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 5e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 1e-05
+[PATHS]
+  output_dir      : .../vit_open
+==================================================
+
+--- Data Loading Stats ---
+Training: 3671 samples
+Validation: Query=0, Gallery=0
+Epoch 0 | Loss: 0.2684
+Epoch 1 | Loss: 0.2535
+Epoch 2 | Loss: 0.2473
+Epoch 3 | Loss: 0.2338
+Epoch 4 | Loss: 0.2348
+Epoch 5 | Loss: 0.2241
+Epoch 6 | Loss: 0.2216
+Epoch 7 | Loss: 0.2312
+Epoch 8 | Loss: 0.2333
+Epoch 9 | Loss: 0.2190
+Epoch 10 | Loss: 0.2239
+Epoch 11 | Loss: 0.2239
+Epoch 12 | Loss: 0.2107
+Epoch 13 | Loss: 0.2096
+Epoch 14 | Loss: 0.2151
+Epoch 15 | Loss: 0.2089
+Epoch 16 | Loss: 0.2202
+Epoch 17 | Loss: 0.2080
+Epoch 18 | Loss: 0.2112
+Epoch 19 | Loss: 0.2047
+Epoch 20 | Loss: 0.2068
+Epoch 21 | Loss: 0.2017
+Epoch 22 | Loss: 0.2152
+Epoch 23 | Loss: 0.2058
+Epoch 24 | Loss: 0.2060
+Epoch 25 | Loss: 0.2094
+Epoch 26 | Loss: 0.1967
+Epoch 27 | Loss: 0.1987
+Epoch 28 | Loss: 0.2038
+Epoch 29 | Loss: 0.2066
+Epoch 30 | Loss: 0.2060
+Epoch 31 | Loss: 0.1968
+Epoch 32 | Loss: 0.2029
+Epoch 33 | Loss: 0.1995
+Epoch 34 | Loss: 0.2037
+Epoch 35 | Loss: 0.2041
+Epoch 36 | Loss: 0.1928
+Epoch 37 | Loss: 0.1915
+Epoch 38 | Loss: 0.1986
+Epoch 39 | Loss: 0.1948
+Epoch 40 | Loss: 0.2001
+Epoch 41 | Loss: 0.1848
+Epoch 42 | Loss: 0.1931
+Epoch 43 | Loss: 0.2106
+Epoch 44 | Loss: 0.1997
+Epoch 45 | Loss: 0.2002
+Epoch 46 | Loss: 0.1936
+Epoch 47 | Loss: 0.1807
+Epoch 48 | Loss: 0.2017
+Epoch 49 | Loss: 0.1950
+!!! Final training run detected (val_split=0). Saving final model...
+Saved weights and metadata to: /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553/trained_models/vit_open

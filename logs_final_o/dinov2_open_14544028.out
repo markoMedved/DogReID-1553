@@ -1,0 +1,60 @@
+Starting Dog Re-ID dinov2 open-Set training job...
+
+==================================================
+DOG RE-ID CONFIGURATION: dinov2_closed
+--------------------------------------------------
+[DATA]
+  world           : open
+  batch_size      : 16
+  k               : 4
+  clip_len        : 16
+  num_workers     : 12
+[MODEL]
+  model           : dinov2
+  embedding_dim   : 768
+  chunk_size      : 16
+[OPTIM]
+  lr              : 5e-05
+  epochs          : 50
+  accum_steps     : 8
+  margin          : 0.3
+  weight_decay    : 1e-05
+[PATHS]
+  output_dir      : .../dinov2_closed
+==================================================
+
+--- Data Loading Stats ---
+Training: 2936 samples
+Validation: Query=297, Gallery=438
+Epoch 0 | Loss: 0.1877
+Eval (Open) -> DIR@1%FAR: 61.28%, DIR@5%FAR: 61.28%, DIR@10%FAR: 61.28%
+Epoch 1 | Loss: 0.1591
+Eval (Open) -> DIR@1%FAR: 69.36%, DIR@5%FAR: 69.36%, DIR@10%FAR: 69.36%
+Epoch 2 | Loss: 0.1445
+Eval (Open) -> DIR@1%FAR: 68.35%, DIR@5%FAR: 68.35%, DIR@10%FAR: 68.35%
+Epoch 3 | Loss: 0.1451
+Eval (Open) -> DIR@1%FAR: 70.03%, DIR@5%FAR: 70.03%, DIR@10%FAR: 70.03%
+Epoch 4 | Loss: 0.1259
+Eval (Open) -> DIR@1%FAR: 73.06%, DIR@5%FAR: 73.06%, DIR@10%FAR: 73.06%
+Epoch 5 | Loss: 0.1396
+Eval (Open) -> DIR@1%FAR: 72.73%, DIR@5%FAR: 72.73%, DIR@10%FAR: 72.73%
+Epoch 6 | Loss: 0.1098
+Eval (Open) -> DIR@1%FAR: 72.73%, DIR@5%FAR: 72.73%, DIR@10%FAR: 72.73%
+Epoch 7 | Loss: 0.1227
+Eval (Open) -> DIR@1%FAR: 73.40%, DIR@5%FAR: 73.40%, DIR@10%FAR: 73.40%
+Epoch 8 | Loss: 0.1250
+Eval (Open) -> DIR@1%FAR: 71.72%, DIR@5%FAR: 71.72%, DIR@10%FAR: 71.72%
+Epoch 9 | Loss: 0.1206
+Eval (Open) -> DIR@1%FAR: 74.75%, DIR@5%FAR: 74.75%, DIR@10%FAR: 74.75%
+Epoch 10 | Loss: 0.1208
+Eval (Open) -> DIR@1%FAR: 74.07%, DIR@5%FAR: 74.07%, DIR@10%FAR: 74.07%
+Epoch 11 | Loss: 0.1284
+Eval (Open) -> DIR@1%FAR: 74.41%, DIR@5%FAR: 74.41%, DIR@10%FAR: 74.41%
+Epoch 12 | Loss: 0.1125
+Eval (Open) -> DIR@1%FAR: 72.39%, DIR@5%FAR: 72.39%, DIR@10%FAR: 72.39%
+Epoch 13 | Loss: 0.1120
+Eval (Open) -> DIR@1%FAR: 73.06%, DIR@5%FAR: 73.06%, DIR@10%FAR: 73.06%
+Epoch 14 | Loss: 0.1017
+Eval (Open) -> DIR@1%FAR: 73.40%, DIR@5%FAR: 73.40%, DIR@10%FAR: 73.40%
+Epoch 15 | Loss: 0.0954
+Eval (Open) -> DIR@1%FAR: 73.74%, DIR@5%FAR: 73.74%, DIR@10%FAR: 73.74%

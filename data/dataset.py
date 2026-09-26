@@ -1,18 +1,19 @@
 import os
+import random
+import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
-from .video_utils import load_video_clip
-import numpy as np
-import random
-from PIL import Image
+from PIL import Image, ImageDraw
 from ultralytics import YOLO
 
-COCO_DOG_CLASS = 16  # COCO class index for 'dog' 
+from .video_utils import load_video_clip
+
+COCO_DOG_CLASS = 16  # COCO class index for 'dog'
 
 
 def load_yolo(model_name: str = "yolo11n.pt", device: torch.device = None) -> YOLO:
-    """Load YOLOv11 model onto the specified device."""
+    """Load YOLO model onto the specified device."""
     model = YOLO(model_name)
     if device is not None:
         model.to(device)
@@ -24,22 +25,20 @@ def detect_dog_box(
     frame: Image.Image,
     conf_threshold: float = 0.3,
 ) -> tuple[int, int, int, int] | None:
-    """
-    Run YOLO on a single PIL frame and return the highest-confidence dog box.
-    """
+    """Run YOLO on a single PIL frame and return the highest-confidence dog box."""
     results = yolo(frame, verbose=False)[0]
 
-    best_box  = None
-    best_conf = conf_threshold  # only accept detections above this
+    best_box = None
+    best_conf = conf_threshold
 
     for box in results.boxes:
-        cls  = int(box.cls.item())
+        cls = int(box.cls.item())
         conf = float(box.conf.item())
         if cls == COCO_DOG_CLASS and conf > best_conf:
             best_conf = conf
-            best_box  = tuple(map(int, box.xyxy[0].tolist()))  
+            best_box = tuple(map(int, box.xyxy[0].tolist()))  # (x1, y1, x2, y2)
 
-    return best_box  # None if nothing passed threshold
+    return best_box
 
 
 def crop_frame(
@@ -47,17 +46,13 @@ def crop_frame(
     box: tuple[int, int, int, int] | None,
     padding: float = 0.05,
 ) -> Image.Image:
-    """
-    Crop a PIL frame to the given box with padding.
-    Falls back to the full frame if box is None.
-    """
+    """Crop a PIL frame to the given box with optional padding."""
     if box is None:
-        return frame  # If no box passed the treshold: full frame
+        return frame  # fallback: full frame
 
     W, H = frame.size
     x1, y1, x2, y3 = box
 
-    # Add padding
     pad_x = int((x2 - x1) * padding)
     pad_y = int((y3 - y1) * padding)
 
@@ -69,21 +64,62 @@ def crop_frame(
     return frame.crop((x1, y1, x2, y3))
 
 
+def mask_frame(
+    frame: Image.Image,
+    box: tuple[int, int, int, int] | None,
+) -> Image.Image:
+    """Mask out the dog bounding box by painting it black."""
+    if box is None:
+        return frame
+
+    frame_copy = frame.copy()
+    draw = ImageDraw.Draw(frame_copy)
+    draw.rectangle(box, fill="black")
+    return frame_copy
+
+
 class DOGVideoREIDDataset(Dataset):
-    """Dataset for loading videos from our DogReID-1553 dataset"""
     def __init__(self, root_dir, split_file, split="train", clip_len=16, 
-                 transform=None, use_videos=True, world="closed", label_map=None, yolo_model: str | None = "yolo11n.pt"):
-        
-        # --- Load Config parameters ---
+                 transform=None, use_videos=True, world="closed", label_map=None,
+                 mask_dog=False, force_yolo=True, yolo_model: str | None = "yolo11n.pt", bbox_file: str | None = None):
+
         self.root_dir = root_dir
         self.clip_len = clip_len
         self.transform = transform
         self.use_videos = use_videos
         self.world = world
         self.split = split
+        self.mask_dog = mask_dog
+        self.force_yolo = force_yolo
 
-        # --- Build the detection model ---
+        # Load YOLO model for videos or fallback
         self.yolo = load_yolo(yolo_model, device=torch.device("cpu")) if yolo_model else None
+
+        # --- Load Ground Truth Bounding Boxes (for images) ---
+        self.gt_bboxes = {}
+        if bbox_file is not None:
+            if not os.path.exists(bbox_file):
+                # Crash immediately if the file is missing
+                raise FileNotFoundError(f"CRITICAL: bbox_file was requested but not found at: {bbox_file}")
+            
+            try:
+                bbox_df = pd.read_csv(bbox_file)
+                for _, row in bbox_df.iterrows():
+                    # Convert (x_top_left, y_top_left, width, height) -> (x1, y1, x2, y2)
+                    x1 = int(row["x_top_left"])
+                    y1 = int(row["y_top_left"])
+                    x2 = x1 + int(row["width"])
+                    y2 = y1 + int(row["height"])
+                    
+                    
+                    self.gt_bboxes[(str(row["DOG_ID"]), str(row["VIDEO_ID"]))] = (x1, y1, x2, y2)
+                
+                # Print a confirmation to your SLURM logs
+                print(f"-> [SUCCESS] Loaded {len(self.gt_bboxes)} ground truth boxes from {bbox_file}")
+                
+            except Exception as e:
+                # Catch pandas reading errors or missing column errors
+                raise RuntimeError(f"CRITICAL: Failed to parse bbox_file. Are the columns correct? Error: {e}")
 
         # --- Load Split Data ---
         df = pd.read_csv(split_file)
@@ -92,7 +128,7 @@ class DOGVideoREIDDataset(Dataset):
         split_col = "SPLIT_CLOSED_SET" if world == "closed" else "SPLIT_OPEN_SET"
         df = df[df[split_col] == split]
 
-        # --- Remove Identities with Only One Sample For Training---
+        # --- Remove Identities with Only One Sample ---
         if self.split == "train":
             counts = df["DOG_ID"].value_counts()
             valid_ids = counts[counts > 1].index
@@ -101,7 +137,6 @@ class DOGVideoREIDDataset(Dataset):
         self.df = df.reset_index(drop=True)
 
         # --- Store Dog IDs for External Access ---
-        # Accessed by the dataloader for sampling logic
         self.dog_ids = self.df["DOG_ID"].tolist()
 
         # --- Build Dog ID to Label Mapping ---
@@ -121,49 +156,54 @@ class DOGVideoREIDDataset(Dataset):
 
     @property
     def labels(self):
-        # Needed for the MPerClassSampler
         return self._labels
 
     def _get_path(self, dog_id, video_id):
-
-        # --- Choose Dataset Folder and Extension ---
         folder = "Videos" if self.use_videos else "Images"
         ext = "mp4" if self.use_videos else "jpg"
-        
-        # --- Construct Filename Based on Dataset Format ---
         filename = f"{dog_id}-{video_id}.{ext}"
-
         return os.path.join(self.root_dir, folder, dog_id, filename)
 
-
     def __getitem__(self, idx):
-        # --- Build path for loading video ---
-        row      = self.df.iloc[idx]
-        dog_id   = row["DOG_ID"]
-        video_id = row["VIDEO_ID"]
-        path     = self._get_path(dog_id, video_id)
-
+        row = self.df.iloc[idx]
+        dog_id, video_id = str(row["DOG_ID"]), str(row["VIDEO_ID"])
+        path = self._get_path(dog_id, video_id)
+        
         if not os.path.exists(path):
             raise FileNotFoundError(f"Missing: {path}")
 
-        # --- Load raw frames ---
+        # --- Data Loading ---
         if self.use_videos:
-            clip = load_video_clip(path, self.clip_len, is_training=(self.split == "train")) # If training the sampling is different 
+            clip = load_video_clip(path, self.clip_len, is_training=(self.split == "train"))
         else:
-            img  = Image.open(path).convert("RGB")
+            img = Image.open(path).convert("RGB")
             clip = [np.array(img)]
 
-        # --- YOLO detected bounging box crop ---
-        if self.yolo is not None:
-            cropped_clip = []
-            for frame_arr in clip:
-                pil_frame  = Image.fromarray(frame_arr)
-                box        = detect_dog_box(self.yolo, pil_frame) 
-                pil_frame  = crop_frame(pil_frame, box)             
-                cropped_clip.append(np.array(pil_frame))            
-            clip = cropped_clip
+        # --- Bounding Box Resolution ---
+        processed_clip = []
+        for frame_arr in clip:
+            pil_frame = Image.fromarray(frame_arr)
 
-        # --- Use the transforms ---
+            # Check GT first if using images
+            box = None
+            if not self.use_videos and not self.force_yolo:
+                box = self.gt_bboxes.get((dog_id, video_id))
+
+            # Fall back to YOLO if force_yolo is True, or if GT box was missing
+            if box is None and self.yolo is not None:
+                box = detect_dog_box(self.yolo, pil_frame)
+
+            # Apply masking or cropping
+            if self.mask_dog:
+                pil_frame = mask_frame(pil_frame, box)
+            else:
+                pil_frame = crop_frame(pil_frame, box)
+
+            processed_clip.append(np.array(pil_frame))
+        
+        clip = processed_clip
+
+        # --- Transformation Pipeline ---
         if self.transform:
             transformed_frames = []
             seed = np.random.randint(2147483647)
@@ -177,10 +217,8 @@ class DOGVideoREIDDataset(Dataset):
                 pil_img = Image.fromarray(frame)
                 transformed_frames.append(self.transform(pil_img))
 
-            clip = torch.stack(transformed_frames)         
+            clip = torch.stack(transformed_frames)
         else:
-            clip = torch.from_numpy(
-                np.array(clip)
-            ).permute(0, 3, 1, 2).float() / 255.0
+            clip = torch.from_numpy(np.array(clip)).permute(0, 3, 1, 2).float() / 255.0
 
         return clip, self._labels[idx], dog_id, video_id

@@ -6,6 +6,14 @@ from pathlib import Path
 from collections import OrderedDict
 
 # =================================================================
+# --- PATH CONFIGURATION (Must be before custom imports) ---
+# =================================================================
+CURRENT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = CURRENT_DIR.parent
+
+sys.path.append(str(ROOT_DIR))
+
+# =================================================================
 # --- COMMAND-LINE ARGUMENTS ---
 # =================================================================
 parser = argparse.ArgumentParser(description="Evaluate Dog Re-ID Models")
@@ -32,12 +40,28 @@ parser.add_argument(
     help="Include this flag to evaluate on images. Omit it to evaluate on videos."
 )
 
+# --- ADDED MASK DOG ARGUMENT ---
+parser.add_argument(
+    "--mask_dog", 
+    action="store_true", 
+    help="Mask out the dog for the background-only diagnostic baseline."
+)
+
+parser.add_argument(
+    "--use_gt_for_query_mask", 
+    action="store_true", 
+    help="Use Ground Truth bounding boxes specifically for masking the query set."
+)
+
+
 args = parser.parse_args()
 
 # --- Assign parsed arguments to variables ---
 MODEL_NAME = args.model_name
 WORLD_TYPE = args.world_type
 USE_IMAGES = args.use_images
+MASK_DOG = args.mask_dog
+
 
 # =================================================================
 # --- CONFIGURABLE SETTINGS ---
@@ -45,9 +69,6 @@ USE_IMAGES = args.use_images
 # --- Path Configuration ---
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
-
-if str(ROOT_DIR) not in sys.path:
-    sys.path.append(str(ROOT_DIR))
 
 # path to trained checkpoint
 MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{MODEL_NAME}_{WORLD_TYPE}" / "model.pth")
@@ -69,38 +90,49 @@ else:
     raise ValueError("Invalid model name")
 
 
+# =================================================================
 # --- Output Configuration ---
-# where evaluation CSV files will be stored
-if USE_IMAGES:
+# =================================================================
+mode_str = f"{MODEL_NAME}_{WORLD_TYPE}_image" if USE_IMAGES else f"{MODEL_NAME}_{WORLD_TYPE}"
+
+if MASK_DOG and args.use_gt_for_query_mask:
+    mask_folder_suffix = "_image_masked_gtq" if USE_IMAGES else "_video_masked_gtq"
+    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_{mode_str.split('_')[-1]}_masked_gtq"
+    CSV_NAME = f"masked_gtq_image_{WORLD_TYPE}_dist_matrix.csv" if USE_IMAGES else f"masked_gtq_{WORLD_TYPE}_dist_matrix.csv"
+elif MASK_DOG:
+    mask_folder_suffix = "_image_masked" if USE_IMAGES else "_masked"
+    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}{mask_folder_suffix}"
+    CSV_NAME = f"masked_image_{WORLD_TYPE}_dist_matrix.csv" if USE_IMAGES else f"masked_dog_{WORLD_TYPE}_dist_matrix.csv"
+elif args.use_gt_for_query_mask:
+    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_image_gtq"
+    CSV_NAME = f"gtq_image_{WORLD_TYPE}_dist_matrix.csv"
+elif USE_IMAGES:
     OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}_image"
+    CSV_NAME = f"image_{WORLD_TYPE}_dist_matrix.csv"
 else:
     OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{MODEL_NAME}_{WORLD_TYPE}"
+    CSV_NAME = f"{WORLD_TYPE}_dist_matrix.csv"
 
-
-# name of generated distance matrix
-CSV_NAME = f"{WORLD_TYPE}_dist_matrix.csv"
-
-# =================================================================
 
 
 from data.dataloader import build_test_loaders
 from configs.config import Config
-from evaluation_utils import (
-    generate_distance_csv
-)
-
+from evaluation_utils import generate_distance_csv
 
 # --- Setup Configuration Object ---
-# create configuration object
 cfg = Config()
 
-# specify open/closed world evaluation
+# Sync all flags directly with cfg object
 cfg.world = WORLD_TYPE
+cfg.use_images = USE_IMAGES
+cfg.use_gt_for_query_mask = args.use_gt_for_query_mask
+cfg.mask_dog = MASK_DOG 
+cfg.use_gt_for_query_mask = args.use_gt_for_query_mask
 
-# select device automatically
+# Select device automatically
 cfg.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# output directory for evaluation files
+# Output directory for evaluation files
 cfg.output_dir = OUTPUT_FOLDER
 cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -148,6 +180,7 @@ model.eval()
 # -------------------------------------------------------------
 
 print(f"-> Preparing {cfg.world.upper()} test dataloaders...")
+print(f"-> Background Masking Baseline: {'ON' if MASK_DOG else 'OFF'}")
 
 if USE_IMAGES:
     query_loader, gallery_loader = build_test_loaders(cfg, images=True)
