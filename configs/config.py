@@ -106,21 +106,25 @@ class Config:
         self.refresh_run_name()
 
     @staticmethod
-    def compose_run_name(backbone, reid_method, world, pooling_type, full_finetune, use_id_loss=None):
+    def compose_run_name(backbone, reid_method, world, pooling_type, full_finetune, use_id_loss=None, mask_dog=False):
         """Single definition of the run name, shared by training and evaluation."""
         if use_id_loss is None:
             use_id_loss = getattr(Config, "use_id_loss", True)
         if reid_method in ("bot", "transreid"):
-            return f"{backbone}_{reid_method}_{world}_{pooling_type}_finetune_{full_finetune}"
+            name = f"{backbone}_{reid_method}_{world}_{pooling_type}_finetune_{full_finetune}"
         else:
-            return f"{backbone}_{world}_{pooling_type}_finetune_{full_finetune}_idloss_{use_id_loss}"
+            name = f"{backbone}_{world}_{pooling_type}_finetune_{full_finetune}_idloss_{use_id_loss}"
+        if mask_dog:
+            name += "_masked"
+        return name
 
     def refresh_run_name(self, make_dir=True):
         """Recompute run_name and output_dir after any field is overridden."""
         self.num_ids = self.batch_size // self.k
         self.run_name = self.compose_run_name(
             self.backbone, self.reid_method, self.world,
-            self.pooling_type, self.full_finetune, getattr(self, "use_id_loss", False)
+            self.pooling_type, self.full_finetune, getattr(self, "use_id_loss", False),
+            getattr(self, "mask_dog", False)
         )
         self.output_dir = self.project_root / "trained_models" / self.run_name
         if make_dir:

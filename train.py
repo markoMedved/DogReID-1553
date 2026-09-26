@@ -73,6 +73,12 @@ def main():
         action='store_false', 
         help='Disable Identity Classification Loss'
     )
+    parser.add_argument(
+        '--mask_dog', 
+        action='store_true', 
+        default=False, 
+        help='Mask out the dog for the background-only diagnostic experiment'
+    )
 
     args = parser.parse_args()
 
@@ -82,6 +88,8 @@ def main():
     cfg = Config()
 
     # --- Command-Line Overrides ---
+    if args.mask_dog:
+        cfg.mask_dog = True
     if args.model is not None:
         cfg.model = args.model
         cfg.backbone = args.model

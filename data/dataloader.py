@@ -22,7 +22,9 @@ def build_dataloaders(cfg):
         "clip_len": cfg.clip_len,
         "transform": train_tf,
         "world": cfg.world,
-        "label_map": global_id_map
+        "label_map": global_id_map,
+        "mask_dog": getattr(cfg, "mask_dog", False),
+        "bbox_file": getattr(cfg, "bbox_file", None),
     }
 
     # --- Base Training Dataset (SPLIT='train') ---
