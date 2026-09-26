@@ -1,19 +1,18 @@
-import torch
 import argparse
+import torch
 from configs.config import Config
 from data.dataloader import build_dataloaders
 from models.model_factory import build_model
 from engine.trainer import Trainer
 from pytorch_metric_learning import losses, miners
 
+from models.freezing import apply_freezing, trainable_report
+from solver.warmup import build_scheduler
+
 
 def main():
-
     # ------------------------------------------------
     # ARGUMENT PARSING
-    # Allows overriding config values from CLI
-    # Example:
-    # python train.py --model dinov2 --lr 1e-4 --batch_size 32
     # ------------------------------------------------
     parser = argparse.ArgumentParser(description="Dog Re-ID Training")
 
@@ -26,62 +25,106 @@ def main():
     parser.add_argument('--world', type=str, default=None, help="'closed' or 'open'")
     parser.add_argument('--clip_len', type=int, default=None, help='Frames per video clip')
     parser.add_argument('--epochs', type=int, default=None, help='Number of training epochs')
-    # Toggle full backbone fine-tuning via CLI flag
+
+    # Re-ID methodology flags
+    parser.add_argument(
+        '--reid_method', 
+        type=str, 
+        default=None,
+        choices=['bot', 'transreid', 'baseline'],
+        help="Re-ID method: 'bot', 'transreid'; 'baseline' uses legacy baseline builders"
+    )
     parser.add_argument(
         '--pooling_type', 
         type=str, 
-        default='attention', 
+        default=None, 
         choices=['attention', 'mean', 'max'],
         help="Temporal aggregation method: 'attention', 'mean', or 'max'"
     )
     parser.add_argument(
         '--full_finetune', 
+        dest='full_finetune', 
         action='store_true', 
-        default=False, 
+        default=None, 
         help='Unfreeze the entire backbone for end-to-end fine-tuning'
     )
-
+    parser.add_argument(
+        '--no_full_finetune', 
+        dest='full_finetune', 
+        action='store_false', 
+        help='Train only the last unfreeze_blocks backbone blocks'
+    )
+    parser.add_argument(
+        '--unfreeze_blocks', 
+        type=int, 
+        default=None,
+        help='Trailing backbone blocks to train when not full fine-tuning'
+    )
     parser.add_argument(
         '--use_id_loss', 
+        dest='use_id_loss', 
         action='store_true', 
-        default=False, 
+        default=None, 
         help='Enable Identity Classification Loss alongside Triplet Loss'
+    )
+    parser.add_argument(
+        '--no_use_id_loss', 
+        dest='use_id_loss', 
+        action='store_false', 
+        help='Disable Identity Classification Loss'
     )
 
     args = parser.parse_args()
-
 
     # ------------------------------------------------
     # LOAD DEFAULT CONFIG
     # ------------------------------------------------
     cfg = Config()
 
+    # --- Command-Line Overrides ---
+    if args.model is not None:
+        cfg.model = args.model
+        cfg.backbone = args.model
+    if args.world is not None: cfg.world = args.world
+    if args.clip_len is not None: cfg.clip_len = args.clip_len
+    if args.lr is not None: cfg.lr = args.lr
+    if args.margin is not None: cfg.margin = args.margin
+    if args.weight_decay is not None: cfg.weight_decay = args.weight_decay
+    if args.batch_size is not None: cfg.batch_size = args.batch_size
+    if args.k is not None: cfg.k = args.k
+    if args.epochs is not None: cfg.epochs = args.epochs
+    if args.reid_method is not None:
+        cfg.reid_method = None if args.reid_method == 'baseline' else args.reid_method
+    if args.pooling_type is not None: cfg.pooling_type = args.pooling_type
+    if args.full_finetune is not None: cfg.full_finetune = args.full_finetune
+    if args.unfreeze_blocks is not None: cfg.unfreeze_blocks = args.unfreeze_blocks
+    if args.use_id_loss is not None: cfg.use_id_loss = args.use_id_loss
+
+    # Re-ID BoT hyperparameter adjustments if reid_method is active and not overridden
+    if cfg.reid_method in ('bot', 'transreid'):
+        if args.epochs is None: cfg.epochs = 51
+        if args.lr is None: cfg.lr = 2e-05
+        if args.clip_len is None: cfg.clip_len = 8
+        cfg.accum_steps = 2
+
+        if not any(m < cfg.epochs for m in cfg.lr_milestones):
+            raise ValueError(
+                f"lr_milestones {cfg.lr_milestones} all fall outside epochs={cfg.epochs}; "
+                f"the learning rate would never decay. Rescale them together."
+            )
+
+    cfg.update_model_settings()
+    cfg.display()
 
     # ------------------------------------------------
-    # OVERRIDE CONFIG WITH CLI ARGUMENTS
-    # Only overwrite values that were provided
-    # ------------------------------------------------
-    if args.model: cfg.model = args.model
-    if args.world: cfg.world = args.world
-    if args.clip_len: cfg.clip_len = args.clip_len
-    if args.lr: cfg.lr = args.lr
-    if args.margin: cfg.margin = args.margin
-    if args.weight_decay: cfg.weight_decay = args.weight_decay
-    if args.batch_size: cfg.batch_size = args.batch_size
-    if args.k: cfg.k = args.k
-    if args.epochs: cfg.epochs = args.epochs
-
-    cfg.pooling_type = args.pooling_type
-    cfg.full_finetune = args.full_finetune
-    cfg.use_id_loss = args.use_id_loss
-
-    # ------------------------------------------------
-    # BUILD DATA LOADERS (Must be first to know num_classes)
+    # BUILD DATA LOADERS
     # ------------------------------------------------
     train_loader, query_loader, gallery_loader = build_dataloaders(cfg)
 
-    # Automatically count unique dog IDs in training set
-    if hasattr(train_loader.dataset, 'dog_ids'):
+    # Dynamic num_classes calculation
+    if hasattr(train_loader.dataset, 'dataset') and hasattr(train_loader.dataset.dataset, 'id_map'):
+        cfg.num_classes = len(train_loader.dataset.dataset.id_map)
+    elif hasattr(train_loader.dataset, 'dog_ids'):
         cfg.num_classes = len(set(train_loader.dataset.dog_ids))
     elif hasattr(train_loader.dataset, 'labels'):
         cfg.num_classes = len(set(train_loader.dataset.labels))
@@ -91,125 +134,36 @@ def main():
         cfg.num_classes = len(train_loader.dataset.classes)
     else:
         cfg.num_classes = len(train_loader.dataset.targets if hasattr(train_loader.dataset, 'targets') else train_loader.dataset)
-        
+
     print(f"--> Total training dog identities (num_classes): {cfg.num_classes}")
 
-    # If id_loss is disabled, reset num_classes = 0 so the classifier head isn't built/trained
-    if not cfg.use_id_loss:
+    # If id_loss is disabled for baseline, reset num_classes = 0 so the classifier head isn't built
+    if not cfg.use_id_loss and cfg.reid_method not in ('bot', 'transreid'):
         cfg.num_classes = 0
-
-    # Properly update path and run name via configuration method
-    cfg.update_model_settings()
-
-    # print final configuration
-    cfg.display()
-
 
     # ------------------------------------------------
     # BUILD MODEL
     # ------------------------------------------------
     model = build_model(cfg).to(cfg.device)
 
-    if cfg.full_finetune:
-        print("--> Unfreezing FULL backbone for end-to-end fine-tuning.")
-        for p in model.parameters():
-            p.requires_grad = True
-    else:
-        # ------------------------------------------------
-        # FREEZE ENTIRE MODEL FIRST
-        # We selectively unfreeze layers afterwards
-        # ------------------------------------------------
-        for p in model.parameters():
-            p.requires_grad = False
-
-
-        # ------------------------------------------------
-        # ARCHITECTURE-AWARE PARTIAL UNFREEZING
-        # Each backbone has a slightly different internal structure
-        # ------------------------------------------------
-        # --- ConvNeXt Architecture ---
-        if hasattr(model.backbone, 'stages'):
-            print("--> Unfreezing final ConvNeXt stage.")
-            for p in model.backbone.stages[-1].parameters():
-                p.requires_grad = True
-
-            # Unfreeze layer norm / pre-norm if present
-            if hasattr(model.backbone, 'norm_pre'):
-                for p in model.backbone.norm_pre.parameters():
-                    p.requires_grad = True
-
-        # --- Torchvision ViT ---
-        elif hasattr(model.backbone, 'encoder') and hasattr(model.backbone.encoder, 'layers'):
-
-            # unfreeze last 2 transformer blocks
-            for layer in model.backbone.encoder.layers[-2:]:
-                for p in layer.parameters():
-                    p.requires_grad = True
-
-            # unfreeze final layer normalization
-            if hasattr(model.backbone.encoder, 'ln'):
-                for p in model.backbone.encoder.ln.parameters():
-                    p.requires_grad = True
-
-
-        # --- DINOv2 ---
-        elif hasattr(model.backbone, 'blocks'):
-
-            for block in model.backbone.blocks[-2:]:
-                for p in block.parameters():
-                    p.requires_grad = True
-
-            # final normalization layer
-            if hasattr(model.backbone, 'norm'):
-                for p in model.backbone.norm.parameters():
-                    p.requires_grad = True
-
-
-        # --- Swin Transformer ---
-        elif hasattr(model.backbone, 'layers'):
-
-            # unfreeze final stage
-            for p in model.backbone.layers[-1].parameters():
-                p.requires_grad = True
-
-            if hasattr(model.backbone, 'norm'):
-                for p in model.backbone.norm.parameters():
-                    p.requires_grad = True
-
-
-    # ------------------------------------------------
-    # ALWAYS TRAIN TEMPORAL HEAD & CLASSIFIER HEAD (IF ID LOSS)
-    # ------------------------------------------------
-    pool_layer = getattr(model, 'temporal_pool', getattr(model, 'temporal_attn', None))
-
-    if pool_layer is not None and hasattr(pool_layer, 'parameters'):
-        for p in pool_layer.parameters():
-            p.requires_grad = True
-
-
-    # BN neck is also always trainable
-    if hasattr(model, 'bn') and model.bn is not None:
-        for p in model.bn.parameters():
-            p.requires_grad = True
-
-    # Classifier head must be trainable when identity loss is active
-    if hasattr(model, 'classifier') and model.classifier is not None:
-        for p in model.classifier.parameters():
-            p.requires_grad = True
-
+    # Apply freezing
+    model = apply_freezing(model, cfg)
+    print(trainable_report(model))
 
     # ------------------------------------------------
     # OPTIMIZER
-    # Different learning rates for backbone vs head
     # ------------------------------------------------
+    def is_pretrained(name):
+        return name.startswith('backbone') or name.startswith('jpm.')
+
     backbone_params = [
-        p for p in model.backbone.parameters()
-        if p.requires_grad
+        p for n, p in model.named_parameters()
+        if p.requires_grad and is_pretrained(n)
     ]
 
     head_params = [
         p for n, p in model.named_parameters()
-        if p.requires_grad and 'backbone' not in n
+        if p.requires_grad and not is_pretrained(n)
     ]
 
     param_groups = []
@@ -218,25 +172,28 @@ def main():
     if head_params:
         param_groups.append({"params": head_params, "lr": cfg.lr})
 
-    # Guard against passing an empty parameter list to AdamW
     if not param_groups:
         raise ValueError(
             "No trainable parameters found for optimizer! "
             "Ensure at least part of the backbone or head has requires_grad=True."
         )
 
+    n_bb = sum(p.numel() for p in backbone_params)
+    n_hd = sum(p.numel() for p in head_params)
+    print(f"[optim] pretrained {n_bb:,} params @ lr*0.1 | heads {n_hd:,} params @ lr")
+
     optimizer = torch.optim.AdamW(param_groups, weight_decay=cfg.weight_decay)
+
+    # --- BUILD SCHEDULER ---
+    scheduler = None
+    if cfg.reid_method in ('bot', 'transreid'):
+        scheduler = build_scheduler(optimizer, cfg)
 
     # ------------------------------------------------
     # METRIC LEARNING SETUP
     # ------------------------------------------------
-
-    # hard triplet mining within batch
     miner = miners.BatchHardMiner()
-
-    # triplet margin loss
     loss_fn = losses.TripletMarginLoss(margin=cfg.margin)
-
 
     # ------------------------------------------------
     # TRAINER OBJECT
@@ -249,13 +206,10 @@ def main():
         optimizer=optimizer,
         loss_fn=loss_fn,
         miner=miner,
-        cfg=cfg
+        cfg=cfg,
+        scheduler=scheduler
     )
 
-
-    # ------------------------------------------------
-    # TRAIN LOOP
-    # ------------------------------------------------
     trainer.train()
 
 

@@ -8,7 +8,8 @@ import torch.nn as nn
 
 class Trainer:
     "Class that has the training logic"
-    def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner):
+    def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner,
+                 scheduler=None):
         # --- Move Model to Compute Device ---
         self.model = model.to(cfg.device)
 
@@ -19,14 +20,30 @@ class Trainer:
 
         # --- Training Configuration ---
         self.optimizer = optimizer
+        self.scheduler = scheduler # Stepped once per epoch, may be None
         self.device = cfg.device
         self.cfg = cfg
-        
+
         # --- Metric Learning Components ---
         self.loss_fn = loss_fn
         self.miner = miner
 
-        self.id_loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
+        # --- Identity Loss ---
+        # Used only when the model exposes a classifier (cfg.num_classes > 0)
+        self.id_loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
+        self.id_loss_weight = getattr(cfg, 'id_loss_weight', 1.0)
+
+        # --- Mixed Precision ---
+        # Only active on CUDA. bfloat16 needs no gradient scaler; float16 does.
+        amp = getattr(cfg, 'amp', 'bf16')
+        self.amp_dtype = {'bf16': torch.bfloat16, 'fp16': torch.float16}.get(amp)
+        self.amp_enabled = self.amp_dtype is not None and self.device.type == 'cuda'
+        self.scaler = torch.amp.GradScaler(
+            'cuda',
+            enabled=self.amp_enabled and self.amp_dtype is torch.float16
+        )
+        if self.amp_enabled:
+            print(f"[amp] mixed precision enabled ({amp})")
 
 
     def train(self):
@@ -40,7 +57,14 @@ class Trainer:
 
             # Run one full training epoch
             avg_loss = self.train_epoch(epoch)
-            print(f"Epoch {epoch} | Loss: {avg_loss:.4f}")
+            # One learning rate per parameter group: pretrained first, heads second
+            lrs = " / ".join(f"{g['lr']:.2e}" for g in self.optimizer.param_groups)
+            print(f"Epoch {epoch} | Loss: {avg_loss:.4f} | LR: {lrs}")
+
+            # --- Learning Rate Schedule ---
+            # Stepped per epoch, matching the warmup and milestone units
+            if self.scheduler is not None:
+                self.scheduler.step()
 
             # --- Validation Evaluation ---
             if val_split > 0 and self.cfg.world == "closed":
@@ -57,6 +81,9 @@ class Trainer:
                 }, checkpoint_path)
                 print(f"--> Saved periodic checkpoint to {checkpoint_path}")
                     
+            save_period = getattr(self.cfg, 'save_period', 10)
+            if (epoch + 1) % save_period == 0:
+                self.save_checkpoint(f"checkpoint_epoch_{epoch+1}.pth")        
 
         # --- Final Model Saving ---
         # Automatically saves the model if trained on the full dataset
@@ -86,41 +113,57 @@ class Trainer:
             labels = labels.to(self.device)
 
             # Forward Pass -> Generate embedding vectors
-            outputs = self.model(videos)
+            with torch.autocast(device_type=self.device.type,
+                                dtype=self.amp_dtype,
+                                enabled=self.amp_enabled):
+                outputs = self.model(videos)
 
-            # Unpack dual outputs (embeddings, logits) or single tensor
             if isinstance(outputs, tuple):
                 embeddings, logits = outputs
             else:
                 embeddings, logits = outputs, None
-            
+
+            # Losses are computed in float32; metric learning is sensitive to
+            # reduced precision in the distance matrix
+            embeddings = embeddings.float()
+            if logits is not None:
+                logits = logits.float()
+
             # --- Hard Pair Mining ---
             # Selects the hardest positive/negative pairs to optimize learning
             hard_pairs = self.miner(embeddings, labels)
             loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
 
-            # --- Metric Learning Loss ---
-            # Computes triplet or margin-based loss using the mined pairs
+            # --- Metric Learning & Identity Loss ---
             if logits is not None and getattr(self.cfg, 'num_classes', 0) > 0:
                 loss_id = self.id_loss_fn(logits, labels)
-                total_loss = loss_triplet + loss_id
+                total_loss = loss_triplet + self.id_loss_weight * loss_id
             else:
                 total_loss = loss_triplet
-            
+
             # --- Backpropagation with Accumulation ---
             # Divides loss by accumulation steps to average gradients correctly
-            total_loss = total_loss / accum_steps
-            total_loss.backward()
+            loss = total_loss / accum_steps
+            if self.scaler.is_enabled():
+                self.scaler.scale(loss).backward()
+            else:
+                loss.backward()
 
             # Update weights only after specified accumulation steps
             if (i + 1) % accum_steps == 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                self.optimizer.step()
+                if self.scaler.is_enabled():
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                    self.optimizer.step()
                 self.optimizer.zero_grad()
 
             # --- Update Progress Logging ---
-            running_loss += total_loss.item() * accum_steps
-            pbar.set_postfix(loss=total_loss.item() * accum_steps)
+            running_loss += total_loss.item()
+            pbar.set_postfix(loss=total_loss.item())
 
         return running_loss / len(self.train_loader)
 
@@ -232,9 +275,21 @@ class Trainer:
 
         # --- Metadata Saving ---
         # Save specific config parameters alongside the model for reproducibility
-        allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size', 
-                        'k', 'model', 'world', 'clip_len', 'epochs',
-                        "accum_steps", "num_workers", "chunk_size"]
+        # Everything needed to reproduce the run and to fill in the settings
+        # column of a results table
+        allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size',
+                        'k', 'num_ids', 'model', 'world', 'clip_len', 'epochs',
+                        "accum_steps", "num_workers", "chunk_size",
+                        # Re-ID method and architecture
+                        "backbone", "reid_method", "pooling_type", "img_size",
+                        "num_classes", "dinov2_variant", "megadescriptor_variant",
+                        "jpm_parts", "jpm_shift", "jpm_shuffle_groups",
+                        # Optimization
+                        "full_finetune", "unfreeze_blocks", "id_loss_weight",
+                        "warmup_epochs", "warmup_factor", "lr_milestones",
+                        "lr_gamma", "amp",
+                        # Augmentation
+                        "aug_pad", "re_prob", "run_name"]
 
         params_to_save = {}
 

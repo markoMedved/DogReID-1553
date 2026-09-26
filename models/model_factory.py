@@ -3,7 +3,9 @@ from .vit_builder import VideoViT
 from .swin_builder import VideoSwin
 from .dinov2_builder import DINOv2ReID
 from .convnetxt_builder import VideoConvNeXt
-
+from .miewid_builder import MiewIDReID
+from .megadescriptor_builder import MegaDescriptor
+from .reid_model import VideoReID
 
 
 def build_model(cfg):
@@ -12,33 +14,43 @@ def build_model(cfg):
     based on the provided configuration parameters.
     """
 
-    # --- Model Selection Routing ---
+    # --- Re-ID Method Routing (BoT / TransReID) ---
+    if getattr(cfg, "reid_method", None) in ("bot", "transreid"):
+        return VideoReID(cfg)
 
-    # if cfg.model == "dinov2":
-    #     # Initializes DINOv2 with registers (vitb14_reg)
-    #     model = DINOv2ReID(variant="vitb14_reg")
-    if cfg.model == "dinov2":
+    # MiewID is a fixed pretrained baseline; it bypasses the BoT/TransReID
+    # heads because the checkpoint already provides a trained embedding.
+    model_type = getattr(cfg, "backbone", getattr(cfg, "model", None))
+    if model_type == "miewid":
+        return MiewIDReID(chunk_size=getattr(cfg, "chunk_size", 16))
+
+    if model_type == "dinov2":
         # Initializes DINOv2 with registers (vitb14_reg)
-        model = DINOv2ReID(
-            variant="vitb14_reg", 
+        return DINOv2ReID(
+            variant=getattr(cfg, "dinov2_variant", "vitb14_reg"), 
             num_classes=getattr(cfg, "num_classes", 0), 
             chunk_size=getattr(cfg, "chunk_size", 32),
-            pooling_type=getattr(cfg, "pooling_type", "attn")
+            pooling_type=getattr(cfg, "pooling_type", "attention")
         )
 
-    elif cfg.model == "vit":
+    elif model_type == "vit":
         # Initializes a standard Vision Transformer adapted for video processing
-        model = VideoViT()
+        return VideoViT()
 
-    elif cfg.model == "swin":
+    elif model_type == "swin":
         # Initializes a Swin Transformer backbone for hierarchical video feature extraction
-        model = VideoSwin()
+        return VideoSwin()
 
-    elif cfg.model == "convnetxt":
-        model = VideoConvNeXt()
+    elif model_type == "megadescriptor":
+        # Wildlife-re-ID-pretrained Swin used as a standalone extractor (no BoT).
+        return MegaDescriptor(
+            variant=getattr(cfg, "megadescriptor_variant", "hf-hub:BVRA/MegaDescriptor-L-224"),
+            chunk_size=getattr(cfg, "chunk_size", 8),
+        )
+
+    elif model_type in ("convnetxt", "convnext"):
+        return VideoConvNeXt()
 
     else:
         # Fallback for unsupported or misspelled model configurations
-        raise ValueError(f"Unknown model architecture requested: {cfg.model}")
-
-    return model
+        raise ValueError(f"Unknown model architecture requested: {model_type}")

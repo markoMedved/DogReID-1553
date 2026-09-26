@@ -2,13 +2,13 @@ import pandas as pd
 import numpy as np
 from torch.utils.data import DataLoader, Subset
 from .dataset import DOGVideoREIDDataset
-from .transforms import VideoTransform
 from pytorch_metric_learning.samplers import MPerClassSampler
+from data.reid_transforms import build_video_transforms
 
 def build_dataloaders(cfg):
     """Build the train and validation dataloaders for our experiments"""
-    # Use train transforms, including data augmentation
-    transform = VideoTransform()
+    
+    train_tf = build_video_transforms(cfg, is_train=True)
 
     # --- Global DOG_ID Mapping ---
     full_df = pd.read_csv(cfg.split_file)
@@ -20,7 +20,7 @@ def build_dataloaders(cfg):
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
         "clip_len": cfg.clip_len,
-        "transform": transform,
+        "transform": train_tf,
         "world": cfg.world,
         "label_map": global_id_map
     }
@@ -76,20 +76,26 @@ def build_dataloaders(cfg):
     )
 
     # --- Construct DataLoaders ---
+    # persistent_workers avoids respawning workers every epoch, which is
+    # expensive here because each one holds a YOLO detector
+    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
+    if cfg.num_workers > 0:
+        loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
+
     train_loader = DataLoader(
-        train_dataset, batch_size=cfg.batch_size, sampler=sampler, 
-        drop_last=True, num_workers=cfg.num_workers
+        train_dataset, batch_size=cfg.batch_size, sampler=sampler,
+        drop_last=True, **loader_kwargs
     )
 
     # For validation we need query and gallery dataloaders
     val_query_loader = DataLoader(
-        val_query_dataset, batch_size=cfg.batch_size * 2, 
-        shuffle=False, num_workers=cfg.num_workers
+        val_query_dataset, batch_size=cfg.batch_size * 2,
+        shuffle=False, **loader_kwargs
     )
     
     val_gallery_loader = DataLoader(
-        val_gallery_dataset, batch_size=cfg.batch_size * 2, 
-        shuffle=False, num_workers=cfg.num_workers
+        val_gallery_dataset, batch_size=cfg.batch_size * 2,
+        shuffle=False, **loader_kwargs
     )
 
     print(f"--- Data Loading Stats ---")
@@ -105,9 +111,7 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
         query_images = images
         gallery_images = images
 
-    # Grab target resolution for SwinV2 compatibility
-    img_size = getattr(cfg, 'img_size', 192)
-    transform = VideoTransform(is_training=False, img_size=img_size)
+    eval_tf = build_video_transforms(cfg, is_train=False)
     
     full_df = pd.read_csv(cfg.split_file)
     
@@ -119,7 +123,7 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
     dataset_kwargs = {
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
-        "transform": transform,
+        "transform": eval_tf,
         "world": cfg.world,
         "label_map": global_id_map,
         "mask_dog": getattr(cfg, "mask_dog", False),
@@ -161,14 +165,18 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
     )
 
     # --- Construct Test DataLoaders ---
+    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
+    if cfg.num_workers > 0:
+        loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
+
     query_loader = DataLoader(
-        query_dataset, batch_size=cfg.batch_size * 2, 
-        shuffle=False, num_workers=cfg.num_workers, pin_memory=True
+        query_dataset, batch_size=cfg.batch_size * 2,
+        shuffle=False, **loader_kwargs
     )
-    
+
     gallery_loader = DataLoader(
         gallery_dataset, batch_size=cfg.batch_size * 2,
-        shuffle=False, num_workers=cfg.num_workers, pin_memory=True
+        shuffle=False, **loader_kwargs
     )
 
     # --- Print Stats & Mode ---

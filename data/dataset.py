@@ -20,6 +20,39 @@ def load_yolo(model_name: str = "yolo11n.pt", device: torch.device = None) -> YO
     return model
 
 
+def _best_dog_box(result, conf_threshold: float = 0.3):
+    """Pick the highest-confidence dog box from one YOLO result."""
+    best_box = None
+    best_conf = conf_threshold
+
+    for box in result.boxes:
+        cls = int(box.cls.item())
+        conf = float(box.conf.item())
+        if cls == COCO_DOG_CLASS and conf > best_conf:
+            best_conf = conf
+            best_box = tuple(map(int, box.xyxy[0].tolist()))
+
+    return best_box
+
+
+def detect_dog_boxes(
+    yolo: YOLO,
+    frames: list,
+    conf_threshold: float = 0.3,
+) -> list:
+    """
+    Run YOLO once over a whole clip and return one box per frame.
+
+    Detection dominates data loading cost, so the frames of a clip are batched
+    into a single call instead of one call per frame.
+    """
+    if not frames:
+        return []
+
+    results = yolo(frames, verbose=False)
+    return [_best_dog_box(r, conf_threshold) for r in results]
+
+
 def detect_dog_box(
     yolo: YOLO,
     frame: Image.Image,
@@ -179,45 +212,49 @@ class DOGVideoREIDDataset(Dataset):
             img = Image.open(path).convert("RGB")
             clip = [np.array(img)]
 
-        # --- Bounding Box Resolution ---
+        # --- Bounding Box Resolution & Crop/Mask ---
+        pil_frames = [Image.fromarray(f) for f in clip]
+        boxes = [None] * len(pil_frames)
+
+        # Check GT first if using images and not force_yolo
+        if not self.use_videos and not self.force_yolo:
+            gt_box = self.gt_bboxes.get((dog_id, video_id))
+            if gt_box is not None:
+                boxes = [gt_box]
+
+        # Use YOLO if boxes are not already found and yolo is available
+        if self.yolo is not None:
+            if not self.use_videos:
+                if boxes[0] is None:
+                    boxes = [detect_dog_box(self.yolo, pil_frames[0])]
+            else:
+                boxes = detect_dog_boxes(self.yolo, pil_frames)
+
         processed_clip = []
-        for frame_arr in clip:
-            pil_frame = Image.fromarray(frame_arr)
-
-            # Check GT first if using images
-            box = None
-            if not self.use_videos and not self.force_yolo:
-                box = self.gt_bboxes.get((dog_id, video_id))
-
-            # Fall back to YOLO if force_yolo is True, or if GT box was missing
-            if box is None and self.yolo is not None:
-                box = detect_dog_box(self.yolo, pil_frame)
-
-            # Apply masking or cropping
+        for pil_frame, box in zip(pil_frames, boxes):
             if self.mask_dog:
                 pil_frame = mask_frame(pil_frame, box)
             else:
                 pil_frame = crop_frame(pil_frame, box)
-
             processed_clip.append(np.array(pil_frame))
-        
+
         clip = processed_clip
 
         # --- Transformation Pipeline ---
         if self.transform:
-            transformed_frames = []
-            seed = np.random.randint(2147483647)
-
-            for frame in clip:
-                if self.split == "train":
-                    random.seed(seed)
-                    torch.manual_seed(seed)
-                    np.random.seed(seed)
-
-                pil_img = Image.fromarray(frame)
-                transformed_frames.append(self.transform(pil_img))
-
-            clip = torch.stack(transformed_frames)
+            pil_clip = [Image.fromarray(frame) for frame in clip]
+            if hasattr(self.transform, "frame_tf"):
+                clip = self.transform(pil_clip)
+            else:
+                transformed_frames = []
+                seed = np.random.randint(2147483647)
+                for pil_img in pil_clip:
+                    if self.split == "train":
+                        random.seed(seed)
+                        torch.manual_seed(seed)
+                        np.random.seed(seed)
+                    transformed_frames.append(self.transform(pil_img))
+                clip = torch.stack(transformed_frames)
         else:
             clip = torch.from_numpy(np.array(clip)).permute(0, 3, 1, 2).float() / 255.0
 
