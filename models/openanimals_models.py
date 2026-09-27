@@ -13,6 +13,9 @@ if str(OPENANIMALS_DIR) not in sys.path:
 
 from openanimals.config import get_cfg
 from openanimals.modeling import build_model as build_oa_model
+from openanimals.modeling.losses.cross_entroy_loss import cross_entropy_loss
+from openanimals.modeling.losses.triplet_loss import triplet_loss
+from openanimals.modeling.losses.circle_loss import pairwise_circleloss
 from .reid_model import TemporalPool
 
 
@@ -20,6 +23,7 @@ class OpenAnimalsVideoModel(nn.Module):
     """
     Adapts OpenAnimals architectures (BoT, AGW, SBS, MGN, ARBase) for video Re-ID
     with temporal pooling (attention, mean, max) across video clip frames.
+    Uses OpenAnimals native loss formulations, heads, and backbones.
     """
 
     MODEL_CONFIGS = {
@@ -60,12 +64,14 @@ class OpenAnimalsVideoModel(nn.Module):
         oa_cfg.defrost()
         oa_cfg.MODEL.DEVICE = "cpu"  # Initialized on CPU; moved to GPU via .to(device)
         oa_cfg.MODEL.BACKBONE.PRETRAIN = True
-        oa_cfg.MODEL.HEADS.NUM_CLASSES = num_classes if num_classes > 0 else 776
+        oa_cfg.MODEL.HEADS.NUM_CLASSES = num_classes if num_classes > 0 else 1553
 
+        self.oa_cfg = oa_cfg
+        self.is_openanimals = True
         self.oa_model = build_oa_model(oa_cfg)
         self.is_mgn = "mgn" in clean_name
         self.chunk_size = chunk_size
-        self.num_classes = num_classes
+        self.num_classes = oa_cfg.MODEL.HEADS.NUM_CLASSES
         self.pooling_type = pooling_type
 
         if self.is_mgn:
@@ -78,7 +84,7 @@ class OpenAnimalsVideoModel(nn.Module):
             self.embed_dim = oa_cfg.MODEL.BACKBONE.FEAT_DIM
             self.temporal_pool = TemporalPool(self.embed_dim, mode=pooling_type)
 
-    def _forward_baseline(self, x):
+    def _forward_baseline(self, x, targets=None):
         if x.dim() == 5:
             B, T, C, H, W = x.shape
             frames = x.view(B * T, C, H, W)
@@ -97,17 +103,56 @@ class OpenAnimalsVideoModel(nn.Module):
             f_map = self.oa_model.backbone(x)
             video_feat = self.oa_model.heads.pool_layer(f_map).flatten(1)
 
-        # Pass through OpenAnimals BNNeck
-        neck_feat = self.oa_model.heads.bottleneck(video_feat.view(video_feat.size(0), -1, 1, 1))[..., 0, 0]
+        pool_feat = video_feat.view(video_feat.size(0), -1, 1, 1)
+        neck_feat = self.oa_model.heads.bottleneck(pool_feat)[..., 0, 0]
 
-        if self.training and self.num_classes > 0:
-            logits = F.linear(neck_feat, self.oa_model.heads.weight)
-            embeddings = F.normalize(video_feat, dim=-1)
-            return embeddings, logits
-        else:
+        # Evaluation mode: extract normalized features according to paper
+        if not self.training:
+            if getattr(self.oa_model.heads, 'neck_feat', 'after') == 'before':
+                return F.normalize(video_feat, p=2, dim=-1)
             return F.normalize(neck_feat, p=2, dim=-1)
 
-    def _forward_mgn(self, x):
+        # Training mode: compute OpenAnimals native heads and losses
+        if self.oa_model.heads.cls_layer.__class__.__name__ == 'Linear':
+            logits = F.linear(neck_feat, self.oa_model.heads.weight)
+        else:
+            logits = F.linear(F.normalize(neck_feat), F.normalize(self.oa_model.heads.weight))
+
+        cls_outputs = self.oa_model.heads.cls_layer(logits.clone(), targets)
+        feat = video_feat if getattr(self.oa_model.heads, 'neck_feat', 'after') == 'before' else neck_feat
+
+        # Compute native OpenAnimals losses
+        loss_dict = {}
+        loss_names = self.oa_cfg.MODEL.LOSSES.NAME
+        if 'CrossEntropyLoss' in loss_names and targets is not None:
+            loss_dict['loss_cls'] = cross_entropy_loss(
+                cls_outputs,
+                targets,
+                self.oa_cfg.MODEL.LOSSES.CE.EPSILON,
+                self.oa_cfg.MODEL.LOSSES.CE.ALPHA
+            ) * self.oa_cfg.MODEL.LOSSES.CE.SCALE
+
+        if 'TripletLoss' in loss_names and targets is not None:
+            loss_dict['loss_triplet'] = triplet_loss(
+                feat,
+                targets,
+                self.oa_cfg.MODEL.LOSSES.TRI.MARGIN,
+                self.oa_cfg.MODEL.LOSSES.TRI.NORM_FEAT,
+                self.oa_cfg.MODEL.LOSSES.TRI.HARD_MINING
+            ) * self.oa_cfg.MODEL.LOSSES.TRI.SCALE
+
+        if 'CircleLoss' in loss_names and targets is not None:
+            loss_dict['loss_circle'] = pairwise_circleloss(
+                feat,
+                targets,
+                self.oa_cfg.MODEL.LOSSES.CIRCLE.MARGIN,
+                self.oa_cfg.MODEL.LOSSES.CIRCLE.GAMMA
+            ) * self.oa_cfg.MODEL.LOSSES.CIRCLE.SCALE
+
+        total_loss = sum(loss_dict.values()) if loss_dict else torch.tensor(0.0, device=video_feat.device)
+        return feat, cls_outputs, total_loss, loss_dict
+
+    def _forward_mgn(self, x, targets=None):
         if x.dim() == 5:
             B, T, C, H, W = x.shape
             frames = x.view(B * T, C, H, W)
@@ -134,33 +179,57 @@ class OpenAnimalsVideoModel(nn.Module):
             (b33, self.oa_model.b33_head, self.temporal_pools[7]),
         ]
 
-        necks = []
-        logits_list = []
-        global_v = None
-
+        pooled_feats = []
         for idx, (f_map, head, pool) in enumerate(branches):
             p = head.pool_layer(f_map).flatten(1)
-            if T > 1:
-                v = pool(p.view(B, T, 2048))
-            else:
-                v = p
-            if idx == 0:
-                global_v = v
+            v = pool(p.view(B, T, 2048)) if T > 1 else p
+            pooled_feats.append(v)
 
-            neck = head.bottleneck(v.view(B, 2048, 1, 1))[..., 0, 0]
-            logit = F.linear(neck, head.weight)
-            necks.append(neck)
-            logits_list.append(logit)
-
-        if self.training and self.num_classes > 0:
-            embeddings = F.normalize(global_v, dim=-1)
-            cls_score = torch.stack(logits_list, dim=0).mean(0)
-            return embeddings, cls_score
-        else:
+        # Evaluation mode: concatenate all 8 neck features (16,384-D)
+        if not self.training:
+            necks = []
+            for (f_map, head, pool), v in zip(branches, pooled_feats):
+                neck = head.bottleneck(v.view(B, 2048, 1, 1))[..., 0, 0]
+                necks.append(neck)
             eval_feat = torch.cat(necks, dim=1)
             return F.normalize(eval_feat, p=2, dim=-1)
 
-    def forward(self, x):
+        # Training mode: run all 8 OpenAnimals heads
+        branch_outputs = []
+        for (f_map, head, pool), v in zip(branches, pooled_feats):
+            out = head(v.view(B, 2048, 1, 1), targets)
+            branch_outputs.append(out)
+
+        # Exact OpenAnimals MGN multi-task loss computation
+        loss_dict = {}
+        if targets is not None:
+            # 8-branch cross-entropy with 0.125 weight
+            ce_losses = [
+                cross_entropy_loss(
+                    out['cls_outputs'],
+                    targets,
+                    self.oa_cfg.MODEL.LOSSES.CE.EPSILON,
+                    self.oa_cfg.MODEL.LOSSES.CE.ALPHA
+                ) * 0.125
+                for out in branch_outputs
+            ]
+            loss_dict['loss_cls'] = sum(ce_losses) * self.oa_cfg.MODEL.LOSSES.CE.SCALE
+
+            # 5-branch triplet loss on global and concatenated part stripes
+            b22_pool = torch.cat([branch_outputs[2]['features'], branch_outputs[3]['features']], dim=1)
+            b33_pool = torch.cat([branch_outputs[5]['features'], branch_outputs[6]['features'], branch_outputs[7]['features']], dim=1)
+            tri_cfg = self.oa_cfg.MODEL.LOSSES.TRI
+            t1 = triplet_loss(branch_outputs[0]['features'], targets, tri_cfg.MARGIN, tri_cfg.NORM_FEAT, tri_cfg.HARD_MINING)
+            t2 = triplet_loss(branch_outputs[1]['features'], targets, tri_cfg.MARGIN, tri_cfg.NORM_FEAT, tri_cfg.HARD_MINING)
+            t22 = triplet_loss(b22_pool, targets, tri_cfg.MARGIN, tri_cfg.NORM_FEAT, tri_cfg.HARD_MINING)
+            t3 = triplet_loss(branch_outputs[4]['features'], targets, tri_cfg.MARGIN, tri_cfg.NORM_FEAT, tri_cfg.HARD_MINING)
+            t33 = triplet_loss(b33_pool, targets, tri_cfg.MARGIN, tri_cfg.NORM_FEAT, tri_cfg.HARD_MINING)
+            loss_dict['loss_triplet'] = (t1 + t2 + t22 + t3 + t33) * tri_cfg.SCALE
+
+        total_loss = sum(loss_dict.values()) if loss_dict else torch.tensor(0.0, device=x.device)
+        return branch_outputs[0]['features'], branch_outputs[0]['cls_outputs'], total_loss, loss_dict
+
+    def forward(self, x, targets=None):
         if self.is_mgn:
-            return self._forward_mgn(x)
-        return self._forward_baseline(x)
+            return self._forward_mgn(x, targets=targets)
+        return self._forward_baseline(x, targets=targets)

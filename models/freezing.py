@@ -122,8 +122,8 @@ def _unfreeze_last_blocks(net, n=2):
 def apply_freezing(model, cfg):
     """Set requires_grad across the model according to cfg.full_finetune."""
 
-    # --- Full Fine-Tuning ---
-    if getattr(cfg, "full_finetune", False):
+    # --- Full Fine-Tuning or OpenAnimals Native Training ---
+    if getattr(cfg, "full_finetune", False) or getattr(model, "is_openanimals", False):
         for p in model.parameters():
             p.requires_grad = True
         return model
