@@ -1,0 +1,27 @@
+_BASE_: ../Base-bagtricks.yml
+
+DATASETS:
+  NAMES: ("DogReID",)
+  TESTS: ("DogReID",)
+
+OUTPUT_DIR: logs/DogReID/bot
+
+INPUT:
+  SIZE_TRAIN: [ 256, 256 ]
+  SIZE_TEST: [ 256, 256 ]
+
+  REA:
+    ENABLED: True
+    PROB: 0.5
+
+MODEL:
+  BACKBONE:
+    DEPTH: 50x
+    WITH_IBN: False
+
+SOLVER:
+  MAX_EPOCH: 120
+  CHECKPOINT_PERIOD: 20
+
+TEST:
+  EVAL_PERIOD: 20

@@ -54,3 +54,4 @@ python evaluation/make_csv.py \
     --use_images
 
 echo "Video AGW job complete!"
+

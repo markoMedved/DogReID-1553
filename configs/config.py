@@ -69,7 +69,7 @@ class Config:
     re_prob = 0.5
 
     # --- Evaluation ---
-    eval_period = 100
+    eval_period = 1
     eval_only   = False  
 
     # Experiment for background noise

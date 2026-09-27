@@ -1,0 +1,23 @@
+_BASE_: ../Base-AGW.yml
+
+DATASETS:
+  NAMES: ("DogReID",)
+  TESTS: ("DogReID",)
+
+OUTPUT_DIR: logs/DogReID/agw
+
+INPUT:
+  SIZE_TRAIN: [ 384, 384 ]
+  SIZE_TEST: [ 384, 384 ]
+
+MODEL:
+  BACKBONE:
+    DEPTH: 50x
+    WITH_IBN: True
+
+SOLVER:
+  MAX_EPOCH: 120
+  CHECKPOINT_PERIOD: 20
+
+TEST:
+  EVAL_PERIOD: 20
