@@ -162,7 +162,14 @@ def main():
     # OPTIMIZER
     # ------------------------------------------------
     def is_pretrained(name):
-        return name.startswith('backbone') or name.startswith('jpm.')
+        return (
+            name.startswith('backbone')
+            or name.startswith('jpm.')
+            or name.startswith('oa_model.backbone')
+            or name.startswith('oa_model.b1')
+            or name.startswith('oa_model.b2')
+            or name.startswith('oa_model.b3')
+        )
 
     backbone_params = [
         p for n, p in model.named_parameters()

@@ -99,6 +99,9 @@ class Config:
         if "swin" in self.backbone:
             self.embedding_dim = 1024
             self.img_size = (192, 192)
+        elif self.backbone.startswith("oa_") or self.backbone.startswith("openanimals_"):
+            self.embedding_dim = 2048 * (8 if "mgn" in self.backbone else 1)
+            self.img_size = (384, 384) if ("mgn" in self.backbone or "arbase" in self.backbone) else (256, 256)
         else:
             self.embedding_dim = 768
             self.img_size = (224, 224)

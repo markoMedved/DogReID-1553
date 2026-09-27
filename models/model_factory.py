@@ -18,9 +18,19 @@ def build_model(cfg):
     if getattr(cfg, "reid_method", None) in ("bot", "transreid"):
         return VideoReID(cfg)
 
-    # MiewID is a fixed pretrained baseline; it bypasses the BoT/TransReID
-    # heads because the checkpoint already provides a trained embedding.
     model_type = getattr(cfg, "backbone", getattr(cfg, "model", None))
+    if model_type:
+        model_type_str = str(model_type).lower()
+        if model_type_str.startswith("oa_") or model_type_str.startswith("openanimals_"):
+            from .openanimals_models import OpenAnimalsVideoModel
+            return OpenAnimalsVideoModel(
+                model_name=model_type_str,
+                pooling_type=getattr(cfg, "pooling_type", "attention"),
+                num_classes=getattr(cfg, "num_classes", 0),
+                chunk_size=getattr(cfg, "chunk_size", 32)
+            )
+
+    # MiewID is a fixed pretrained baseline; it bypasses the BoT/TransReID
     if model_type == "miewid":
         return MiewIDReID(chunk_size=getattr(cfg, "chunk_size", 16))
 
@@ -53,4 +63,4 @@ def build_model(cfg):
 
     else:
         # Fallback for unsupported or misspelled model configurations
-        raise ValueError(f"Unknown model architecture requested: {model_type}")
+        raise ValueError(f"Unknown model architecture requested: {model_type}")

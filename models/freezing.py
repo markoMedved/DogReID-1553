@@ -16,6 +16,9 @@ def _unfreeze(module):
 
 def _core_network(model):
     """Return the backbone network, unwrapping the adapter if present."""
+    if hasattr(model, "oa_model"):
+        return model.oa_model.backbone
+
     backbone = getattr(model, "backbone", None)
     if backbone is None:
         return None
@@ -105,6 +108,14 @@ def _unfreeze_last_blocks(net, n=2):
             _unfreeze(getattr(net, "head", None))
         return True
 
+    # --- ResNet (layer1..layer4) ---
+    if hasattr(net, "layer4"):
+        if n > 0:
+            _unfreeze(net.layer4)
+            if n > 1 and hasattr(net, "layer3"):
+                _unfreeze(net.layer3)
+        return True
+
     return False
 
 
@@ -134,8 +145,14 @@ def apply_freezing(model, cfg):
     # Temporal pooling, BN necks and identity heads, for both the current
     # VideoReID layout (ModuleLists) and the single-branch builders.
     for attr in ("pools", "heads", "temporal_pool", "temporal_attn",
-                 "bn", "bottleneck", "classifier"):
+                 "bn", "bottleneck", "classifier", "temporal_pools"):
         _unfreeze(getattr(model, attr, None))
+
+    if hasattr(model, "oa_model"):
+        _unfreeze(getattr(model.oa_model, "heads", None))
+        _unfreeze(getattr(model.oa_model, "b1", None))
+        _unfreeze(getattr(model.oa_model, "b2", None))
+        _unfreeze(getattr(model.oa_model, "b3", None))
 
     # The JPM local branch holds its own copy of the final block
     jpm = getattr(model, "jpm", None)

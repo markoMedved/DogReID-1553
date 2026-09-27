@@ -26,7 +26,6 @@ parser.add_argument(
     "--model_name", 
     type=str, 
     default="dinov2", 
-    choices=["dinov2", "swin", "vit", "convnetxt", "megadescriptor", "miewid", "bot", "transreid", "tfclip"], 
     help="Model identifier used for paths and architecture selection"
 )
 
@@ -217,6 +216,8 @@ elif BASE_MODEL_NAME == "miewid":
     MODEL_CLASS = MiewIDReID
 elif BASE_MODEL_NAME in ("bot", "transreid"):
     MODEL_CLASS = None
+elif BASE_MODEL_NAME.startswith("oa_") or BASE_MODEL_NAME.startswith("openanimals_"):
+    MODEL_CLASS = None
 else:
     raise ValueError(f"Invalid base model name: {BASE_MODEL_NAME}")
 
@@ -322,6 +323,27 @@ elif BASE_MODEL_NAME in ["vit", "swin"]:
 elif BASE_MODEL_NAME == "convnetxt":
     print(f"-> Initializing Architecture: VideoConvNeXt...")
     model = VideoConvNeXt()
+elif BASE_MODEL_NAME.startswith("oa_") or BASE_MODEL_NAME.startswith("openanimals_"):
+    from models.openanimals_models import OpenAnimalsVideoModel
+    print(f"-> Initializing Architecture: OpenAnimalsVideoModel ({BASE_MODEL_NAME}, pooling={POOLING_TYPE})...")
+    oa_num_classes = NUM_CLASSES
+    if oa_num_classes == 0 and os.path.exists(MODEL_PATH):
+        try:
+            _ckpt = torch.load(MODEL_PATH, map_location="cpu")
+            _sd = _ckpt.get('model', _ckpt.get('state_dict', _ckpt))
+            for _k, _v in _sd.items():
+                if "heads.weight" in _k or "heads.classifier.weight" in _k:
+                    oa_num_classes = _v.shape[0]
+                    break
+            del _ckpt, _sd
+        except Exception:
+            pass
+    model = OpenAnimalsVideoModel(
+        model_name=BASE_MODEL_NAME,
+        pooling_type=POOLING_TYPE,
+        num_classes=oa_num_classes,
+        chunk_size=32
+    )
 else:
     model = MODEL_CLASS()
 
@@ -334,7 +356,7 @@ if os.path.exists(MODEL_PATH):
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
         name = k[7:] if k.startswith('module.') else k
-        if name.startswith("temporal_pool."):
+        if BASE_MODEL_NAME == "dinov2" and name.startswith("temporal_pool."):
             name = name.replace("temporal_pool.", "temporal_attn.")
         new_state_dict[name] = v
 
@@ -373,3 +395,22 @@ csv_path = generate_distance_csv(
     cfg,
     filename=CSV_NAME
 )
+
+# -------------------------------------------------------------
+# --- Run Bootstrap Evaluation ---
+# -------------------------------------------------------------
+from evaluation_utils import bootstrap_from_csv
+print(f"\n==========================================")
+print(f"Running Bootstrap Evaluation on {csv_path} (mode={WORLD_TYPE})...")
+print(f"==========================================")
+boot_res = bootstrap_from_csv(str(csv_path), m=100, mode=WORLD_TYPE)
+if WORLD_TYPE == "closed":
+    cmc = boot_res.get("cmc_boot_mean")
+    map_val = boot_res.get("mAP_boot_mean")
+    if cmc is not None:
+        print(f"Rank-1:  {cmc[0]*100:.2f}%")
+        print(f"Rank-5:  {cmc[4]*100:.2f}%")
+        print(f"Rank-10: {cmc[9]*100:.2f}%")
+    if map_val is not None:
+        print(f"mAP:     {map_val*100:.2f}%")
+print("Evaluation Complete!")
