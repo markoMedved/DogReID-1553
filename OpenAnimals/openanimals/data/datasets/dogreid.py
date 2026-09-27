@@ -81,11 +81,11 @@ class DogReID(ImageDataset):
         if self.img_load == 'bbox' and osp.exists(self.bbox_file):
             bbox_df = pd.read_csv(self.bbox_file)
             for _, row in bbox_df.iterrows():
+                x2 = int(row['x_top_left']) + int(row['width'])
+                y2 = int(row['y_top_left']) + int(row['height'])
                 x = max(0, int(row['x_top_left']))
                 y = max(0, int(row['y_top_left']))
-                w = int(row['width'])
-                h = int(row['height'])
-                bboxes_dict[(str(row['DOG_ID']), str(row['VIDEO_ID']))] = np.array([x, y, w, h], dtype=int)
+                bboxes_dict[(str(row['DOG_ID']), str(row['VIDEO_ID']))] = np.array([x, y, x2 - x, y2 - y], dtype=int)
 
         # Consistent integer PID mapping for query and gallery in evaluation
         test_df = splits_df[splits_df[split_col].isin(['query', 'gallery'])]

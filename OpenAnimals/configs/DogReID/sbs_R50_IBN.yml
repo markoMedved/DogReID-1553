@@ -4,7 +4,7 @@ DATASETS:
   NAMES: ("DogReID",)
   TESTS: ("DogReID",)
 
-OUTPUT_DIR: logs/DogReID/sbs
+OUTPUT_DIR: logs/DogReID/sbs_R50_IBN
 
 INPUT:
   SIZE_TRAIN: [ 384, 384 ]

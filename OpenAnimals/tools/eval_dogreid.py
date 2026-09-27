@@ -51,10 +51,12 @@ def extract_features(model, dataloader, device):
 
 def path_to_id(img_path):
     # Extracts DOG_ID_VIDEO_ID from .../DOG_ID/DOG_ID-VIDEO_ID.jpg
-    filename = Path(img_path).stem  # DOG_ID-VIDEO_ID
-    parts = filename.split('-')
-    dog_id = parts[0]
-    video_id = '-'.join(parts[1:])
+    # Both IDs are hyphenated UUIDs, so the dog ID is taken from the parent folder.
+    path = Path(img_path)
+    dog_id = path.parent.name
+    stem = path.stem
+    assert stem.startswith(dog_id + "-"), f"Unexpected image filename: {img_path}"
+    video_id = stem[len(dog_id) + 1:]
     return f"{dog_id}_{video_id}"
 
 
@@ -118,7 +120,7 @@ def evaluate_dogreid(cfg, model, split_type="closed", output_dir=".", model_tag=
     else:
         for k, v in res.items():
             if isinstance(v, dict) and "mean" in v:
-                print(f"{k}: {v['mean']:.4f} [95% CI: {v['ci_95'][0]:.4f} - {v['ci_95'][1]:.4f}]")
+                print(f"{k}: {v['mean']:.4f} [95% CI: {v['ci'][0]:.4f} - {v['ci'][1]:.4f}]")
 
     return res
 
@@ -143,15 +145,13 @@ def main():
 
     weights_path = cfg.MODEL.WEIGHTS
     if not weights_path:
-        # Prefer model_best.pth if it exists, otherwise fall back to model_final.pth
-        best_candidate = os.path.join(cfg.OUTPUT_DIR, "model_best.pth")
+        # model_best.pth is selected on DATASETS.TESTS (the DogReID test split), so it must not
+        # be used for reported results; always evaluate the final checkpoint.
         final_candidate = os.path.join(cfg.OUTPUT_DIR, "model_final.pth")
-        if os.path.exists(best_candidate):
-            weights_path = best_candidate
-        elif os.path.exists(final_candidate):
+        if os.path.exists(final_candidate):
             weights_path = final_candidate
         else:
-            raise ValueError(f"Please specify MODEL.WEIGHTS or place model checkpoint in {cfg.OUTPUT_DIR}")
+            raise ValueError(f"Please specify MODEL.WEIGHTS or place model_final.pth in {cfg.OUTPUT_DIR}")
 
     print(f"Loading checkpoint from: {weights_path}")
     Checkpointer(model).load(weights_path)

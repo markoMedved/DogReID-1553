@@ -49,7 +49,7 @@ class Config:
     k          = 4
     num_ids    = batch_size // k
     clip_len   = 16                # Default 16 for baseline; 8 used in BoT experiments
-    val_split  = 0.2
+    val_split  = 0
 
     # --- Training & Optimization ---
     epochs         = 100           # 100 for baseline, 51 for bot
