@@ -25,6 +25,7 @@ def main():
     parser.add_argument('--world', type=str, default=None, help="'closed' or 'open'")
     parser.add_argument('--clip_len', type=int, default=None, help='Frames per video clip')
     parser.add_argument('--epochs', type=int, default=None, help='Number of training epochs')
+    parser.add_argument('--val_split', type=float, default=None, help='Validation split ratio (e.g., 0.2 for 20%% validation)')
 
     # Re-ID methodology flags
     parser.add_argument(
@@ -101,6 +102,7 @@ def main():
     if args.batch_size is not None: cfg.batch_size = args.batch_size
     if args.k is not None: cfg.k = args.k
     if args.epochs is not None: cfg.epochs = args.epochs
+    if args.val_split is not None: cfg.val_split = args.val_split
     if args.reid_method is not None:
         cfg.reid_method = None if args.reid_method == 'baseline' else args.reid_method
     if args.pooling_type is not None: cfg.pooling_type = args.pooling_type

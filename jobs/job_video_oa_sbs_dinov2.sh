@@ -32,25 +32,7 @@ python train.py \
     --lr 0.0001 \
     --pooling_type ${POOLING} \
     --no_full_finetune \
-    --unfreeze_blocks 2
-
-echo "=========================================================="
-echo "Starting Evaluation: Closed-Set Video-to-Video"
-echo "=========================================================="
-
-python evaluation/make_csv.py \
-    --model_name dinov2 \
-    --world_type closed \
-    --pooling_type ${POOLING}
-
-echo "=========================================================="
-echo "Starting Evaluation: Image-to-Image (Comparison Mode)"
-echo "=========================================================="
-
-python evaluation/make_csv.py \
-    --model_name dinov2 \
-    --world_type closed \
-    --pooling_type ${POOLING} \
-    --use_images
+    --unfreeze_blocks 2 \
+    --val_split 0.2
 
 echo "Video SBS job complete!"

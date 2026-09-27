@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=v_oa_arbase_dinov2
-#SBATCH --output=logs_jobs/video_oa_arbase_dinov2_%j.out
-#SBATCH --error=logs_jobs/video_oa_arbase_dinov2_%j.err
+#SBATCH --job-name=v_oa_bot_dinov2
+#SBATCH --output=logs_jobs/video_oa_bot_dinov2_%j.out
+#SBATCH --error=logs_jobs/video_oa_bot_dinov2_%j.err
 #SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
@@ -18,7 +18,7 @@ cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
 POOLING="attention"
-MODEL_NAME="oa_arbase"
+MODEL_NAME="oa_bot"
 
 echo "=========================================================="
 echo "Starting Video-to-Video Training: ${MODEL_NAME} (pooling=${POOLING}, partial freezing with DINOv2)"
@@ -35,4 +35,4 @@ python train.py \
     --unfreeze_blocks 2 \
     --val_split 0.2
 
-echo "Video ARBase job complete!"
+echo "Video BoT job complete!"
