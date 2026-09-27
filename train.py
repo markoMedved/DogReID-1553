@@ -161,50 +161,71 @@ def main():
     print(trainable_report(model))
 
     # ------------------------------------------------
-    # OPTIMIZER
+    # OPTIMIZER & SCHEDULER
     # ------------------------------------------------
-    def is_pretrained(name):
-        return (
-            name.startswith('backbone')
-            or name.startswith('jpm.')
-            or name.startswith('oa_model.backbone')
-            or name.startswith('oa_model.b1')
-            or name.startswith('oa_model.b2')
-            or name.startswith('oa_model.b3')
-        )
+    oa_sched_dict = None
+    if getattr(model, "is_openanimals", False):
+        from openanimals.solver import build_optimizer as build_oa_optimizer
+        from openanimals.solver import build_lr_scheduler as build_oa_scheduler
 
-    backbone_params = [
-        p for n, p in model.named_parameters()
-        if p.requires_grad and is_pretrained(n)
-    ]
+        model.oa_cfg.defrost()
+        if args.epochs is not None:
+            model.oa_cfg.SOLVER.MAX_EPOCH = cfg.epochs
+        if args.lr is not None:
+            model.oa_cfg.SOLVER.BASE_LR = cfg.lr
+        if args.weight_decay is not None:
+            model.oa_cfg.SOLVER.WEIGHT_DECAY = cfg.weight_decay
+            model.oa_cfg.SOLVER.WEIGHT_DECAY_NORM = cfg.weight_decay
+        model.oa_cfg.freeze()
 
-    head_params = [
-        p for n, p in model.named_parameters()
-        if p.requires_grad and not is_pretrained(n)
-    ]
+        optimizer, _ = build_oa_optimizer(model.oa_cfg, model)
+        iters_per_epoch = len(train_loader)
+        oa_sched_dict = build_oa_scheduler(model.oa_cfg, optimizer, iters_per_epoch=iters_per_epoch)
+        scheduler = None
+        print(f"[optim] OpenAnimals native optimizer ({type(optimizer).__name__}) initialized with base_lr={model.oa_cfg.SOLVER.BASE_LR}")
+    else:
+        def is_pretrained(name):
+            return (
+                name.startswith('backbone')
+                or name.startswith('jpm.')
+                or name.startswith('oa_model.backbone')
+                or name.startswith('oa_model.b1')
+                or name.startswith('oa_model.b2')
+                or name.startswith('oa_model.b3')
+            )
 
-    param_groups = []
-    if backbone_params:
-        param_groups.append({"params": backbone_params, "lr": cfg.lr * 0.1})
-    if head_params:
-        param_groups.append({"params": head_params, "lr": cfg.lr})
+        backbone_params = [
+            p for n, p in model.named_parameters()
+            if p.requires_grad and is_pretrained(n)
+        ]
 
-    if not param_groups:
-        raise ValueError(
-            "No trainable parameters found for optimizer! "
-            "Ensure at least part of the backbone or head has requires_grad=True."
-        )
+        head_params = [
+            p for n, p in model.named_parameters()
+            if p.requires_grad and not is_pretrained(n)
+        ]
 
-    n_bb = sum(p.numel() for p in backbone_params)
-    n_hd = sum(p.numel() for p in head_params)
-    print(f"[optim] pretrained {n_bb:,} params @ lr*0.1 | heads {n_hd:,} params @ lr")
+        param_groups = []
+        if backbone_params:
+            param_groups.append({"params": backbone_params, "lr": cfg.lr * 0.1})
+        if head_params:
+            param_groups.append({"params": head_params, "lr": cfg.lr})
 
-    optimizer = torch.optim.AdamW(param_groups, weight_decay=cfg.weight_decay)
+        if not param_groups:
+            raise ValueError(
+                "No trainable parameters found for optimizer! "
+                "Ensure at least part of the backbone or head has requires_grad=True."
+            )
 
-    # --- BUILD SCHEDULER ---
-    scheduler = None
-    if cfg.reid_method in ('bot', 'transreid'):
-        scheduler = build_scheduler(optimizer, cfg)
+        n_bb = sum(p.numel() for p in backbone_params)
+        n_hd = sum(p.numel() for p in head_params)
+        print(f"[optim] pretrained {n_bb:,} params @ lr*0.1 | heads {n_hd:,} params @ lr")
+
+        optimizer = torch.optim.AdamW(param_groups, weight_decay=cfg.weight_decay)
+
+        # --- BUILD SCHEDULER ---
+        scheduler = None
+        if cfg.reid_method in ('bot', 'transreid'):
+            scheduler = build_scheduler(optimizer, cfg)
 
     # ------------------------------------------------
     # METRIC LEARNING SETUP
@@ -224,7 +245,8 @@ def main():
         loss_fn=loss_fn,
         miner=miner,
         cfg=cfg,
-        scheduler=scheduler
+        scheduler=scheduler,
+        oa_sched_dict=oa_sched_dict
     )
 
     trainer.train()

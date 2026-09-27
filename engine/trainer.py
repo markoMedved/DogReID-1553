@@ -9,7 +9,7 @@ import torch.nn as nn
 class Trainer:
     "Class that has the training logic"
     def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner,
-                 scheduler=None):
+                 scheduler=None, oa_sched_dict=None):
         # --- Move Model to Compute Device ---
         self.model = model.to(cfg.device)
 
@@ -21,6 +21,8 @@ class Trainer:
         # --- Training Configuration ---
         self.optimizer = optimizer
         self.scheduler = scheduler # Stepped once per epoch, may be None
+        self.oa_sched_dict = oa_sched_dict
+        self.total_iters = 0
         self.device = cfg.device
         self.cfg = cfg
 
@@ -63,7 +65,13 @@ class Trainer:
 
             # --- Learning Rate Schedule ---
             # Stepped per epoch, matching the warmup and milestone units
-            if self.scheduler is not None:
+            if self.oa_sched_dict and "lr_sched" in self.oa_sched_dict:
+                oa_cfg = getattr(self.model, "oa_cfg", None)
+                delay_epochs = oa_cfg.SOLVER.DELAY_EPOCHS if oa_cfg else 0
+                warmup_iters = oa_cfg.SOLVER.WARMUP_ITERS if oa_cfg else 1000
+                if self.total_iters >= warmup_iters and (epoch + 1) > delay_epochs:
+                    self.oa_sched_dict["lr_sched"].step()
+            elif self.scheduler is not None:
                 self.scheduler.step()
 
             # --- Validation Evaluation ---
@@ -112,34 +120,40 @@ class Trainer:
             videos = videos.to(self.device)
             labels = labels.to(self.device)
 
-            # Forward Pass -> Generate embedding vectors
-            with torch.autocast(device_type=self.device.type,
-                                dtype=self.amp_dtype,
-                                enabled=self.amp_enabled):
-                outputs = self.model(videos)
-
-            if isinstance(outputs, tuple):
-                embeddings, logits = outputs
+            # Forward Pass & Loss Computation
+            if getattr(self.model, "is_openanimals", False):
+                with torch.autocast(device_type=self.device.type,
+                                    dtype=self.amp_dtype,
+                                    enabled=self.amp_enabled):
+                    feat, cls_outputs, total_loss, loss_dict = self.model(videos, targets=labels)
             else:
-                embeddings, logits = outputs, None
+                with torch.autocast(device_type=self.device.type,
+                                    dtype=self.amp_dtype,
+                                    enabled=self.amp_enabled):
+                    outputs = self.model(videos)
 
-            # Losses are computed in float32; metric learning is sensitive to
-            # reduced precision in the distance matrix
-            embeddings = embeddings.float()
-            if logits is not None:
-                logits = logits.float()
+                if isinstance(outputs, tuple):
+                    embeddings, logits = outputs
+                else:
+                    embeddings, logits = outputs, None
 
-            # --- Hard Pair Mining ---
-            # Selects the hardest positive/negative pairs to optimize learning
-            hard_pairs = self.miner(embeddings, labels)
-            loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
+                # Losses are computed in float32; metric learning is sensitive to
+                # reduced precision in the distance matrix
+                embeddings = embeddings.float()
+                if logits is not None:
+                    logits = logits.float()
 
-            # --- Metric Learning & Identity Loss ---
-            if logits is not None and getattr(self.cfg, 'num_classes', 0) > 0:
-                loss_id = self.id_loss_fn(logits, labels)
-                total_loss = loss_triplet + self.id_loss_weight * loss_id
-            else:
-                total_loss = loss_triplet
+                # --- Hard Pair Mining ---
+                # Selects the hardest positive/negative pairs to optimize learning
+                hard_pairs = self.miner(embeddings, labels)
+                loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
+
+                # --- Metric Learning & Identity Loss ---
+                if logits is not None and getattr(self.cfg, 'num_classes', 0) > 0:
+                    loss_id = self.id_loss_fn(logits, labels)
+                    total_loss = loss_triplet + self.id_loss_weight * loss_id
+                else:
+                    total_loss = loss_triplet
 
             # --- Backpropagation with Accumulation ---
             # Divides loss by accumulation steps to average gradients correctly
@@ -149,8 +163,9 @@ class Trainer:
             else:
                 loss.backward()
 
-            # Update weights only after specified accumulation steps
-            if (i + 1) % accum_steps == 0:
+            # Update weights after specified accumulation steps or at the end of epoch
+            is_last_step = (i + 1) == len(self.train_loader)
+            if (i + 1) % accum_steps == 0 or is_last_step:
                 if self.scaler.is_enabled():
                     self.scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
@@ -161,9 +176,21 @@ class Trainer:
                     self.optimizer.step()
                 self.optimizer.zero_grad()
 
+                # OpenAnimals Warmup LR stepping per iteration
+                self.total_iters += 1
+                if self.oa_sched_dict and "warmup_sched" in self.oa_sched_dict:
+                    oa_cfg = getattr(self.model, "oa_cfg", None)
+                    warmup_iters = oa_cfg.SOLVER.WARMUP_ITERS if oa_cfg else 1000
+                    if self.total_iters <= warmup_iters:
+                        self.oa_sched_dict["warmup_sched"].step()
+
             # --- Update Progress Logging ---
             running_loss += total_loss.item()
-            pbar.set_postfix(loss=total_loss.item())
+            if getattr(self.model, "is_openanimals", False):
+                sub_losses = " ".join(f"{k.replace('loss_', '')}:{v.item():.3f}" for k, v in loss_dict.items())
+                pbar.set_postfix_str(f"loss={total_loss.item():.4f} [{sub_losses}]")
+            else:
+                pbar.set_postfix(loss=total_loss.item())
 
         return running_loss / len(self.train_loader)
 
