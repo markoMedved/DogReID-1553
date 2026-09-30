@@ -80,6 +80,18 @@ def main():
         default=False, 
         help='Mask out the dog for the background-only diagnostic experiment'
     )
+    parser.add_argument(
+        '--optimizer', 
+        type=str, 
+        default=None, 
+        help='Optimizer to use: adam, adamw, or sgd'
+    )
+    parser.add_argument(
+        '--accum_steps', 
+        type=int, 
+        default=None, 
+        help='Number of gradient accumulation steps (default 1 for OpenAnimals)'
+    )
 
     args = parser.parse_args()
 
@@ -103,6 +115,7 @@ def main():
     if args.k is not None: cfg.k = args.k
     if args.epochs is not None: cfg.epochs = args.epochs
     if args.val_split is not None: cfg.val_split = args.val_split
+    if args.accum_steps is not None: cfg.accum_steps = args.accum_steps
     if args.reid_method is not None:
         cfg.reid_method = None if args.reid_method == 'baseline' else args.reid_method
     if args.pooling_type is not None: cfg.pooling_type = args.pooling_type
@@ -110,12 +123,14 @@ def main():
     if args.unfreeze_blocks is not None: cfg.unfreeze_blocks = args.unfreeze_blocks
     if args.use_id_loss is not None: cfg.use_id_loss = args.use_id_loss
 
+    if args.optimizer is not None: cfg.optimizer = args.optimizer
+
     # Re-ID BoT hyperparameter adjustments if reid_method is active and not overridden
     if cfg.reid_method in ('bot', 'transreid'):
-        if args.epochs is None: cfg.epochs = 51
-        if args.lr is None: cfg.lr = 2e-05
+        if args.epochs is None: cfg.epochs = getattr(cfg, "epochs", 120)
+        if args.lr is None: cfg.lr = getattr(cfg, "lr", 3.5e-04)
         if args.clip_len is None: cfg.clip_len = 8
-        cfg.accum_steps = 2
+        if args.accum_steps is None: cfg.accum_steps = getattr(cfg, "accum_steps", 1)
 
         if not any(m < cfg.epochs for m in cfg.lr_milestones):
             raise ValueError(
@@ -164,68 +179,58 @@ def main():
     # OPTIMIZER & SCHEDULER
     # ------------------------------------------------
     oa_sched_dict = None
-    if getattr(model, "is_openanimals", False):
-        from openanimals.solver import build_optimizer as build_oa_optimizer
-        from openanimals.solver import build_lr_scheduler as build_oa_scheduler
 
-        model.oa_cfg.defrost()
-        if args.epochs is not None:
-            model.oa_cfg.SOLVER.MAX_EPOCH = cfg.epochs
-        if args.lr is not None:
-            model.oa_cfg.SOLVER.BASE_LR = cfg.lr
-        if args.weight_decay is not None:
-            model.oa_cfg.SOLVER.WEIGHT_DECAY = cfg.weight_decay
-            model.oa_cfg.SOLVER.WEIGHT_DECAY_NORM = cfg.weight_decay
-        model.oa_cfg.freeze()
+    def is_pretrained(name):
+        if 'NL_' in name or 'nonlocal' in name.lower():
+            return False
+        return (
+            name.startswith('backbone')
+            or name.startswith('jpm.')
+            or name.startswith('oa_model.backbone')
+            or name.startswith('oa_model.b1')
+            or name.startswith('oa_model.b2')
+            or name.startswith('oa_model.b3')
+        )
 
-        optimizer, _ = build_oa_optimizer(model.oa_cfg, model)
-        iters_per_epoch = len(train_loader)
-        oa_sched_dict = build_oa_scheduler(model.oa_cfg, optimizer, iters_per_epoch=iters_per_epoch)
-        scheduler = None
-        print(f"[optim] OpenAnimals native optimizer ({type(optimizer).__name__}) initialized with base_lr={model.oa_cfg.SOLVER.BASE_LR}")
-    else:
-        def is_pretrained(name):
-            return (
-                name.startswith('backbone')
-                or name.startswith('jpm.')
-                or name.startswith('oa_model.backbone')
-                or name.startswith('oa_model.b1')
-                or name.startswith('oa_model.b2')
-                or name.startswith('oa_model.b3')
-            )
+    backbone_params = [
+        p for n, p in model.named_parameters()
+        if p.requires_grad and is_pretrained(n)
+    ]
 
-        backbone_params = [
-            p for n, p in model.named_parameters()
-            if p.requires_grad and is_pretrained(n)
-        ]
+    head_params = [
+        p for n, p in model.named_parameters()
+        if p.requires_grad and not is_pretrained(n)
+    ]
 
-        head_params = [
-            p for n, p in model.named_parameters()
-            if p.requires_grad and not is_pretrained(n)
-        ]
+    param_groups = []
+    if backbone_params:
+        param_groups.append({"params": backbone_params, "lr": cfg.lr * 0.1})
+    if head_params:
+        param_groups.append({"params": head_params, "lr": cfg.lr})
 
-        param_groups = []
-        if backbone_params:
-            param_groups.append({"params": backbone_params, "lr": cfg.lr * 0.1})
-        if head_params:
-            param_groups.append({"params": head_params, "lr": cfg.lr})
+    if not param_groups:
+        raise ValueError(
+            "No trainable parameters found for optimizer! "
+            "Ensure at least part of the backbone or head has requires_grad=True."
+        )
 
-        if not param_groups:
-            raise ValueError(
-                "No trainable parameters found for optimizer! "
-                "Ensure at least part of the backbone or head has requires_grad=True."
-            )
-
-        n_bb = sum(p.numel() for p in backbone_params)
-        n_hd = sum(p.numel() for p in head_params)
-        print(f"[optim] pretrained {n_bb:,} params @ lr*0.1 | heads {n_hd:,} params @ lr")
-
+    n_bb = sum(p.numel() for p in backbone_params)
+    n_hd = sum(p.numel() for p in head_params)
+    opt_name = str(getattr(cfg, "optimizer", "adam")).lower()
+    if opt_name == "sgd" or "mgn" in str(getattr(cfg, "model", "")).lower():
+        optimizer = torch.optim.SGD(param_groups, momentum=0.9, weight_decay=getattr(cfg, "weight_decay", 5e-4))
+        print(f"[optim] Using SGD optimizer (momentum=0.9, weight_decay={getattr(cfg, 'weight_decay', 5e-4)})")
+    elif opt_name == "adamw":
         optimizer = torch.optim.AdamW(param_groups, weight_decay=cfg.weight_decay)
+        print(f"[optim] Using AdamW optimizer (weight_decay={cfg.weight_decay})")
+    else:
+        optimizer = torch.optim.Adam(param_groups, weight_decay=cfg.weight_decay)
+        print(f"[optim] Using Adam optimizer (weight_decay={cfg.weight_decay})")
 
-        # --- BUILD SCHEDULER ---
-        scheduler = None
-        if cfg.reid_method in ('bot', 'transreid'):
-            scheduler = build_scheduler(optimizer, cfg)
+    # --- BUILD SCHEDULER ---
+    scheduler = None
+    if cfg.reid_method in ('bot', 'transreid') or getattr(model, "is_openanimals", False):
+        scheduler = build_scheduler(optimizer, cfg)
 
     # ------------------------------------------------
     # METRIC LEARNING SETUP

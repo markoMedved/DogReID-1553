@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
@@ -38,6 +39,9 @@ class Trainer:
         # --- Mixed Precision ---
         # Only active on CUDA. bfloat16 needs no gradient scaler; float16 does.
         amp = getattr(cfg, 'amp', 'bf16')
+        if amp == 'bf16' and self.device.type == 'cuda' and not torch.cuda.is_bf16_supported():
+            print("[amp] CUDA device does not support hardware bf16 (e.g. V100); falling back to fp16")
+            amp = 'fp16'
         self.amp_dtype = {'bf16': torch.bfloat16, 'fp16': torch.float16}.get(amp)
         self.amp_enabled = self.amp_dtype is not None and self.device.type == 'cuda'
         self.scaler = torch.amp.GradScaler(
@@ -46,6 +50,43 @@ class Trainer:
         )
         if self.amp_enabled:
             print(f"[amp] mixed precision enabled ({amp})")
+
+        # --- History Tracking & Checkpointing ---
+        self.history = {
+            "epochs": [],
+            "losses": [],
+            "lrs": [],
+            "sub_epochs": [],
+            "cls_losses": [],
+            "tri_losses": [],
+            "eval_epochs": [],
+            "val_losses": [],
+            "val_pos_dists": [],
+            "rank1": [],
+            "rank5": [],
+            "mAP": []
+        }
+        self.best_mAP = 0.0
+        self.best_r1 = 0.0
+
+
+    def _save_and_plot_history(self):
+        try:
+            self.cfg.output_dir.mkdir(parents=True, exist_ok=True)
+            hist_file = self.cfg.output_dir / "training_history.json"
+            with open(hist_file, "w") as f:
+                json.dump(self.history, f, indent=2)
+
+            import sys
+            root_dir = str(getattr(self.cfg, "project_root", Path(__file__).resolve().parent.parent))
+            if root_dir not in sys.path:
+                sys.path.insert(0, root_dir)
+
+            from evaluation.plot_training_logs import plot_metrics
+            plot_file = self.cfg.output_dir / "training_curves.png"
+            plot_metrics(self.history, str(plot_file), title=f"Training & Validation: {self.cfg.run_name}")
+        except Exception as e:
+            print(f"[history] Warning: failed to save/plot metrics: {e}")
 
 
     def train(self):
@@ -58,10 +99,25 @@ class Trainer:
             self.current_epoch = epoch
 
             # Run one full training epoch
-            avg_loss = self.train_epoch(epoch)
-            # One learning rate per parameter group: pretrained first, heads second
-            lrs = " / ".join(f"{g['lr']:.2e}" for g in self.optimizer.param_groups)
-            print(f"Epoch {epoch} | Loss: {avg_loss:.4f} | LR: {lrs}")
+            avg_loss, avg_cls, avg_tri = self.train_epoch(epoch)
+            # One learning rate per parameter group: deduplicate unique LRs
+            unique_lrs = []
+            for g in self.optimizer.param_groups:
+                lr_str = f"{g['lr']:.2e}"
+                if lr_str not in unique_lrs:
+                    unique_lrs.append(lr_str)
+            lrs = " / ".join(unique_lrs)
+            print(f"Epoch {epoch} | Train Loss: {avg_loss:.4f} | LR: {lrs}")
+
+            # Save history entry for this epoch
+            current_lr = self.optimizer.param_groups[0]["lr"]
+            self.history["epochs"].append(epoch)
+            self.history["losses"].append(float(avg_loss))
+            self.history["lrs"].append(float(current_lr))
+            if avg_cls is not None and avg_tri is not None:
+                self.history["sub_epochs"].append(epoch)
+                self.history["cls_losses"].append(float(avg_cls))
+                self.history["tri_losses"].append(float(avg_tri))
 
             # --- Learning Rate Schedule ---
             # Stepped per epoch, matching the warmup and milestone units
@@ -74,13 +130,43 @@ class Trainer:
             elif self.scheduler is not None:
                 self.scheduler.step()
 
-            # --- Validation Evaluation ---
+            # --- Validation Evaluation (runs every epoch if eval_period=1) ---
             if val_split > 0 and self.cfg.world == "closed":
-                # Run evaluation only at specified intervals
                 if (epoch + 1) % self.cfg.eval_period == 0:
-                    rank1, rank5, mAP = self.evaluate()
-            # Inside your engine/trainer.py loop:
-            if (epoch + 1) % 10 == 0:
+                    r1, r5, mAP, val_loss, val_pos_dist = self.evaluate()
+                    self.history["eval_epochs"].append(epoch + 1)
+                    self.history["val_losses"].append(float(val_loss))
+                    self.history["val_pos_dists"].append(float(val_pos_dist))
+                    self.history["rank1"].append(float(r1 * 100))
+                    self.history["rank5"].append(float(r5 * 100))
+                    self.history["mAP"].append(float(mAP * 100))
+
+                    # Track and save best model
+                    if mAP > self.best_mAP:
+                        self.best_mAP = mAP
+                        self.best_r1 = r1
+                        best_path = self.cfg.output_dir / "best_model.pth"
+                        torch.save({
+                            'epoch': epoch + 1,
+                            'state_dict': self.model.state_dict(),
+                            'optimizer': self.optimizer.state_dict(),
+                            'mAP': mAP,
+                            'rank1': r1,
+                            'val_loss': val_loss
+                        }, best_path)
+                        print(f"--> [BEST] New best model saved! (Rank-1: {r1:.2%}, mAP: {mAP:.2%}, Val Loss: {val_loss:.4f}) -> {best_path}")
+
+            # Save latest checkpoint every epoch
+            latest_path = self.cfg.output_dir / "latest_model.pth"
+            torch.save({
+                'epoch': epoch + 1,
+                'state_dict': self.model.state_dict(),
+                'optimizer': self.optimizer.state_dict(),
+            }, latest_path)
+
+            # Periodic checkpoint (every save_period epochs)
+            save_period = getattr(self.cfg, 'save_period', 10)
+            if (epoch + 1) % save_period == 0:
                 checkpoint_path = self.cfg.output_dir / f"model_epoch_{epoch + 1}.pth"
                 torch.save({
                     'epoch': epoch + 1,
@@ -88,10 +174,9 @@ class Trainer:
                     'optimizer': self.optimizer.state_dict(),
                 }, checkpoint_path)
                 print(f"--> Saved periodic checkpoint to {checkpoint_path}")
-                    
-            save_period = getattr(self.cfg, 'save_period', 10)
-            if (epoch + 1) % save_period == 0:
-                self.save_checkpoint(f"checkpoint_epoch_{epoch+1}.pth")        
+
+            # Update live training curves PNG and history JSON
+            self._save_and_plot_history()        
 
         # --- Final Model Saving ---
         # Automatically saves the model if trained on the full dataset
@@ -108,6 +193,9 @@ class Trainer:
         accum_steps = getattr(self.cfg, 'accum_steps', 8) 
 
         running_loss = 0.0
+        running_cls = 0.0
+        running_tri = 0.0
+        has_sub = False
         self.optimizer.zero_grad()
 
         # Initialize progress bar
@@ -121,39 +209,42 @@ class Trainer:
             labels = labels.to(self.device)
 
             # Forward Pass & Loss Computation
-            if getattr(self.model, "is_openanimals", False):
-                with torch.autocast(device_type=self.device.type,
-                                    dtype=self.amp_dtype,
-                                    enabled=self.amp_enabled):
-                    feat, cls_outputs, total_loss, loss_dict = self.model(videos, targets=labels)
+            with torch.autocast(device_type=self.device.type,
+                                dtype=self.amp_dtype,
+                                enabled=self.amp_enabled):
+                outputs = self.model(videos, targets=labels)
+
+            if isinstance(outputs, tuple):
+                embeddings, logits = outputs
             else:
-                with torch.autocast(device_type=self.device.type,
-                                    dtype=self.amp_dtype,
-                                    enabled=self.amp_enabled):
-                    outputs = self.model(videos)
+                embeddings, logits = outputs, None
 
-                if isinstance(outputs, tuple):
-                    embeddings, logits = outputs
+            # Losses are computed in float32; metric learning is sensitive to
+            # reduced precision in the distance matrix
+            embeddings = embeddings.float()
+            if logits is not None:
+                if isinstance(logits, (list, tuple)):
+                    logits = [l.float() for l in logits]
                 else:
-                    embeddings, logits = outputs, None
-
-                # Losses are computed in float32; metric learning is sensitive to
-                # reduced precision in the distance matrix
-                embeddings = embeddings.float()
-                if logits is not None:
                     logits = logits.float()
 
-                # --- Hard Pair Mining ---
-                # Selects the hardest positive/negative pairs to optimize learning
-                hard_pairs = self.miner(embeddings, labels)
-                loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
+            # --- Hard Pair Mining ---
+            # Selects the hardest positive/negative pairs to optimize learning
+            hard_pairs = self.miner(embeddings, labels)
+            loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
 
-                # --- Metric Learning & Identity Loss ---
-                if logits is not None and getattr(self.cfg, 'num_classes', 0) > 0:
-                    loss_id = self.id_loss_fn(logits, labels)
-                    total_loss = loss_triplet + self.id_loss_weight * loss_id
+            # --- Metric Learning & Identity Loss ---
+            if logits is not None and getattr(self.cfg, 'num_classes', 0) > 0:
+                if isinstance(logits, (list, tuple)):
+                    loss_id = sum(self.id_loss_fn(l, labels) for l in logits) / len(logits)
                 else:
-                    total_loss = loss_triplet
+                    loss_id = self.id_loss_fn(logits, labels)
+                total_loss = loss_triplet + self.id_loss_weight * loss_id
+                has_sub = True
+                running_cls += loss_id.item()
+                running_tri += loss_triplet.item()
+            else:
+                total_loss = loss_triplet
 
             # --- Backpropagation with Accumulation ---
             # Divides loss by accumulation steps to average gradients correctly
@@ -186,13 +277,16 @@ class Trainer:
 
             # --- Update Progress Logging ---
             running_loss += total_loss.item()
-            if getattr(self.model, "is_openanimals", False):
-                sub_losses = " ".join(f"{k.replace('loss_', '')}:{v.item():.3f}" for k, v in loss_dict.items())
-                pbar.set_postfix_str(f"loss={total_loss.item():.4f} [{sub_losses}]")
+            if has_sub:
+                pbar.set_postfix_str(f"loss={total_loss.item():.4f} [tri:{loss_triplet.item():.3f} id:{loss_id.item():.3f}]")
             else:
                 pbar.set_postfix(loss=total_loss.item())
 
-        return running_loss / len(self.train_loader)
+        n_batches = len(self.train_loader)
+        avg_loss = running_loss / n_batches
+        avg_cls = (running_cls / n_batches) if has_sub else None
+        avg_tri = (running_tri / n_batches) if has_sub else None
+        return avg_loss, avg_cls, avg_tri
 
     @torch.no_grad()
     def evaluate(self):
@@ -207,11 +301,37 @@ class Trainer:
         # --- Closed-World Evaluation ---
         # Assumes every query identity exists within the gallery
         if self.cfg.world == "closed":
-            dist_mat = 1 - torch.mm(q_f, g_f.t())  # Calculate cosine distance
-            r1, r5, mAP = self.calculate_cmc_map(dist_mat.numpy(), q_pids.numpy(), g_pids.numpy())
+            dist_mat = 1.0 - torch.mm(q_f, g_f.t())  # Calculate cosine distance
+            dist_np = dist_mat.numpy()
+            q_np = q_pids.numpy()
+            g_np = g_pids.numpy()
+
+            # Compute validation matching distances
+            match_mask = (q_np[:, None] == g_np[None, :])
+            val_pos_dist = float(dist_np[match_mask].mean()) if np.any(match_mask) else 0.0
+            val_neg_dist = float(dist_np[~match_mask].mean()) if np.any(~match_mask) else 0.0
+
+            # Compute Validation Triplet Ranking Loss (batch-hard retrieval loss)
+            valid_queries = match_mask.any(axis=1)
+            if np.any(valid_queries):
+                pos_dists = np.where(match_mask, dist_np, -np.inf)
+                hard_pos = np.max(pos_dists, axis=1)
+
+                neg_dists = np.where(~match_mask, dist_np, np.inf)
+                hard_neg = np.min(neg_dists, axis=1)
+
+                margin = getattr(self.cfg, 'margin', 0.3)
+                triplet_losses = np.maximum(0.0, hard_pos - hard_neg + margin)
+                val_loss = float(np.mean(triplet_losses[valid_queries]))
+            else:
+                val_loss = 0.0
+
+            r1, r5, mAP = self.calculate_cmc_map(dist_np, q_np, g_np)
             
-            print(f"Eval (Closed) -> Rank-1: {r1:.2%}, Rank-5: {r5:.2%}, mAP: {mAP:.2%}")
-            return r1, r5, mAP
+            print(f"Eval (Closed) -> Val Loss: {val_loss:.4f} | Rank-1: {r1:.2%}, Rank-5: {r5:.2%}, mAP: {mAP:.2%} | PosDist: {val_pos_dist:.4f}, NegDist: {val_neg_dist:.4f}")
+            return r1, r5, mAP, val_loss, val_pos_dist
+
+        return 0.0, 0.0, 0.0, 0.0, 0.0
 
 
     def _get_features(self, loader, name):

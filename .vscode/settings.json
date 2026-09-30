@@ -11,5 +11,6 @@
         "**/*tsconfig.json": true,
         ".cache": true,
         "retool.config.json": true
-    }
+    },
+    "antigravity.enableInlineDiff": false
 }

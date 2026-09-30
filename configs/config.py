@@ -40,28 +40,30 @@ class Config:
 
     # --- Hardware & Compute ---
     device      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_workers = 12
+    num_workers = 8
     chunk_size  = 16
     amp         = "bf16"           # 'bf16', 'fp16' or None. CUDA only.
 
     # --- Batch Sampling (PK Strategy) ---
-    batch_size = 16
+    batch_size = 64
     k          = 4
     num_ids    = batch_size // k
-    clip_len   = 16                # Default 16 for baseline; 8 used in BoT experiments
-    val_split  = 0
+    clip_len   = 8               
+    val_split  = 0.2
 
     # --- Training & Optimization ---
-    epochs         = 100           # 100 for baseline, 51 for bot
-    warmup_epochs  = 5
-    lr_milestones  = (25, 35)
+    epochs         = 120           # 120 epochs total (paper)
+    warmup_epochs  = 10            # 10‑epoch linear warmup (3.5e‑5 → 3.5e‑4)
+    lr_milestones  = (40, 70)      # decay LR by 0.1 at epoch 40 and 70
     lr_gamma       = 0.1
+    optimizer      = "adam"        # 'adam', 'adamw', or 'sgd'
     weight_decay   = 1e-05
-    margin         = 0.3
+    margin         = 0.3          # Triplet loss margin α
     id_loss_weight = 1.0
-    lr             = 5e-05         # 5e-05 for baseline, 2e-05 for bot
+    center_loss_weight = 5e-04   # optional center loss β
+    lr             = 3.5e-04      # base LR (heads get this, backbone gets 0.1·LR)
     warmup_factor  = 0.01
-    accum_steps    = 8             # 8 for baseline, 2 for bot
+    accum_steps    = 1            # gradient accumulation (1 for standard paper baseline)
     save_period    = 10
 
     # --- Data Augmentation ---
@@ -96,14 +98,60 @@ class Config:
 
         self.num_ids = self.batch_size // self.k
 
+        oa_models = (
+            "bot", "oa_bot", "openanimals_bot",
+            "agw", "oa_agw", "openanimals_agw",
+            "sbs", "oa_sbs", "openanimals_sbs",
+            "mgn", "oa_mgn", "openanimals_mgn",
+            "arbase", "oa_arbase", "openanimals_arbase",
+            "arbase_mb", "oa_arbase_mb", "arbase_mgn",
+        )
+
         if "swin" in self.backbone:
             self.embedding_dim = 1024
             self.img_size = (192, 192)
-        elif self.backbone.startswith("oa_") or self.backbone.startswith("openanimals_"):
-            self.embedding_dim = 2048 * (8 if "mgn" in self.backbone else 1)
-            self.img_size = (256, 256) if "bot" in self.backbone else (384, 384)
-            if any(k in self.backbone for k in ("arbase", "mgn", "sbs")):
-                self.re_prob = 0.0
+        elif self.backbone in oa_models or self.backbone.startswith("oa_") or self.backbone.startswith("openanimals_"):
+            is_mb = "mgn" in self.backbone or "arbase_mb" in self.backbone
+            self.embedding_dim = 2048 * (8 if is_mb else 1)
+            
+            # Original paper image crop sizes [Height, Width] & augmentations:
+            if "mgn" in self.backbone:
+                self.img_size = (384, 128)  # MGN original paper: 384x128
+                self.re_prob = 0.0          # MGN: Horizontal flip only
+                self.optimizer = "sgd"
+                self.weight_decay = 5e-04
+                self.margin = 1.2
+                self.epochs = 80
+                self.lr = 0.01
+                self.warmup_epochs = 0
+                self.lr_milestones = (40, 60)
+            elif "arbase" in self.backbone:
+                self.img_size = (256, 256)  # ARBase animal dataset crop: 256x256
+                self.re_prob = 0.5          # Random Erasing p=0.5
+                self.optimizer = "adam"
+            elif "agw" in self.backbone:
+                self.img_size = (256, 128)  # AGW original paper: 256x128
+                self.re_prob = 0.5          # Random Erasing p=0.5
+                self.optimizer = "adam"
+            elif "sbs" in self.backbone:
+                self.img_size = (256, 128)  # SBS original paper: 256x128
+                self.re_prob = 0.5          # Random Erasing p=0.5
+                self.optimizer = "adam"
+                self.weight_decay = 5e-04
+            elif "bot" in self.backbone:
+                self.img_size = (256, 128)  # BoT original paper: 256x128
+                self.re_prob = 0.5          # Random Erasing p=0.5
+                self.optimizer = "adam"
+            else:
+                self.img_size = (256, 128)
+                self.re_prob = 0.5
+
+            if getattr(self, "reid_method", None) is None:
+                self.reid_method = "bot"
+        elif "resnet" in self.backbone:
+            self.embedding_dim = 2048
+            self.img_size = (256, 128)
+            self.re_prob = 0.5
         else:
             self.embedding_dim = 768
             self.img_size = (224, 224)
@@ -131,7 +179,7 @@ class Config:
             self.pooling_type, self.full_finetune, getattr(self, "use_id_loss", False),
             getattr(self, "mask_dog", False)
         )
-        self.output_dir = self.project_root / "trained_models" / self.run_name
+        self.output_dir = self.project_root / "checkpoints" / self.run_name
         if make_dir:
             self.output_dir.mkdir(parents=True, exist_ok=True)
         return self.run_name

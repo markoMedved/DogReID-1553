@@ -108,6 +108,12 @@ def _unfreeze_last_blocks(net, n=2):
             _unfreeze(getattr(net, "head", None))
         return True
 
+    # --- Sequential backbone (e.g. MGN backbone) ---
+    if isinstance(net, nn.Sequential):
+        if n > 0:
+            _unfreeze(net[-1])
+        return True
+
     # --- ResNet (layer1..layer4) ---
     if hasattr(net, "layer4"):
         if n > 0:
@@ -122,8 +128,8 @@ def _unfreeze_last_blocks(net, n=2):
 def apply_freezing(model, cfg):
     """Set requires_grad across the model according to cfg.full_finetune."""
 
-    # --- Full Fine-Tuning or OpenAnimals Native Training ---
-    if getattr(cfg, "full_finetune", False) or getattr(model, "is_openanimals", False):
+    # --- Full Fine-Tuning ---
+    if getattr(cfg, "full_finetune", False):
         for p in model.parameters():
             p.requires_grad = True
         return model
@@ -153,6 +159,12 @@ def apply_freezing(model, cfg):
         _unfreeze(getattr(model.oa_model, "b1", None))
         _unfreeze(getattr(model.oa_model, "b2", None))
         _unfreeze(getattr(model.oa_model, "b3", None))
+        for h in ("b1_head", "b2_head", "b21_head", "b22_head",
+                  "b3_head", "b31_head", "b32_head", "b33_head"):
+            _unfreeze(getattr(model.oa_model, h, None))
+        if hasattr(model.oa_model, "backbone"):
+            for nl in ("NL_1", "NL_2", "NL_3", "NL_4"):
+                _unfreeze(getattr(model.oa_model.backbone, nl, None))
 
     # The JPM local branch holds its own copy of the final block
     jpm = getattr(model, "jpm", None)

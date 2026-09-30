@@ -14,21 +14,31 @@ def build_model(cfg):
     based on the provided configuration parameters.
     """
 
+    model_type = getattr(cfg, "backbone", getattr(cfg, "model", None))
+    model_type_str = str(model_type).lower() if model_type else ""
+
+    oa_names = {
+        "bot", "oa_bot", "openanimals_bot",
+        "agw", "oa_agw", "openanimals_agw",
+        "sbs", "oa_sbs", "openanimals_sbs",
+        "mgn", "oa_mgn", "openanimals_mgn",
+        "arbase", "oa_arbase", "openanimals_arbase",
+        "arbase_mb", "oa_arbase_mb", "arbase_mgn",
+    }
+
+    # OpenAnimals architectures (SBS, AGW, MGN, ARBase, OA_BoT)
+    if model_type_str in oa_names:
+        from .openanimals_models import OpenAnimalsVideoModel
+        return OpenAnimalsVideoModel(
+            model_name=model_type_str,
+            pooling_type=getattr(cfg, "pooling_type", "attention"),
+            num_classes=getattr(cfg, "num_classes", 0),
+            chunk_size=getattr(cfg, "chunk_size", 32)
+        )
+
     # --- Re-ID Method Routing (BoT / TransReID) ---
     if getattr(cfg, "reid_method", None) in ("bot", "transreid"):
         return VideoReID(cfg)
-
-    model_type = getattr(cfg, "backbone", getattr(cfg, "model", None))
-    if model_type:
-        model_type_str = str(model_type).lower()
-        if model_type_str.startswith("oa_") or model_type_str.startswith("openanimals_"):
-            from .openanimals_models import OpenAnimalsVideoModel
-            return OpenAnimalsVideoModel(
-                model_name=model_type_str,
-                pooling_type=getattr(cfg, "pooling_type", "attention"),
-                num_classes=getattr(cfg, "num_classes", 0),
-                chunk_size=getattr(cfg, "chunk_size", 32)
-            )
 
     # MiewID is a fixed pretrained baseline; it bypasses the BoT/TransReID
     if model_type == "miewid":

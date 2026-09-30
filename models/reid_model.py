@@ -178,6 +178,8 @@ TIMM_BACKBONES = {
     "swin":      "swinv2_base_window12_192.ms_in22k",
     "convnext":  "convnext_base.fb_in22k",
     "convnetxt": "convnext_base.fb_in22k",
+    "resnet50":  "resnet50.a1_in1k",
+    "resnet":    "resnet50.a1_in1k",
 }
 
 
@@ -301,7 +303,7 @@ class VideoReID(nn.Module):
             return [self.backbone.pooled(x, n_grad=n_grad)]
         return self.jpm(self.backbone.penultimate(x, n_grad=n_grad))
 
-    def forward(self, x):
+    def forward(self, x, targets=None):
         if x.dim() == 5:
             B, T, C, H, W = x.shape
 

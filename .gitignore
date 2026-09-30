@@ -3,6 +3,7 @@ Videos
 Images.zip
 Videos.zip
 trained_models
+checkpoints
 trained_models_neurips
 trained_models_vit
 *.pth
@@ -60,3 +61,4 @@ logs_final_exp3/
 mega_logs/
 logs_jobs/
 logs_old
+logs*

@@ -9,6 +9,7 @@ def build_dataloaders(cfg):
     """Build the train and validation dataloaders for our experiments"""
     
     train_tf = build_video_transforms(cfg, is_train=True)
+    eval_tf = build_video_transforms(cfg, is_train=False)
 
     # --- Global DOG_ID Mapping ---
     full_df = pd.read_csv(cfg.split_file)
@@ -20,15 +21,15 @@ def build_dataloaders(cfg):
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
         "clip_len": cfg.clip_len,
-        "transform": train_tf,
         "world": cfg.world,
         "label_map": global_id_map,
         "mask_dog": getattr(cfg, "mask_dog", False),
         "bbox_file": getattr(cfg, "bbox_file", None),
     }
 
-    # --- Base Training Dataset (SPLIT='train') ---
-    base_train_dataset = DOGVideoREIDDataset(split="train", **dataset_kwargs)
+    # --- Base Training & Validation Datasets (SPLIT='train') ---
+    base_train_dataset = DOGVideoREIDDataset(split="train", transform=train_tf, **dataset_kwargs)
+    base_val_dataset = DOGVideoREIDDataset(split="train", transform=eval_tf, **dataset_kwargs)
 
     # --- Split Dog IDs for Validation ---
     # Avoids identity leakage between training and validation sets
@@ -63,8 +64,8 @@ def build_dataloaders(cfg):
 
     # --- Create PyTorch Subsets ---
     train_dataset = Subset(base_train_dataset, train_indices)
-    val_query_dataset = Subset(base_train_dataset, val_query_indices)
-    val_gallery_dataset = Subset(base_train_dataset, val_gallery_indices)
+    val_query_dataset = Subset(base_val_dataset, val_query_indices)
+    val_gallery_dataset = Subset(base_val_dataset, val_gallery_indices)
 
     # --- PK Sampler Initialization ---
     # Ensures batches contain 'P' identities with 'K' clips each
