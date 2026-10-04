@@ -104,91 +104,172 @@ def parse_log_files(log_path):
     }
 
 
-def plot_metrics(data, output_png, title="Training & Validation Metrics"):
-    has_sublosses = bool(data.get("cls_losses"))
-
-    fig, axes = plt.subplots(1, 3 if has_sublosses else 2, figsize=(18 if has_sublosses else 14, 5.2))
-
-    if has_sublosses:
-        ax_loss, ax_sub, ax_val = axes[0], axes[1], axes[2]
-    else:
-        ax_loss, ax_val = axes[0], axes[1]
-        ax_sub = None
-
-    # --- Plot 1: Total Training Loss vs Validation Loss & Learning Rate ---
-    color = "tab:red"
-    ax_loss.set_xlabel("Epoch", fontsize=11)
-    ax_loss.set_ylabel("Loss", fontsize=11)
-    ax_loss.plot(data["epochs"], data["losses"], color=color, marker="o", markersize=3, label="Train Loss", linewidth=1.8)
-
-    # Plot validation loss if available
-    val_loss_series = data.get("val_losses", [])
+def plot_metrics(data, output_png, title="Training & Evaluation Metrics"):
+    """2x2 grid; train and eval losses get separate panels because their scales differ
+    (train = CE + triplet on raw features, eval = triplet on cosine distances)."""
+    fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+    ax_loss, ax_val_loss = axes[0]
+    ax_sub, ax_val = axes[1]
     eval_epochs = data.get("eval_epochs", [])
-    if val_loss_series and len(val_loss_series) == len(eval_epochs):
-        ax_loss.plot(eval_epochs, val_loss_series, color="tab:blue", marker="s", markersize=4, linestyle="--", label="Val Loss", linewidth=1.8)
 
-    # Optionally plot val pos distance if present
-    val_pos_dists = data.get("val_pos_dists", [])
-    if val_pos_dists and len(val_pos_dists) == len(eval_epochs) and val_pos_dists != val_loss_series:
-        ax_loss.plot(eval_epochs, val_pos_dists, color="tab:cyan", marker="^", markersize=3, linestyle=":", label="Val Pos Dist", linewidth=1.4)
-
-    ax_loss.legend(loc="upper right", frameon=True)
+    # --- Panel 1: Training loss + learning rate ---
+    ax_loss.plot(data["epochs"], data["losses"], color="tab:red", marker="o", markersize=3,
+                 label="Train Loss", linewidth=1.8)
+    ax_loss.set_xlabel("Epoch", fontsize=11)
+    ax_loss.set_ylabel("Train Loss", fontsize=11, color="tab:red")
     ax_loss.grid(True, linestyle="--", alpha=0.5)
-
+    ax_loss.set_title("Training Loss", fontsize=13, fontweight="bold")
     if any(data.get("lrs", [])):
         ax_lr = ax_loss.twinx()
-        color_lr = "tab:gray"
-        ax_lr.set_ylabel("Learning Rate (log)", color=color_lr, fontsize=11)
-        ax_lr.plot(data["epochs"], data["lrs"], color=color_lr, linestyle=":", alpha=0.7, label="LR")
-        ax_lr.tick_params(axis="y", labelcolor=color_lr)
+        ax_lr.plot(data["epochs"], data["lrs"], color="tab:gray", linestyle=":", alpha=0.8, label="LR")
+        ax_lr.set_ylabel("Learning Rate (log)", color="tab:gray", fontsize=11)
+        ax_lr.tick_params(axis="y", labelcolor="tab:gray")
         ax_lr.set_yscale("log")
+        h1, l1 = ax_loss.get_legend_handles_labels()
+        h2, l2 = ax_lr.get_legend_handles_labels()
+        ax_loss.legend(h1 + h2, l1 + l2, loc="upper right", frameon=True)
+    else:
+        ax_loss.legend(loc="upper right", frameon=True)
 
-    ax_loss.set_title("Train Loss vs Validation Loss", fontsize=13, fontweight="bold")
+    # --- Panel 2: Evaluation loss + positive/negative distances ---
+    val_loss_series = data.get("val_losses", [])
+    if val_loss_series and len(val_loss_series) == len(eval_epochs):
+        ax_val_loss.plot(eval_epochs, val_loss_series, color="tab:blue", marker="s", markersize=4,
+                         label="Eval Loss (hard triplet, cosine)", linewidth=1.8)
+        val_pos = data.get("val_pos_dists", [])
+        if val_pos and len(val_pos) == len(eval_epochs) and val_pos != val_loss_series:
+            ax_val_loss.plot(eval_epochs, val_pos, color="tab:cyan", marker="^", markersize=3,
+                             linestyle=":", label="Mean Pos Dist", linewidth=1.4)
+        ax_val_loss.legend(loc="best", frameon=True)
+    else:
+        ax_val_loss.text(0.5, 0.5, "No evaluation yet", ha="center", va="center", transform=ax_val_loss.transAxes)
+    ax_val_loss.set_xlabel("Epoch", fontsize=11)
+    ax_val_loss.set_ylabel("Eval Loss / Distance", fontsize=11)
+    ax_val_loss.set_title("Evaluation Loss", fontsize=13, fontweight="bold")
+    ax_val_loss.grid(True, linestyle="--", alpha=0.5)
 
-    # --- Plot 2: Loss Decomposition (Classification vs Triplet) ---
-    if ax_sub and has_sublosses:
-        ax_sub.plot(data["sub_epochs"], data["cls_losses"], color="tab:purple", marker="v", markersize=3, linewidth=1.8, label="CrossEntropy ($L_{cls}$)")
-        ax_sub.plot(data["sub_epochs"], data["tri_losses"], color="tab:orange", marker="^", markersize=3, linewidth=1.8, label="Triplet ($L_{tri}$)")
-        ax_sub.set_xlabel("Epoch", fontsize=11)
-        ax_sub.set_ylabel("Component Loss", fontsize=11)
-        ax_sub.set_title("Loss Decomposition", fontsize=13, fontweight="bold")
-        ax_sub.legend(loc="best", frameon=True)
-        ax_sub.grid(True, linestyle="--", alpha=0.5)
+    # --- Panel 3: Loss decomposition (separate y-axes: CE and triplet differ in scale) ---
+    if data.get("cls_losses"):
+        ax_sub.plot(data["sub_epochs"], data["cls_losses"], color="tab:purple", marker="v", markersize=3,
+                    linewidth=1.8, label="CrossEntropy ($L_{cls}$)")
+        ax_sub.set_ylabel("$L_{cls}$", color="tab:purple", fontsize=11)
+        ax_tri = ax_sub.twinx()
+        ax_tri.plot(data["sub_epochs"], data["tri_losses"], color="tab:orange", marker="^", markersize=3,
+                    linewidth=1.8, label="Triplet ($L_{tri}$)")
+        ax_tri.set_ylabel("$L_{tri}$", color="tab:orange", fontsize=11)
+        h1, l1 = ax_sub.get_legend_handles_labels()
+        h2, l2 = ax_tri.get_legend_handles_labels()
+        ax_sub.legend(h1 + h2, l1 + l2, loc="upper right", frameon=True)
+    else:
+        ax_sub.text(0.5, 0.5, "No loss components", ha="center", va="center", transform=ax_sub.transAxes)
+    ax_sub.set_xlabel("Epoch", fontsize=11)
+    ax_sub.set_title("Training Loss Decomposition", fontsize=13, fontweight="bold")
+    ax_sub.grid(True, linestyle="--", alpha=0.5)
 
-    # --- Plot 3: Validation Retrieval Metrics (Rank-1, Rank-5, mAP) ---
-    if data.get("eval_epochs"):
-        ax_val.plot(data["eval_epochs"], data["rank1"], color="tab:blue", marker="s", markersize=5, linewidth=2, label="Rank-1 (%)")
-        ax_val.plot(data["eval_epochs"], data["rank5"], color="tab:cyan", marker="^", markersize=5, linewidth=2, label="Rank-5 (%)")
-        ax_val.plot(data["eval_epochs"], data["mAP"], color="tab:green", marker="D", markersize=5, linewidth=2, label="mAP (%)")
+    # --- Panel 4: Retrieval metrics ---
+    if eval_epochs:
+        ax_val.plot(eval_epochs, data["rank1"], color="tab:blue", marker="s", markersize=5, linewidth=2, label="Rank-1 (%)")
+        ax_val.plot(eval_epochs, data["rank5"], color="tab:cyan", marker="^", markersize=5, linewidth=2, label="Rank-5 (%)")
+        ax_val.plot(eval_epochs, data["mAP"], color="tab:green", marker="D", markersize=5, linewidth=2, label="mAP (%)")
+        if data["mAP"]:
+            best = max(data["mAP"])
+            best_ep = eval_epochs[data["mAP"].index(best)]
+            ax_val.plot([best_ep], [best], marker="o", color="red", markersize=9)
+            ax_val.annotate(f"Best mAP: {best:.1f}% (Ep {best_ep})\nLast mAP: {data['mAP'][-1]:.1f}% (Ep {eval_epochs[-1]})",
+                            xy=(best_ep, best), xytext=(0.02, 0.97), textcoords="axes fraction", va="top",
+                            bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7), fontsize=9)
+        ax_val.legend(loc="lower right", frameon=True, shadow=True)
+    ax_val.set_xlabel("Epoch", fontsize=11)
+    ax_val.set_ylabel("Retrieval Score (%)", fontsize=11)
+    ax_val.set_title("Evaluation Metrics", fontsize=13, fontweight="bold")
+    ax_val.grid(True, linestyle="--", alpha=0.5)
 
-        if data["rank1"]:
-            max_r1 = max(data["rank1"])
-            max_idx = data["rank1"].index(max_r1)
-            best_epoch = data["eval_epochs"][max_idx]
-            ax_val.plot([best_epoch], [max_r1], marker="o", color="red", markersize=9)
-            ax_val.annotate(
-                f"Best: {max_r1:.1f}% (Ep {best_epoch})",
-                xy=(best_epoch, max_r1),
-                xytext=(best_epoch, max_r1 + 0.5),
-                ha="center",
-                bbox=dict(boxstyle="round,pad=0.2", facecolor="yellow", alpha=0.7),
-                fontsize=9
-            )
-
-        ax_val.set_xlabel("Epoch", fontsize=11)
-        ax_val.set_ylabel("Retrieval Score (%)", fontsize=11)
-        ax_val.set_title("Validation Metrics (Unseen Dogs)", fontsize=13, fontweight="bold")
-        ax_val.legend(loc="upper right", frameon=True, shadow=True)
-        ax_val.grid(True, linestyle="--", alpha=0.5)
-
-    fig.suptitle(title, fontsize=14, fontweight="bold", y=1.02)
+    fig.suptitle(title, fontsize=14, fontweight="bold")
     plt.tight_layout()
 
     out_path = Path(output_png)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"-> [SUCCESS] Saved plot to {output_png}")
+
+    # Also save standalone separate plots so train and val loss can be viewed in isolation
+    out_dir = out_path.parent
+    _plot_train_loss(data, out_dir / "loss_train.png", title=f"Training Loss ({out_dir.name})")
+    _plot_val_loss(data, out_dir / "loss_val.png", title=f"Evaluation Loss ({out_dir.name})")
+    _plot_eval_metrics(data, out_dir / "eval_metrics.png", title=f"Retrieval Metrics ({out_dir.name})")
+
+
+def _plot_train_loss(data, output_png, title="Training Loss"):
+    if not data.get("epochs"):
+        return
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(data["epochs"], data["losses"], color="tab:red", marker="o", markersize=3,
+            label="Train Loss", linewidth=1.8)
+    ax.set_xlabel("Epoch", fontsize=11)
+    ax.set_ylabel("Train Loss", fontsize=11, color="tab:red")
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.set_title(title, fontsize=12, fontweight="bold")
+    if any(data.get("lrs", [])):
+        ax_lr = ax.twinx()
+        ax_lr.plot(data["epochs"], data["lrs"], color="tab:gray", linestyle=":", alpha=0.8, label="LR")
+        ax_lr.set_ylabel("Learning Rate (log)", color="tab:gray", fontsize=11)
+        ax_lr.set_yscale("log")
+        h1, l1 = ax.get_legend_handles_labels()
+        h2, l2 = ax_lr.get_legend_handles_labels()
+        ax.legend(h1 + h2, l1 + l2, loc="upper right", frameon=True)
+    else:
+        ax.legend(loc="upper right", frameon=True)
+    plt.tight_layout()
+    plt.savefig(output_png, dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def _plot_val_loss(data, output_png, title="Evaluation Loss"):
+    eval_epochs = data.get("eval_epochs", [])
+    val_loss_series = data.get("val_losses", [])
+    if not eval_epochs or not val_loss_series:
+        return
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(eval_epochs, val_loss_series, color="tab:blue", marker="s", markersize=4,
+            label="Eval Loss (hard triplet, cosine)", linewidth=1.8)
+    val_pos = data.get("val_pos_dists", [])
+    if val_pos and len(val_pos) == len(eval_epochs) and val_pos != val_loss_series:
+        ax.plot(eval_epochs, val_pos, color="tab:cyan", marker="^", markersize=3,
+                linestyle=":", label="Mean Pos Dist", linewidth=1.4)
+    ax.set_xlabel("Epoch", fontsize=11)
+    ax.set_ylabel("Eval Loss / Distance", fontsize=11)
+    ax.set_title(title, fontsize=12, fontweight="bold")
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(loc="best", frameon=True)
+    plt.tight_layout()
+    plt.savefig(output_png, dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def _plot_eval_metrics(data, output_png, title="Retrieval Metrics"):
+    eval_epochs = data.get("eval_epochs", [])
+    if not eval_epochs or not data.get("rank1"):
+        return
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(eval_epochs, data["rank1"], color="tab:blue", marker="s", markersize=5, linewidth=2, label="Rank-1 (%)")
+    ax.plot(eval_epochs, data["rank5"], color="tab:cyan", marker="^", markersize=5, linewidth=2, label="Rank-5 (%)")
+    ax.plot(eval_epochs, data["mAP"], color="tab:green", marker="D", markersize=5, linewidth=2, label="mAP (%)")
+    if data.get("mAP"):
+        best = max(data["mAP"])
+        best_ep = eval_epochs[data["mAP"].index(best)]
+        ax.plot([best_ep], [best], marker="o", color="red", markersize=9)
+        ax.annotate(f"Best mAP: {best:.1f}% (Ep {best_ep})\nLast mAP: {data['mAP'][-1]:.1f}% (Ep {eval_epochs[-1]})",
+                    xy=(best_ep, best), xytext=(0.02, 0.95), textcoords="axes fraction", va="top",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7), fontsize=9)
+    ax.set_xlabel("Epoch", fontsize=11)
+    ax.set_ylabel("Retrieval Score (%)", fontsize=11)
+    ax.set_title(title, fontsize=12, fontweight="bold")
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(loc="lower right", frameon=True, shadow=True)
+    plt.tight_layout()
+    plt.savefig(output_png, dpi=150, bbox_inches="tight")
+    plt.close()
 
 
 def main():

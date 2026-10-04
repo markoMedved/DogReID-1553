@@ -17,6 +17,7 @@ import math
 import random
 
 import torch
+import numpy as np
 from torchvision import transforms
 
 
@@ -72,7 +73,18 @@ def build_transforms(cfg, is_train: bool):
 
     # --- Training Augmentations ---
     pad = getattr(cfg, "aug_pad", 10)
-    return transforms.Compose([
+    tfs = []
+    autoaug_prob = getattr(cfg, "autoaug_prob", 0.0)
+    if autoaug_prob > 0:
+        # OpenAnimals applies AutoAugment first, before resizing (SBS: p=0.1)
+        import sys
+        from pathlib import Path
+        oa_dir = str(Path(__file__).resolve().parent.parent / "OpenAnimals")
+        if oa_dir not in sys.path:
+            sys.path.insert(0, oa_dir)
+        from openanimals.data.transforms.autoaugment import AutoAugment
+        tfs.append(transforms.RandomApply([AutoAugment()], p=autoaug_prob))
+    tfs += [
         transforms.Resize(size, interpolation=transforms.InterpolationMode.BICUBIC),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.Pad(pad),
@@ -80,7 +92,8 @@ def build_transforms(cfg, is_train: bool):
         transforms.ToTensor(),
         transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
         RandomErasing(probability=getattr(cfg, "re_prob", 0.5)),
-    ])
+    ]
+    return transforms.Compose(tfs)
 
 
 class ClipTransform:
@@ -101,6 +114,7 @@ class ClipTransform:
         for frame in frames:
             random.seed(seed)
             torch.manual_seed(seed)
+            np.random.seed(seed)
             out.append(self.frame_tf(frame))
 
         return torch.stack(out, dim=0)

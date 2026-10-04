@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=v_bot
-#SBATCH --output=logs_jobs/video_bot_%j.out
-#SBATCH --error=logs_jobs/video_bot_%j.err
+#SBATCH --job-name=v_r50_bot
+#SBATCH --output=logs_jobs/video_resnet50_bot_%j.out
+#SBATCH --error=logs_jobs/video_resnet50_bot_%j.err
 #SBATCH --time=3-00:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
@@ -20,8 +20,9 @@ cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings (BoT / Bag of Tricks Baseline) ---
-MODEL="bot"
+# --- Experiment Settings (DogReID-1553 Native VideoReID BoT Baseline with ResNet-50) ---
+MODEL="resnet50"
+REID_METHOD="bot"
 POOLING="attention"
 WORLD="closed"
 BATCH_SIZE=64   # P×K = 64 (P=16, K=4)
@@ -34,9 +35,9 @@ EVAL_PERIOD=1
 ACCUM_STEPS=1
 
 echo "=========================================================="
-echo "Starting Video-to-Video Training: BoT (Bag of Tricks)"
+echo "Starting Video-to-Video Training: Native BoT (ResNet-50)"
 echo "  Model        : ${MODEL}"
-echo "  Method       : bot"
+echo "  Method       : ${REID_METHOD}"
 echo "  Pooling      : ${POOLING}"
 echo "  World        : ${WORLD}"
 echo "  Batch / K    : ${BATCH_SIZE} / ${K} (P = $((BATCH_SIZE / K)) identities)"
@@ -47,7 +48,7 @@ echo "=========================================================="
 
 python train.py \
     --model ${MODEL} \
-    --reid_method bot \
+    --reid_method ${REID_METHOD} \
     --world ${WORLD} \
     --batch_size ${BATCH_SIZE} \
     --k ${K} \
@@ -61,4 +62,4 @@ python train.py \
     --full_finetune \
     --resume
 
-echo "Video BoT job complete!"
+echo "Video Native ResNet-50 BoT job complete!"

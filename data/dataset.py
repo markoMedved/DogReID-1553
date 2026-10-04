@@ -86,13 +86,21 @@ def crop_frame(
     W, H = frame.size
     x1, y1, x2, y3 = box
 
-    pad_x = int((x2 - x1) * padding)
-    pad_y = int((y3 - y1) * padding)
+    # Normalize coordinates
+    x_min, x_max = min(x1, x2), max(x1, x2)
+    y_min, y_max = min(y1, y3), max(y1, y3)
 
-    x1 = max(0, x1 - pad_x)
-    y1 = max(0, y1 - pad_y)
-    x2 = min(W, x2 + pad_x)
-    y3 = min(H, y3 + pad_y)
+    pad_x = int((x_max - x_min) * padding)
+    pad_y = int((y_max - y_min) * padding)
+
+    x1 = max(0, min(W, x_min - pad_x))
+    y1 = max(0, min(H, y_min - pad_y))
+    x2 = max(0, min(W, x_max + pad_x))
+    y3 = max(0, min(H, y_max + pad_y))
+
+    # If box is degenerate or empty, return original frame
+    if x2 <= x1 or y3 <= y1:
+        return frame
 
     return frame.crop((x1, y1, x2, y3))
 
@@ -105,16 +113,29 @@ def mask_frame(
     if box is None:
         return frame
 
+    W, H = frame.size
+    x1, y1, x2, y3 = box
+    x_min, x_max = min(x1, x2), max(x1, x2)
+    y_min, y_max = min(y1, y3), max(y1, y3)
+
+    x1 = max(0, min(W, x_min))
+    y1 = max(0, min(H, y_min))
+    x2 = max(0, min(W, x_max))
+    y3 = max(0, min(H, y_max))
+
+    if x2 <= x1 or y3 <= y1:
+        return frame
+
     frame_copy = frame.copy()
     draw = ImageDraw.Draw(frame_copy)
-    draw.rectangle(box, fill="black")
+    draw.rectangle((x1, y1, x2, y3), fill="black")
     return frame_copy
 
 
 class DOGVideoREIDDataset(Dataset):
     def __init__(self, root_dir, split_file, split="train", clip_len=16, 
                  transform=None, use_videos=True, world="closed", label_map=None,
-                 mask_dog=False, force_yolo=True, yolo_model: str | None = "yolo11n.pt", bbox_file: str | None = None):
+                 mask_dog=False, force_yolo=False, yolo_model: str | None = "yolo11n.pt", bbox_file: str | None = None):
 
         self.root_dir = root_dir
         self.clip_len = clip_len
@@ -125,8 +146,8 @@ class DOGVideoREIDDataset(Dataset):
         self.mask_dog = mask_dog
         self.force_yolo = force_yolo
 
-        # Load YOLO model for videos or fallback
-        self.yolo = load_yolo(yolo_model, device=torch.device("cpu")) if yolo_model else None
+        # Load YOLO model only if explicitly requested
+        self.yolo = load_yolo(yolo_model, device=torch.device("cpu")) if (self.force_yolo and yolo_model) else None
 
         # --- Load Ground Truth Bounding Boxes (for images) ---
         self.gt_bboxes = {}
@@ -216,17 +237,16 @@ class DOGVideoREIDDataset(Dataset):
         pil_frames = [Image.fromarray(f) for f in clip]
         boxes = [None] * len(pil_frames)
 
-        # Check GT first if using images and not force_yolo
-        if not self.use_videos and not self.force_yolo:
+        # Check GT first if not force_yolo
+        if not self.force_yolo:
             gt_box = self.gt_bboxes.get((dog_id, video_id))
             if gt_box is not None:
-                boxes = [gt_box]
+                boxes = [gt_box] * len(pil_frames)
 
         # Use YOLO if boxes are not already found and yolo is available
-        if self.yolo is not None:
+        if any(b is None for b in boxes) and self.yolo is not None:
             if not self.use_videos:
-                if boxes[0] is None:
-                    boxes = [detect_dog_box(self.yolo, pil_frames[0])]
+                boxes = [detect_dog_box(self.yolo, pil_frames[0])]
             else:
                 boxes = detect_dog_boxes(self.yolo, pil_frames)
 

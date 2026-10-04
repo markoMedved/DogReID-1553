@@ -2,16 +2,19 @@
 #SBATCH --job-name=v_arbase
 #SBATCH --output=logs_jobs/video_arbase_%j.out
 #SBATCH --error=logs_jobs/video_arbase_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=3-00:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
+#SBATCH --constraint=h100
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=96G
-#SBATCH --exclude=gwn04
+#SBATCH --exclude=gwn04,gwn08
 
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate project
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export PYTHONUNBUFFERED=1
 
 cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
@@ -23,11 +26,12 @@ POOLING="attention"
 WORLD="closed"
 # Person‑ReID style batch: 4 identities (P) × 16 clips each (K) → total 64
 BATCH_SIZE=64   # total batch size (P*K)
-K=16            # clips per identity
+K=4             # clips per identity (OpenAnimals DogReID uses K=4, P=16)
 CLIP_LEN=8
 EPOCHS=120
 LR=3.5e-04
-VAL_SPLIT=0.2
+VAL_SPLIT=0          # train on full train split, evaluate on test split
+EVAL_PERIOD=1
 ACCUM_STEPS=1
 
 echo "=========================================================="
@@ -53,7 +57,9 @@ python train.py \
     --epochs ${EPOCHS} \
     --lr ${LR} \
     --val_split ${VAL_SPLIT} \
+    --eval_period ${EVAL_PERIOD} \
     --accum_steps ${ACCUM_STEPS} \
-    --full_finetune
+    --full_finetune \
+    --resume
 
 echo "Video ARBase job complete!"

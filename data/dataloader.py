@@ -5,16 +5,18 @@ from .dataset import DOGVideoREIDDataset
 from pytorch_metric_learning.samplers import MPerClassSampler
 from data.reid_transforms import build_video_transforms
 
+def _worker_init_fn(worker_id):
+    import torch
+    import os
+    torch.set_num_threads(1)
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+
 def build_dataloaders(cfg):
     """Build the train and validation dataloaders for our experiments"""
     
     train_tf = build_video_transforms(cfg, is_train=True)
     eval_tf = build_video_transforms(cfg, is_train=False)
-
-    # --- Global DOG_ID Mapping ---
-    full_df = pd.read_csv(cfg.split_file)
-    all_unique_ids = sorted(full_df["DOG_ID"].unique())
-    global_id_map = {dog_id: i for i, dog_id in enumerate(all_unique_ids)}
 
     # --- Shared Dataset Parameters ---
     dataset_kwargs = {
@@ -22,14 +24,41 @@ def build_dataloaders(cfg):
         "split_file": cfg.split_file,
         "clip_len": cfg.clip_len,
         "world": cfg.world,
-        "label_map": global_id_map,
         "mask_dog": getattr(cfg, "mask_dog", False),
+        "force_yolo": getattr(cfg, "force_yolo", False),
         "bbox_file": getattr(cfg, "bbox_file", None),
     }
 
-    # --- Base Training & Validation Datasets (SPLIT='train') ---
-    base_train_dataset = DOGVideoREIDDataset(split="train", transform=train_tf, **dataset_kwargs)
-    base_val_dataset = DOGVideoREIDDataset(split="train", transform=eval_tf, **dataset_kwargs)
+    # --- Base Training Dataset (SPLIT='train') ---
+    # label_map=None -> contiguous labels over the training identities only, so the
+    # classifier has #train-ID outputs (as in OpenAnimals), not one per dog in the dataset.
+    base_train_dataset = DOGVideoREIDDataset(split="train", transform=train_tf, label_map=None, **dataset_kwargs)
+
+    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
+    if cfg.num_workers > 0:
+        loader_kwargs.update(persistent_workers=True, prefetch_factor=2)
+
+    # --- Full-train mode: train on the whole train split, evaluate on the test split ---
+    if getattr(cfg, "val_split", 0) <= 0:
+        sampler = MPerClassSampler(
+            labels=base_train_dataset.labels,
+            m=cfg.k,
+            batch_size=cfg.batch_size,
+            length_before_new_iter=len(base_train_dataset),
+        )
+        train_loader = DataLoader(
+            base_train_dataset, batch_size=cfg.batch_size, sampler=sampler,
+            drop_last=True, **loader_kwargs
+        )
+        query_loader, gallery_loader = build_test_loaders(cfg)
+        print(f"--- Data Loading Stats ---")
+        print(f"Training (full train split): {len(base_train_dataset)} samples, "
+              f"{len(base_train_dataset.id_map)} identities")
+        print(f"Evaluation on TEST split: Query={len(query_loader.dataset)}, Gallery={len(gallery_loader.dataset)}")
+        return train_loader, query_loader, gallery_loader
+
+    base_val_dataset = DOGVideoREIDDataset(split="train", transform=eval_tf,
+                                           label_map=base_train_dataset.id_map, **dataset_kwargs)
 
     # --- Split Dog IDs for Validation ---
     # Avoids identity leakage between training and validation sets
@@ -79,26 +108,30 @@ def build_dataloaders(cfg):
     )
 
     # --- Construct DataLoaders ---
-    # persistent_workers avoids respawning workers every epoch, which is
-    # expensive here because each one holds a YOLO detector
-    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
+    # persistent_workers avoids respawning workers every epoch
+    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
     if cfg.num_workers > 0:
-        loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
+        loader_kwargs.update(persistent_workers=True, prefetch_factor=2)
 
     train_loader = DataLoader(
         train_dataset, batch_size=cfg.batch_size, sampler=sampler,
         drop_last=True, **loader_kwargs
     )
 
+    val_loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
+    if cfg.num_workers > 0:
+        val_loader_kwargs.update(persistent_workers=True, prefetch_factor=2)
+
     # For validation we need query and gallery dataloaders
+    val_batch_size = min(cfg.batch_size, 32)
     val_query_loader = DataLoader(
-        val_query_dataset, batch_size=cfg.batch_size * 2,
-        shuffle=False, **loader_kwargs
+        val_query_dataset, batch_size=val_batch_size,
+        shuffle=False, **val_loader_kwargs
     )
     
     val_gallery_loader = DataLoader(
-        val_gallery_dataset, batch_size=cfg.batch_size * 2,
-        shuffle=False, **loader_kwargs
+        val_gallery_dataset, batch_size=val_batch_size,
+        shuffle=False, **val_loader_kwargs
     )
 
     print(f"--- Data Loading Stats ---")
@@ -143,7 +176,7 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
         print("-> [INFO] Special Config Active: Query set will use Ground Truth boxes.")
         query_kwargs["force_yolo"] = False
     else:
-        query_kwargs["force_yolo"] = True  # Default to YOLO for normal evaluation
+        query_kwargs["force_yolo"] = getattr(cfg, "force_yolo", False)
 
     # --- Gallery Configuration ---
     gallery_kwargs = dataset_kwargs.copy()
@@ -155,7 +188,7 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
         print("-> [INFO] Special Config Active: Gallery set will use Ground Truth boxes.")
         gallery_kwargs["force_yolo"] = False
     else:
-        gallery_kwargs["force_yolo"] = True  # Default to YOLO for normal evaluation
+        gallery_kwargs["force_yolo"] = getattr(cfg, "force_yolo", False)
 
     query_dataset = DOGVideoREIDDataset(
         split="query", 
@@ -168,17 +201,19 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
     )
 
     # --- Construct Test DataLoaders ---
-    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
+    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
     if cfg.num_workers > 0:
-        loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
+        loader_kwargs.update(persistent_workers=True, prefetch_factor=2)
 
+    # Capped at 32 clips: 128 clips x 8 frames x 384^2 per batch exhausts host RAM
+    test_batch_size = min(cfg.batch_size, 32)
     query_loader = DataLoader(
-        query_dataset, batch_size=cfg.batch_size * 2,
+        query_dataset, batch_size=test_batch_size,
         shuffle=False, **loader_kwargs
     )
 
     gallery_loader = DataLoader(
-        gallery_dataset, batch_size=cfg.batch_size * 2,
+        gallery_dataset, batch_size=test_batch_size,
         shuffle=False, **loader_kwargs
     )
 

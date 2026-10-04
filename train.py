@@ -26,6 +26,7 @@ def main():
     parser.add_argument('--clip_len', type=int, default=None, help='Frames per video clip')
     parser.add_argument('--epochs', type=int, default=None, help='Number of training epochs')
     parser.add_argument('--val_split', type=float, default=None, help='Validation split ratio (e.g., 0.2 for 20%% validation)')
+    parser.add_argument('--eval_period', type=int, default=None, help='Evaluation frequency in epochs (default from config: 1)')
 
     # Re-ID methodology flags
     parser.add_argument(
@@ -92,6 +93,18 @@ def main():
         default=None, 
         help='Number of gradient accumulation steps (default 1 for OpenAnimals)'
     )
+    parser.add_argument(
+        '--backbone_lr_factor',
+        type=float,
+        default=None,
+        help='Multiplier for backbone LR relative to base LR (default: 1.0 to match OpenAnimals)'
+    )
+    parser.add_argument(
+        '--resume', 
+        action='store_true', 
+        default=False, 
+        help='Resume training from the latest checkpoint in output_dir'
+    )
 
     args = parser.parse_args()
 
@@ -101,6 +114,8 @@ def main():
     cfg = Config()
 
     # --- Command-Line Overrides ---
+    if args.resume:
+        cfg.resume = True
     if args.mask_dog:
         cfg.mask_dog = True
     if args.model is not None:
@@ -115,6 +130,7 @@ def main():
     if args.k is not None: cfg.k = args.k
     if args.epochs is not None: cfg.epochs = args.epochs
     if args.val_split is not None: cfg.val_split = args.val_split
+    if args.eval_period is not None: cfg.eval_period = args.eval_period
     if args.accum_steps is not None: cfg.accum_steps = args.accum_steps
     if args.reid_method is not None:
         cfg.reid_method = None if args.reid_method == 'baseline' else args.reid_method
@@ -124,6 +140,7 @@ def main():
     if args.use_id_loss is not None: cfg.use_id_loss = args.use_id_loss
 
     if args.optimizer is not None: cfg.optimizer = args.optimizer
+    if args.backbone_lr_factor is not None: cfg.backbone_lr_factor = args.backbone_lr_factor
 
     # Re-ID BoT hyperparameter adjustments if reid_method is active and not overridden
     if cfg.reid_method in ('bot', 'transreid'):
@@ -139,6 +156,15 @@ def main():
             )
 
     cfg.update_model_settings()
+    if args.optimizer is not None: cfg.optimizer = args.optimizer
+    if args.backbone_lr_factor is not None: cfg.backbone_lr_factor = args.backbone_lr_factor
+    if args.lr is not None: cfg.lr = args.lr
+    if args.epochs is not None: cfg.epochs = args.epochs
+    if args.val_split is not None: cfg.val_split = args.val_split
+    if args.eval_period is not None: cfg.eval_period = args.eval_period
+    if args.full_finetune is not None: cfg.full_finetune = args.full_finetune
+    if args.unfreeze_blocks is not None: cfg.unfreeze_blocks = args.unfreeze_blocks
+    cfg.refresh_run_name()
     cfg.display()
 
     # ------------------------------------------------
@@ -202,9 +228,10 @@ def main():
         if p.requires_grad and not is_pretrained(n)
     ]
 
+    bb_lr_factor = float(getattr(cfg, "backbone_lr_factor", 1.0))
     param_groups = []
     if backbone_params:
-        param_groups.append({"params": backbone_params, "lr": cfg.lr * 0.1})
+        param_groups.append({"params": backbone_params, "lr": cfg.lr * bb_lr_factor})
     if head_params:
         param_groups.append({"params": head_params, "lr": cfg.lr})
 
@@ -216,8 +243,9 @@ def main():
 
     n_bb = sum(p.numel() for p in backbone_params)
     n_hd = sum(p.numel() for p in head_params)
+    print(f"[optim] Backbone: {n_bb:,} params, base LR = {cfg.lr * bb_lr_factor:.2e} ({bb_lr_factor}x) | Head: {n_hd:,} params, base LR = {cfg.lr:.2e}")
     opt_name = str(getattr(cfg, "optimizer", "adam")).lower()
-    if opt_name == "sgd" or "mgn" in str(getattr(cfg, "model", "")).lower():
+    if opt_name == "sgd":
         optimizer = torch.optim.SGD(param_groups, momentum=0.9, weight_decay=getattr(cfg, "weight_decay", 5e-4))
         print(f"[optim] Using SGD optimizer (momentum=0.9, weight_decay={getattr(cfg, 'weight_decay', 5e-4)})")
     elif opt_name == "adamw":
@@ -229,7 +257,16 @@ def main():
 
     # --- BUILD SCHEDULER ---
     scheduler = None
-    if cfg.reid_method in ('bot', 'transreid') or getattr(model, "is_openanimals", False):
+    oa_sched_dict = None
+    if getattr(model, "is_openanimals", False):
+        try:
+            from openanimals.solver.build import build_lr_scheduler
+            oa_sched_dict = build_lr_scheduler(model.oa_cfg, optimizer, len(train_loader))
+            print(f"[scheduler] Initialized OpenAnimals native scheduler: {model.oa_cfg.SOLVER.SCHED}")
+        except Exception as e:
+            print(f"[scheduler] Warning: failed to build OpenAnimals scheduler ({e}), falling back to WarmupMultiStepLR")
+            scheduler = build_scheduler(optimizer, cfg)
+    elif cfg.reid_method in ('bot', 'transreid'):
         scheduler = build_scheduler(optimizer, cfg)
 
     # ------------------------------------------------

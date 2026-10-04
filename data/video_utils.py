@@ -4,7 +4,8 @@ import numpy as np
 def load_video_clip(path, clip_len, is_training=True):
     """Reading frames from video files"""
     # --- Initialize Video Reader ---
-    vr = VideoReader(str(path), ctx=cpu(0))
+    # Setting num_threads=1 is critical inside multi-process DataLoaders to prevent C++ thread deadlocks
+    vr = VideoReader(str(path), ctx=cpu(0), num_threads=1)
     total_frames = len(vr)
     
     # --- Handle Short Videos ---

@@ -19,6 +19,7 @@ def build_model(cfg):
 
     oa_names = {
         "bot", "oa_bot", "openanimals_bot",
+        "oa_dinov2", "oa_dinov2_bot", "openanimals_dinov2_bot",
         "agw", "oa_agw", "openanimals_agw",
         "sbs", "oa_sbs", "openanimals_sbs",
         "mgn", "oa_mgn", "openanimals_mgn",
@@ -26,8 +27,8 @@ def build_model(cfg):
         "arbase_mb", "oa_arbase_mb", "arbase_mgn",
     }
 
-    # OpenAnimals architectures (SBS, AGW, MGN, ARBase, OA_BoT)
-    if model_type_str in oa_names:
+    # OpenAnimals architectures (SBS, AGW, MGN, ARBase, OA_BoT, OA_DINOv2_BoT)
+    if model_type_str in oa_names or model_type_str.startswith("oa_") or model_type_str.startswith("openanimals_"):
         from .openanimals_models import OpenAnimalsVideoModel
         return OpenAnimalsVideoModel(
             model_name=model_type_str,

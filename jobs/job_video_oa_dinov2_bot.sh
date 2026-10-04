@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=v_bot
-#SBATCH --output=logs_jobs/video_bot_%j.out
-#SBATCH --error=logs_jobs/video_bot_%j.err
+#SBATCH --job-name=v_oa_dino
+#SBATCH --output=logs_jobs/video_oa_dinov2_bot_%j.out
+#SBATCH --error=logs_jobs/video_oa_dinov2_bot_%j.err
 #SBATCH --time=3-00:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
@@ -20,8 +20,9 @@ cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings (BoT / Bag of Tricks Baseline) ---
-MODEL="bot"
+# --- Experiment Settings (OpenAnimals BoT Baseline with DINOv2 Backbone) ---
+MODEL="oa_dinov2_bot"
+REID_METHOD="bot"
 POOLING="attention"
 WORLD="closed"
 BATCH_SIZE=64   # P×K = 64 (P=16, K=4)
@@ -34,9 +35,9 @@ EVAL_PERIOD=1
 ACCUM_STEPS=1
 
 echo "=========================================================="
-echo "Starting Video-to-Video Training: BoT (Bag of Tricks)"
+echo "Starting Video-to-Video Training: OpenAnimals BoT (DINOv2)"
 echo "  Model        : ${MODEL}"
-echo "  Method       : bot"
+echo "  Method       : ${REID_METHOD}"
 echo "  Pooling      : ${POOLING}"
 echo "  World        : ${WORLD}"
 echo "  Batch / K    : ${BATCH_SIZE} / ${K} (P = $((BATCH_SIZE / K)) identities)"
@@ -47,7 +48,7 @@ echo "=========================================================="
 
 python train.py \
     --model ${MODEL} \
-    --reid_method bot \
+    --reid_method ${REID_METHOD} \
     --world ${WORLD} \
     --batch_size ${BATCH_SIZE} \
     --k ${K} \
@@ -58,7 +59,9 @@ python train.py \
     --val_split ${VAL_SPLIT} \
     --eval_period ${EVAL_PERIOD} \
     --accum_steps ${ACCUM_STEPS} \
-    --full_finetune \
+    --no_full_finetune \
+    --unfreeze_blocks 2 \
+    --backbone_lr_factor 0.1 \
     --resume
 
-echo "Video BoT job complete!"
+echo "Video OpenAnimals DINOv2 BoT job complete!"

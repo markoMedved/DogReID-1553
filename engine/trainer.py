@@ -68,6 +68,50 @@ class Trainer:
         }
         self.best_mAP = 0.0
         self.best_r1 = 0.0
+        self.start_epoch = 0
+
+        # --- Resume Checkpoint if Requested ---
+        if getattr(cfg, "resume", False):
+            latest_path = self.cfg.output_dir / "latest_model.pth"
+            if latest_path.exists():
+                print(f"[resume] Loading checkpoint from {latest_path} ...")
+                ckpt = torch.load(latest_path, map_location=self.device)
+                if "state_dict" in ckpt:
+                    self.model.load_state_dict(ckpt["state_dict"])
+                if "optimizer" in ckpt and self.optimizer is not None:
+                    self.optimizer.load_state_dict(ckpt["optimizer"])
+                if "scheduler" in ckpt and ckpt.get("scheduler") is not None and self.scheduler is not None:
+                    try:
+                        self.scheduler.load_state_dict(ckpt["scheduler"])
+                    except Exception as e:
+                        print(f"[resume] Warning loading scheduler: {e}")
+                if self.oa_sched_dict and ckpt.get("oa_sched"):
+                    for k, sd in ckpt["oa_sched"].items():
+                        if k in self.oa_sched_dict:
+                            self.oa_sched_dict[k].load_state_dict(sd)
+                    print(f"[resume] Restored OpenAnimals schedulers: {list(ckpt['oa_sched'].keys())}")
+                self.total_iters = ckpt.get("total_iters", 0)
+                if ckpt.get("scaler") is not None and self.scaler.is_enabled():
+                    self.scaler.load_state_dict(ckpt["scaler"])
+                self.start_epoch = ckpt.get("epoch", 0)
+                print(f"[resume] total_iters = {self.total_iters}, "
+                      f"current LR = {self.optimizer.param_groups[0]['lr']:.2e}")
+                print(f"[resume] Successfully resumed model state from epoch {self.start_epoch}")
+
+                hist_file = self.cfg.output_dir / "training_history.json"
+                if hist_file.exists():
+                    try:
+                        with open(hist_file, "r") as f:
+                            self.history = json.load(f)
+                        if self.history.get("mAP") and len(self.history["mAP"]) > 0:
+                            self.best_mAP = max(self.history["mAP"]) / 100.0
+                        if self.history.get("rank1") and len(self.history["rank1"]) > 0:
+                            self.best_r1 = max(self.history["rank1"]) / 100.0
+                        print(f"[resume] Loaded history ({len(self.history.get('epochs', []))} epochs). Best mAP so far: {self.best_mAP:.2%}")
+                    except Exception as e:
+                        print(f"[resume] Warning loading history: {e}")
+            else:
+                print(f"[resume] Checkpoint {latest_path} not found. Starting from scratch (epoch 0).")
 
 
     def _save_and_plot_history(self):
@@ -95,11 +139,18 @@ class Trainer:
         val_split = getattr(self.cfg, 'val_split', 0)
 
         # --- Main Training Loop ---
-        for epoch in range(self.cfg.epochs):
+        for epoch in range(self.start_epoch, self.cfg.epochs):
             self.current_epoch = epoch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             # Run one full training epoch
             avg_loss, avg_cls, avg_tri = self.train_epoch(epoch)
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             # One learning rate per parameter group: deduplicate unique LRs
             unique_lrs = []
             for g in self.optimizer.param_groups:
@@ -131,8 +182,8 @@ class Trainer:
                 self.scheduler.step()
 
             # --- Validation Evaluation (runs every epoch if eval_period=1) ---
-            if val_split > 0 and self.cfg.world == "closed":
-                if (epoch + 1) % self.cfg.eval_period == 0:
+            if self.cfg.world == "closed" and self.query_loader is not None:
+                if (epoch + 1) % self.cfg.eval_period == 0 or (epoch + 1) == self.cfg.epochs:
                     r1, r5, mAP, val_loss, val_pos_dist = self.evaluate()
                     self.history["eval_epochs"].append(epoch + 1)
                     self.history["val_losses"].append(float(val_loss))
@@ -158,21 +209,13 @@ class Trainer:
 
             # Save latest checkpoint every epoch
             latest_path = self.cfg.output_dir / "latest_model.pth"
-            torch.save({
-                'epoch': epoch + 1,
-                'state_dict': self.model.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-            }, latest_path)
+            torch.save(self._training_state(epoch), latest_path)
 
             # Periodic checkpoint (every save_period epochs)
             save_period = getattr(self.cfg, 'save_period', 10)
             if (epoch + 1) % save_period == 0:
                 checkpoint_path = self.cfg.output_dir / f"model_epoch_{epoch + 1}.pth"
-                torch.save({
-                    'epoch': epoch + 1,
-                    'state_dict': self.model.state_dict(),
-                    'optimizer': self.optimizer.state_dict(),
-                }, checkpoint_path)
+                torch.save(self._training_state(epoch), checkpoint_path)
                 print(f"--> Saved periodic checkpoint to {checkpoint_path}")
 
             # Update live training curves PNG and history JSON
@@ -208,6 +251,10 @@ class Trainer:
             videos = videos.to(self.device)
             labels = labels.to(self.device)
 
+            # OpenAnimals freeze training (SBS: backbone frozen for FREEZE_ITERS iterations,
+            # with its BN layers in eval mode -- mirrors hooks.LayerFreeze + freeze optimizer)
+            frozen_params = self._apply_layer_freeze()
+
             # Forward Pass & Loss Computation
             with torch.autocast(device_type=self.device.type,
                                 dtype=self.amp_dtype,
@@ -221,17 +268,35 @@ class Trainer:
 
             # Losses are computed in float32; metric learning is sensitive to
             # reduced precision in the distance matrix
-            embeddings = embeddings.float()
+            if isinstance(embeddings, (list, tuple)):
+                embeddings = [e.float() for e in embeddings]
+            else:
+                embeddings = embeddings.float()
             if logits is not None:
                 if isinstance(logits, (list, tuple)):
                     logits = [l.float() for l in logits]
                 else:
                     logits = logits.float()
 
-            # --- Hard Pair Mining ---
-            # Selects the hardest positive/negative pairs to optimize learning
-            hard_pairs = self.miner(embeddings, labels)
-            loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
+            # --- Triplet Loss Computation ---
+            if getattr(self.model, "is_openanimals", False):
+                from openanimals.modeling.losses.triplet_loss import triplet_loss as oa_triplet_loss
+                tri_cfg = self.model.oa_cfg.MODEL.LOSSES.TRI
+                feats = embeddings if isinstance(embeddings, (list, tuple)) else [embeddings]
+                # Raw (unnormalised) features; NORM_FEAT decides euclidean vs cosine as in
+                # OpenAnimals. Multiple feature sets (MGN: b1,b2,b3,b22,b33) are averaged,
+                # i.e. x0.2 each, matching MGN.losses.
+                loss_triplet = sum(
+                    oa_triplet_loss(
+                        f, labels,
+                        margin=tri_cfg.MARGIN,
+                        norm_feat=tri_cfg.NORM_FEAT,
+                        hard_mining=tri_cfg.HARD_MINING
+                    ) for f in feats
+                ) / len(feats) * tri_cfg.SCALE
+            else:
+                hard_pairs = self.miner(embeddings, labels)
+                loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
 
             # --- Metric Learning & Identity Loss ---
             if logits is not None and getattr(self.cfg, 'num_classes', 0) > 0:
@@ -257,13 +322,22 @@ class Trainer:
             # Update weights after specified accumulation steps or at the end of epoch
             is_last_step = (i + 1) == len(self.train_loader)
             if (i + 1) % accum_steps == 0 or is_last_step:
+                # Frozen params get no update at all (grad=None also skips weight decay),
+                # as in OpenAnimals' optimizer_wfl_step
+                for p in frozen_params:
+                    p.grad = None
+
+                # OpenAnimals has gradient clipping disabled (SOLVER.CLIP_GRADIENTS.ENABLED=False)
+                clip = not getattr(self.model, "is_openanimals", False)
                 if self.scaler.is_enabled():
                     self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                    if clip:
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                 else:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                    if clip:
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     self.optimizer.step()
                 self.optimizer.zero_grad()
 
@@ -287,6 +361,47 @@ class Trainer:
         avg_cls = (running_cls / n_batches) if has_sub else None
         avg_tri = (running_tri / n_batches) if has_sub else None
         return avg_loss, avg_cls, avg_tri
+
+    def _training_state(self, epoch):
+        """Everything needed to resume exactly: weights, optimizer, all schedulers,
+        the iteration counter (drives warmup/freeze) and the AMP grad scaler."""
+        return {
+            'epoch': epoch + 1,
+            'state_dict': self.model.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'scheduler': self.scheduler.state_dict() if self.scheduler is not None else None,
+            'oa_sched': {k: v.state_dict() for k, v in self.oa_sched_dict.items()} if self.oa_sched_dict else None,
+            'total_iters': self.total_iters,
+            'scaler': self.scaler.state_dict() if self.scaler.is_enabled() else None,
+        }
+
+    def _apply_layer_freeze(self):
+        """Freeze cfg.MODEL.FREEZE_LAYERS for the first SOLVER.FREEZE_ITERS iterations.
+        Returns the list of parameters whose gradients must be dropped this step."""
+        oa_cfg = getattr(self.model, "oa_cfg", None)
+        if oa_cfg is None:
+            return []
+        layers = list(oa_cfg.MODEL.FREEZE_LAYERS)
+        freeze_iters = oa_cfg.SOLVER.FREEZE_ITERS
+        if not layers or freeze_iters <= 0:
+            return []
+
+        modules = [m for n, m in self.model.oa_model.named_children() if n in layers]
+        if self.total_iters < freeze_iters:
+            if not getattr(self, "_layers_frozen", False):
+                print(f"[freeze] Freezing {layers} for the first {freeze_iters} iterations")
+                self._layers_frozen = True
+            for m in modules:
+                m.eval()  # BN in frozen layers uses running stats (re-applied every step
+                          # because train_epoch() calls model.train())
+            return [p for m in modules for p in m.parameters()]
+
+        if getattr(self, "_layers_frozen", False):
+            print(f"[freeze] Unfreezing {layers} at iteration {self.total_iters}")
+            for m in modules:
+                m.train()
+            self._layers_frozen = False
+        return []
 
     @torch.no_grad()
     def evaluate(self):
@@ -338,21 +453,27 @@ class Trainer:
         """Extract Embeddings from Dataloader"""
         feats, pids = [], []
 
-        for batch in tqdm(loader, desc=name):
-            clips = batch[0].to(self.device)
-            labels = batch[1]
+        with torch.autocast(device_type=self.device.type,
+                            dtype=self.amp_dtype,
+                            enabled=self.amp_enabled):
+            for batch in tqdm(loader, desc=name):
+                clips = batch[0].to(self.device)
+                labels = batch[1]
 
-            # Forward pass to get features
-            f = self.model(clips)
+                # Forward pass to get features
+                f = self.model(clips)
 
-            if isinstance(f, tuple):
-                f = f[0]
+                if isinstance(f, tuple):
+                    f = f[0]
 
-            # Normalize embeddings -> Allows cosine similarity via dot product
-            f = F.normalize(f, p=2, dim=1)
+                # Normalize embeddings -> Allows cosine similarity via dot product
+                f = F.normalize(f, p=2, dim=1)
 
-            feats.append(f.cpu())
-            pids.extend(labels.tolist())
+                feats.append(f.cpu())
+                pids.extend(labels.tolist())
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         return torch.cat(feats, 0), torch.tensor(pids)
 

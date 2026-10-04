@@ -17,9 +17,12 @@ def _unfreeze(module):
 def _core_network(model):
     """Return the backbone network, unwrapping the adapter if present."""
     if hasattr(model, "oa_model"):
-        return model.oa_model.backbone
+        backbone = model.oa_model.backbone
+        if hasattr(backbone, "adapter"):
+            backbone = backbone.adapter
+    else:
+        backbone = getattr(model, "backbone", None)
 
-    backbone = getattr(model, "backbone", None)
     if backbone is None:
         return None
 

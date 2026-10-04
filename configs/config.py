@@ -40,7 +40,7 @@ class Config:
 
     # --- Hardware & Compute ---
     device      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    num_workers = 8
+    num_workers = 12
     chunk_size  = 16
     amp         = "bf16"           # 'bf16', 'fp16' or None. CUDA only.
 
@@ -57,18 +57,20 @@ class Config:
     lr_milestones  = (40, 70)      # decay LR by 0.1 at epoch 40 and 70
     lr_gamma       = 0.1
     optimizer      = "adam"        # 'adam', 'adamw', or 'sgd'
-    weight_decay   = 1e-05
+    weight_decay   = 5e-04         # 5e-4 matches OpenAnimals across all baselines
     margin         = 0.3          # Triplet loss margin α
     id_loss_weight = 1.0
     center_loss_weight = 5e-04   # optional center loss β
-    lr             = 3.5e-04      # base LR (heads get this, backbone gets 0.1·LR)
-    warmup_factor  = 0.01
+    lr             = 3.5e-04      # base LR (OpenAnimals uses 3.5e-4 for both backbone and heads)
+    backbone_lr_factor = 1.0      # 1.0 matches OpenAnimals (backbone LR == head LR == base LR)
+    warmup_factor  = 0.1          # 0.1 matches OpenAnimals (linear warmup from 0.1x to 1.0x)
     accum_steps    = 1            # gradient accumulation (1 for standard paper baseline)
     save_period    = 10
 
     # --- Data Augmentation ---
     aug_pad = 10
     re_prob = 0.5
+    autoaug_prob = 0.0
 
     # --- Evaluation ---
     eval_period = 1
@@ -79,7 +81,7 @@ class Config:
     bbox_file = project_root / "bounding_boxes.csv"
     use_gt_for_query_mask = False
     use_gt_for_gallery_mask = False
-    force_yolo = True
+    force_yolo = False
 
     def __init__(self):
         self.update_model_settings()
@@ -100,6 +102,7 @@ class Config:
 
         oa_models = (
             "bot", "oa_bot", "openanimals_bot",
+            "oa_dinov2", "oa_dinov2_bot", "openanimals_dinov2_bot",
             "agw", "oa_agw", "openanimals_agw",
             "sbs", "oa_sbs", "openanimals_sbs",
             "mgn", "oa_mgn", "openanimals_mgn",
@@ -112,46 +115,89 @@ class Config:
             self.img_size = (192, 192)
         elif self.backbone in oa_models or self.backbone.startswith("oa_") or self.backbone.startswith("openanimals_"):
             is_mb = "mgn" in self.backbone or "arbase_mb" in self.backbone
-            self.embedding_dim = 2048 * (8 if is_mb else 1)
+            self.embedding_dim = 768 if "dinov2" in self.backbone else (2048 * (8 if is_mb else 1))
             
-            # Original paper image crop sizes [Height, Width] & augmentations:
-            if "mgn" in self.backbone:
-                self.img_size = (384, 128)  # MGN original paper: 384x128
-                self.re_prob = 0.0          # MGN: Horizontal flip only
-                self.optimizer = "sgd"
-                self.weight_decay = 5e-04
-                self.margin = 1.2
-                self.epochs = 80
-                self.lr = 0.01
-                self.warmup_epochs = 0
-                self.lr_milestones = (40, 60)
-            elif "arbase" in self.backbone:
-                self.img_size = (256, 256)  # ARBase animal dataset crop: 256x256
-                self.re_prob = 0.5          # Random Erasing p=0.5
-                self.optimizer = "adam"
-            elif "agw" in self.backbone:
-                self.img_size = (256, 128)  # AGW original paper: 256x128
-                self.re_prob = 0.5          # Random Erasing p=0.5
-                self.optimizer = "adam"
-            elif "sbs" in self.backbone:
-                self.img_size = (256, 128)  # SBS original paper: 256x128
-                self.re_prob = 0.5          # Random Erasing p=0.5
-                self.optimizer = "adam"
-                self.weight_decay = 5e-04
-            elif "bot" in self.backbone:
-                self.img_size = (256, 128)  # BoT original paper: 256x128
-                self.re_prob = 0.5          # Random Erasing p=0.5
-                self.optimizer = "adam"
-            else:
-                self.img_size = (256, 128)
+            # OpenAnimals DogReID settings (Square aspect ratio, Adam, WD=5e-4, 1.0x BB LR):
+            self.optimizer = "adam"
+            self.weight_decay = 5e-04
+            self.backbone_lr_factor = 1.0
+            # chunk_size = batch_size: frames are fed time-major, so each BN batch
+            # holds frame t of all 64 clips (16 identities), like an OpenAnimals batch
+            self.chunk_size = 64
+            self.autoaug_prob = 0.1 if "sbs" in self.backbone else 0.0  # Base-SBS: AUTOAUG p=0.1
+
+            if "dinov2" in self.backbone:
+                self.img_size = (224, 224)
                 self.re_prob = 0.5
+                self.margin = 0.3
+                self.lr = 3.5e-04
+                self.chunk_size = 32
+                if not getattr(self, "full_finetune", False):
+                    self.backbone_lr_factor = 0.1
+            elif "mgn" in self.backbone:
+                self.img_size = (384, 384)  # OpenAnimals DogReID: 384x384
+                self.re_prob = 0.0          # OpenAnimals: REA disabled for animal re-ID
+                self.margin = 0.3
+                self.epochs = 120
+                self.lr = 3.5e-04
+                self.warmup_epochs = 10
+                self.lr_milestones = (40, 90)
+                self.chunk_size = 64
+            elif "arbase" in self.backbone:
+                self.img_size = (384, 384)  # OpenAnimals DogReID: 384x384
+                self.re_prob = 0.0          # OpenAnimals: REA disabled for animal re-ID
+                self.margin = 0.3
+                self.lr = 3.5e-04
+                self.chunk_size = 64
+            elif "agw" in self.backbone:
+                self.img_size = (384, 384)  # OpenAnimals DogReID: 384x384
+                self.re_prob = 0.5          # OpenAnimals: REA enabled
+                self.margin = 0.0           # OpenAnimals: Weighted soft-margin triplet
+                self.lr = 3.5e-04
+                self.chunk_size = 64
+            elif "sbs" in self.backbone:
+                self.img_size = (384, 384)  # OpenAnimals DogReID: 384x384
+                self.re_prob = 0.5          # OpenAnimals: REA enabled
+                self.margin = 0.0           # OpenAnimals: Soft-margin triplet
+                self.lr = 3.5e-04
+                self.chunk_size = 64
+            elif "bot" in self.backbone:
+                self.img_size = (256, 256)  # OpenAnimals DogReID: 256x256
+                self.re_prob = 0.5          # OpenAnimals: REA enabled
+                self.margin = 0.3
+                self.lr = 3.5e-04
+                self.chunk_size = 64
+            else:
+                self.img_size = (256, 256)
+                self.re_prob = 0.5
+                self.chunk_size = 64
 
             if getattr(self, "reid_method", None) is None:
                 self.reid_method = "bot"
         elif "resnet" in self.backbone:
             self.embedding_dim = 2048
-            self.img_size = (256, 128)
+            self.img_size = (256, 256)  # DogReID square aspect ratio (matches OpenAnimals BoT)
             self.re_prob = 0.5
+            self.chunk_size = 64
+            self.optimizer = "adam"
+            self.weight_decay = 5e-04
+            self.backbone_lr_factor = 1.0
+            self.lr = 3.5e-04
+            self.margin = 0.3
+            self.warmup_epochs = 10
+            self.lr_milestones = (40, 70)
+        elif "dinov2" in self.backbone:
+            self.embedding_dim = 768
+            self.img_size = (224, 224)
+            self.re_prob = 0.5
+            self.chunk_size = 32
+            self.optimizer = "adam"
+            self.weight_decay = 5e-04
+            self.backbone_lr_factor = 1.0 if getattr(self, "full_finetune", False) else 0.1
+            self.lr = 3.5e-04
+            self.margin = 0.3
+            self.warmup_epochs = 10
+            self.lr_milestones = (40, 70)
         else:
             self.embedding_dim = 768
             self.img_size = (224, 224)

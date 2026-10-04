@@ -307,16 +307,18 @@ class VideoReID(nn.Module):
         if x.dim() == 5:
             B, T, C, H, W = x.shape
 
-            # Flatten temporal dimension to process frames through the 2D backbone
-            frames = x.view(B * T, C, H, W)
+            # Time-major ordering: (T*B, C, H, W).
+            # When chunk_size == B, each chunk holds frame t across all B clips (identities),
+            # providing healthy BatchNorm statistics across diverse identities.
+            frames = x.transpose(0, 1).reshape(T * B, C, H, W)
 
             # --- Chunked Forward Pass ---
             chunks = torch.split(frames, self.chunk_size, dim=0)
             per_chunk = [self._frame_features(c) for c in chunks]
 
-            # Regroup by branch, restore temporal structure, then aggregate
+            # Regroup by branch, restore temporal structure (B, T, D), then aggregate
             branch_feats = [
-                torch.cat([chunk[b] for chunk in per_chunk], dim=0).view(B, T, -1)
+                torch.cat([chunk[b] for chunk in per_chunk], dim=0).view(T, B, -1).transpose(0, 1)
                 for b in range(self.n_branches)
             ]
             branch_feats = [pool(f) for pool, f in zip(self.pools, branch_feats)]
@@ -335,10 +337,12 @@ class VideoReID(nn.Module):
 
         # --- Training Mode with Identity Head ---
         # Triplet loss uses the pre-BN global feature; identity loss uses the logits.
-        if self.training and self.num_classes > 0:
+        if self.training and self.num_classes > 0 and len(logits) > 0:
             embeddings = F.normalize(triplet_feats[0], dim=-1)
             cls_score = logits[0] if len(logits) == 1 else torch.stack(logits, dim=0).mean(0)
             return embeddings, cls_score
+        elif self.training:
+            return F.normalize(triplet_feats[0], dim=-1)
 
         # --- Inference Mode ---
         # TransReID concatenates the global and local branch features.
