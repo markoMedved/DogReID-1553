@@ -193,11 +193,7 @@ def plot_metrics(data, output_png, title="Training & Evaluation Metrics"):
     plt.close()
     print(f"-> [SUCCESS] Saved plot to {output_png}")
 
-    # Also save standalone separate plots so train and val loss can be viewed in isolation
-    out_dir = out_path.parent
-    _plot_train_loss(data, out_dir / "loss_train.png", title=f"Training Loss ({out_dir.name})")
-    _plot_val_loss(data, out_dir / "loss_val.png", title=f"Evaluation Loss ({out_dir.name})")
-    _plot_eval_metrics(data, out_dir / "eval_metrics.png", title=f"Retrieval Metrics ({out_dir.name})")
+    # Consolidated plot saved to output_png (training_curves.png)
 
 
 def _plot_train_loss(data, output_png, title="Training Loss"):

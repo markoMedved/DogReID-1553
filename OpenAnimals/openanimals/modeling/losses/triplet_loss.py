@@ -11,11 +11,13 @@ from .utils import euclidean_dist, cosine_dist
 
 
 def softmax_weights(dist, mask):
-    max_v = torch.max(dist * mask, dim=1, keepdim=True)[0]
-    diff = dist - max_v
-    Z = torch.sum(torch.exp(diff) * mask, dim=1, keepdim=True) + 1e-6  # avoid division by zero
-    W = torch.exp(diff) * mask / Z
-    return W
+    mask_b = mask.bool()
+    dist_masked = dist.masked_fill(~mask_b, -float('inf'))
+    max_v = torch.max(dist_masked, dim=1, keepdim=True)[0]
+    diff = (dist - max_v).masked_fill(~mask_b, -float('inf'))
+    exp_diff = torch.exp(diff)
+    Z = torch.sum(exp_diff, dim=1, keepdim=True) + 1e-6
+    return exp_diff / Z
 
 
 def hard_example_mining(dist_mat, is_pos, is_neg):

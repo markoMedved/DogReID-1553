@@ -53,10 +53,12 @@ class OpenAnimalsVideoModel(nn.Module):
         "openanimals_dinov2_bot": "OpenAnimals/configs/DogReID/bot.yml",
 
         "agw": "OpenAnimals/configs/DogReID/agw.yml",
+        "native_agw": "OpenAnimals/configs/DogReID/agw.yml",
         "oa_agw": "OpenAnimals/configs/DogReID/agw.yml",
         "openanimals_agw": "OpenAnimals/configs/DogReID/agw.yml",
 
         "sbs": "OpenAnimals/configs/DogReID/sbs.yml",
+        "native_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
         "oa_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
         "openanimals_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
 

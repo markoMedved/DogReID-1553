@@ -6,6 +6,7 @@ ramped linearly over the first epochs before step decay.
 """
 
 from bisect import bisect_right
+import math
 
 import torch
 
@@ -47,8 +48,64 @@ class WarmupMultiStepLR(torch.optim.lr_scheduler._LRScheduler):
         ]
 
 
+class WarmupCosineAnnealingLR(torch.optim.lr_scheduler._LRScheduler):
+    """Cosine annealing decay preceded by linear warmup and optional delay phase.
+
+    Matches OpenAnimals / FastReID CosineAnnealingLR with warmup and delay_epochs:
+    - Linear warmup from warmup_factor * base_lr to base_lr for warmup_epochs.
+    - Constant base_lr until delay_epochs.
+    - Cosine annealing from delay_epochs to max_epochs decaying to eta_min.
+    """
+
+    def __init__(
+        self,
+        optimizer,
+        max_epochs: int = 120,
+        delay_epochs: int = 60,
+        eta_min: float = 7e-7,
+        warmup_factor: float = 0.1,
+        warmup_epochs: int = 10,
+        last_epoch: int = -1
+    ):
+        self.max_epochs = max_epochs
+        self.delay_epochs = delay_epochs
+        self.eta_min = eta_min
+        self.warmup_factor = warmup_factor
+        self.warmup_epochs = warmup_epochs
+        super().__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        if self.last_epoch < self.warmup_epochs:
+            alpha = self.last_epoch / max(1, self.warmup_epochs)
+            warmup_factor = self.warmup_factor * (1.0 - alpha) + alpha
+            return [base_lr * warmup_factor for base_lr in self.base_lrs]
+        elif self.last_epoch < self.delay_epochs:
+            return [base_lr for base_lr in self.base_lrs]
+        else:
+            progress = (self.last_epoch - self.delay_epochs) / max(1, self.max_epochs - self.delay_epochs)
+            cosine_factor = 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+            return [
+                self.eta_min + (base_lr - self.eta_min) * cosine_factor
+                for base_lr in self.base_lrs
+            ]
+
+
 def build_scheduler(optimizer, cfg):
     """Instantiate the schedule from the training configuration."""
+    sched_type = getattr(cfg, "lr_sched", None)
+    model_name = str(getattr(cfg, "backbone", getattr(cfg, "model", ""))).lower()
+
+    if sched_type == "cosine" or (sched_type is None and model_name in ("arbase", "sbs", "mgn")):
+        delay = getattr(cfg, "lr_delay_epochs", 30 if "sbs" in model_name else 60)
+        return WarmupCosineAnnealingLR(
+            optimizer,
+            max_epochs=getattr(cfg, "epochs", 120),
+            delay_epochs=delay,
+            eta_min=getattr(cfg, "eta_min", 7e-7),
+            warmup_factor=getattr(cfg, "warmup_factor", 0.1),
+            warmup_epochs=getattr(cfg, "warmup_epochs", 10),
+        )
+
     return WarmupMultiStepLR(
         optimizer,
         milestones=getattr(cfg, "lr_milestones", (40, 70)),

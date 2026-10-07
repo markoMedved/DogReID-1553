@@ -164,7 +164,7 @@ def main():
     if args.eval_period is not None: cfg.eval_period = args.eval_period
     if args.full_finetune is not None: cfg.full_finetune = args.full_finetune
     if args.unfreeze_blocks is not None: cfg.unfreeze_blocks = args.unfreeze_blocks
-    cfg.refresh_run_name()
+    cfg.refresh_run_name(make_dir=True)
     cfg.display()
 
     # ------------------------------------------------
@@ -216,6 +216,10 @@ def main():
             or name.startswith('oa_model.b1')
             or name.startswith('oa_model.b2')
             or name.startswith('oa_model.b3')
+            or name.startswith('shared_base')
+            or name.startswith('b1.')
+            or name.startswith('b2.')
+            or name.startswith('b3.')
         )
 
     backbone_params = [

@@ -52,9 +52,9 @@ class Config:
     val_split  = 0.2
 
     # --- Training & Optimization ---
-    epochs         = 120           # 120 epochs total (paper)
+    epochs         = 50            # 50 epochs total
     warmup_epochs  = 10            # 10‑epoch linear warmup (3.5e‑5 → 3.5e‑4)
-    lr_milestones  = (40, 70)      # decay LR by 0.1 at epoch 40 and 70
+    lr_milestones  = (15, 30)      # decay LR by 0.1 at epoch 15 and 30
     lr_gamma       = 0.1
     optimizer      = "adam"        # 'adam', 'adamw', or 'sgd'
     weight_decay   = 5e-04         # 5e-4 matches OpenAnimals across all baselines
@@ -65,7 +65,7 @@ class Config:
     backbone_lr_factor = 1.0      # 1.0 matches OpenAnimals (backbone LR == head LR == base LR)
     warmup_factor  = 0.1          # 0.1 matches OpenAnimals (linear warmup from 0.1x to 1.0x)
     accum_steps    = 1            # gradient accumulation (1 for standard paper baseline)
-    save_period    = 10
+    save_period    = 0            # 0 disables periodic checkpoints (saves only latest_model.pth)
 
     # --- Data Augmentation ---
     aug_pad = 10
@@ -100,7 +100,7 @@ class Config:
 
         self.num_ids = self.batch_size // self.k
 
-        oa_models = (
+        native_or_oa_baselines = (
             "bot", "oa_bot", "openanimals_bot",
             "oa_dinov2", "oa_dinov2_bot", "openanimals_dinov2_bot",
             "agw", "oa_agw", "openanimals_agw",
@@ -113,16 +113,14 @@ class Config:
         if "swin" in self.backbone:
             self.embedding_dim = 1024
             self.img_size = (192, 192)
-        elif self.backbone in oa_models or self.backbone.startswith("oa_") or self.backbone.startswith("openanimals_"):
+        elif self.backbone in native_or_oa_baselines or self.backbone.startswith("oa_") or self.backbone.startswith("openanimals_"):
             is_mb = "mgn" in self.backbone or "arbase_mb" in self.backbone
             self.embedding_dim = 768 if "dinov2" in self.backbone else (2048 * (8 if is_mb else 1))
             
-            # OpenAnimals DogReID settings (Square aspect ratio, Adam, WD=5e-4, 1.0x BB LR):
+            # DogReID settings (Square aspect ratio, Adam, WD=5e-4, 1.0x BB LR for full, 0.1x for frozen):
             self.optimizer = "adam"
             self.weight_decay = 5e-04
-            self.backbone_lr_factor = 1.0
-            # chunk_size = batch_size: frames are fed time-major, so each BN batch
-            # holds frame t of all 64 clips (16 identities), like an OpenAnimals batch
+            self.backbone_lr_factor = 1.0 if getattr(self, "full_finetune", False) else 0.1
             self.chunk_size = 64
             self.autoaug_prob = 0.1 if "sbs" in self.backbone else 0.0  # Base-SBS: AUTOAUG p=0.1
 
@@ -135,40 +133,53 @@ class Config:
                 if not getattr(self, "full_finetune", False):
                     self.backbone_lr_factor = 0.1
             elif "mgn" in self.backbone:
-                self.img_size = (384, 384)  # OpenAnimals DogReID: 384x384
-                self.re_prob = 0.0          # OpenAnimals: REA disabled for animal re-ID
+                self.img_size = (384, 128)
+                self.re_prob = 0.0          # REA disabled for MGN
                 self.margin = 0.3
-                self.epochs = 120
+                self.epochs = 50
                 self.lr = 3.5e-04
-                self.warmup_epochs = 10
-                self.lr_milestones = (40, 90)
+                self.lr_sched = "cosine"
+                self.lr_delay_epochs = 12
                 self.chunk_size = 64
             elif "arbase" in self.backbone:
-                self.img_size = (384, 384)  # OpenAnimals DogReID: 384x384
-                self.re_prob = 0.0          # OpenAnimals: REA disabled for animal re-ID
+                self.img_size = (384, 384)
+                self.re_prob = 0.0          # REA disabled for ARBase
                 self.margin = 0.3
+                self.epochs = 50
                 self.lr = 3.5e-04
+                self.lr_sched = "cosine"
+                self.lr_delay_epochs = 12
                 self.chunk_size = 64
             elif "agw" in self.backbone:
-                self.img_size = (384, 384)  # OpenAnimals DogReID: 384x384
-                self.re_prob = 0.5          # OpenAnimals: REA enabled
-                self.margin = 0.0           # OpenAnimals: Weighted soft-margin triplet
+                self.img_size = (256, 128)
+                self.re_prob = 0.5          # REA enabled for AGW
+                self.margin = 0.0           # Weighted soft-margin triplet
+                self.epochs = 50
                 self.lr = 3.5e-04
+                self.lr_sched = "multistep"
+                self.lr_milestones = (15, 30)
                 self.chunk_size = 64
             elif "sbs" in self.backbone:
-                self.img_size = (384, 384)  # OpenAnimals DogReID: 384x384
-                self.re_prob = 0.5          # OpenAnimals: REA enabled
-                self.margin = 0.0           # OpenAnimals: Soft-margin triplet
+                self.img_size = (384, 128)
+                self.re_prob = 0.5          # REA enabled for SBS
+                self.autoaug_prob = 0.1     # AutoAugment p=0.1
+                self.margin = 0.0           # Soft-margin triplet
+                self.epochs = 50
                 self.lr = 3.5e-04
+                self.lr_sched = "cosine"
+                self.lr_delay_epochs = 12
                 self.chunk_size = 64
             elif "bot" in self.backbone:
-                self.img_size = (256, 256)  # OpenAnimals DogReID: 256x256
-                self.re_prob = 0.5          # OpenAnimals: REA enabled
+                self.img_size = (256, 128)
+                self.re_prob = 0.5
                 self.margin = 0.3
+                self.epochs = 50
                 self.lr = 3.5e-04
+                self.lr_sched = "multistep"
+                self.lr_milestones = (15, 30)
                 self.chunk_size = 64
             else:
-                self.img_size = (256, 256)
+                self.img_size = (256, 128)
                 self.re_prob = 0.5
                 self.chunk_size = 64
 
@@ -176,16 +187,18 @@ class Config:
                 self.reid_method = "bot"
         elif "resnet" in self.backbone:
             self.embedding_dim = 2048
-            self.img_size = (256, 256)  # DogReID square aspect ratio (matches OpenAnimals BoT)
+            self.img_size = (256, 128)
             self.re_prob = 0.5
             self.chunk_size = 64
             self.optimizer = "adam"
             self.weight_decay = 5e-04
-            self.backbone_lr_factor = 1.0
+            self.backbone_lr_factor = 1.0 if getattr(self, "full_finetune", False) else 0.1
             self.lr = 3.5e-04
             self.margin = 0.3
+            self.epochs = 50
             self.warmup_epochs = 10
-            self.lr_milestones = (40, 70)
+            self.lr_sched = "multistep"
+            self.lr_milestones = (15, 30)
         elif "dinov2" in self.backbone:
             self.embedding_dim = 768
             self.img_size = (224, 224)
@@ -196,17 +209,19 @@ class Config:
             self.backbone_lr_factor = 1.0 if getattr(self, "full_finetune", False) else 0.1
             self.lr = 3.5e-04
             self.margin = 0.3
+            self.epochs = 50
             self.warmup_epochs = 10
-            self.lr_milestones = (40, 70)
+            self.lr_sched = "multistep"
+            self.lr_milestones = (15, 30)
         else:
             self.embedding_dim = 768
             self.img_size = (224, 224)
 
-        self.refresh_run_name()
+        self.refresh_run_name(make_dir=False)
 
     @staticmethod
-    def compose_run_name(backbone, reid_method, world, pooling_type, full_finetune, use_id_loss=None, mask_dog=False):
-        """Single definition of the run name, shared by training and evaluation."""
+    def compose_legacy_run_name(backbone, reid_method, world, pooling_type, full_finetune, use_id_loss=None, mask_dog=False):
+        """Old verbose naming definition preserved for checkpoint fallback."""
         if use_id_loss is None:
             use_id_loss = getattr(Config, "use_id_loss", True)
         if reid_method in ("bot", "transreid"):
@@ -217,14 +232,74 @@ class Config:
             name += "_masked"
         return name
 
-    def refresh_run_name(self, make_dir=True):
+    @staticmethod
+    def compose_run_name(backbone, reid_method=None, world="closed", pooling_type="attention", full_finetune=False, use_id_loss=None, mask_dog=False, backbone_lr_factor=None):
+        """Clean and concise run naming convention."""
+        bb = str(backbone).lower() if backbone else ""
+        method = str(reid_method).lower() if reid_method else ""
+        if bb in ("arbase", "agw", "sbs", "mgn"):
+            base = bb
+            if backbone_lr_factor is not None and abs(float(backbone_lr_factor) - 1.0) > 1e-4:
+                tune = f"{float(backbone_lr_factor):g}x"
+                name = f"{base}_{tune}"
+            else:
+                name = base
+        elif "dinov2" in bb:
+            base = "dinov2_bot" if (method in ("bot", "transreid") or "bot" in bb) else "dinov2"
+            if full_finetune:
+                name = f"{base}_full"
+            elif backbone_lr_factor is not None and abs(float(backbone_lr_factor) - 0.1) > 1e-4:
+                name = f"{base}_{float(backbone_lr_factor):g}x"
+            else:
+                name = base
+        elif "resnet" in bb:
+            base = "resnet50_bot" if (method in ("bot", "transreid") or "bot" in bb) else "resnet50"
+            if not full_finetune:
+                name = f"{base}_frozen"
+            elif backbone_lr_factor is not None and abs(float(backbone_lr_factor) - 1.0) > 1e-4:
+                name = f"{base}_{float(backbone_lr_factor):g}x"
+            else:
+                name = base
+        else:
+            if method in ("bot", "transreid") and not bb.endswith(method):
+                base = f"{bb}_{method}"
+            else:
+                base = bb
+            if full_finetune:
+                tune = f"unfrozen_{float(backbone_lr_factor):g}x" if (backbone_lr_factor is not None and abs(float(backbone_lr_factor) - 1.0) > 1e-4) else "full"
+            else:
+                tune = f"frozen_{float(backbone_lr_factor):g}x" if (backbone_lr_factor is not None and abs(float(backbone_lr_factor) - 0.1) > 1e-4) else "frozen"
+            name = f"{base}_{tune}"
+
+        if world and str(world).lower() != "closed":
+            name += f"_{world}"
+        if pooling_type and str(pooling_type).lower() != "attention":
+            name += f"_{pooling_type}"
+        if mask_dog:
+            name += "_masked"
+        return name
+
+    def refresh_run_name(self, make_dir=False):
         """Recompute run_name and output_dir after any field is overridden."""
         self.num_ids = self.batch_size // self.k
         self.run_name = self.compose_run_name(
             self.backbone, self.reid_method, self.world,
             self.pooling_type, self.full_finetune, getattr(self, "use_id_loss", False),
-            getattr(self, "mask_dog", False)
+            getattr(self, "mask_dog", False), getattr(self, "backbone_lr_factor", None)
         )
+        # Only map to legacy name if using the original regime backbone_lr_factor (1.0 for full, 0.1 for frozen)
+        bb_factor = getattr(self, "backbone_lr_factor", 1.0 if self.full_finetune else 0.1)
+        expected_bb_factor = 1.0 if self.full_finetune else 0.1
+        if abs(float(bb_factor) - expected_bb_factor) < 1e-4:
+            self.legacy_run_name = self.compose_legacy_run_name(
+                self.backbone, self.reid_method, self.world,
+                self.pooling_type, self.full_finetune, getattr(self, "use_id_loss", False),
+                getattr(self, "mask_dog", False)
+            )
+            self.legacy_output_dir = self.project_root / "checkpoints" / self.legacy_run_name
+        else:
+            self.legacy_run_name = None
+            self.legacy_output_dir = None
         self.output_dir = self.project_root / "checkpoints" / self.run_name
         if make_dir:
             self.output_dir.mkdir(parents=True, exist_ok=True)

@@ -17,17 +17,25 @@ def build_model(cfg):
     model_type = getattr(cfg, "backbone", getattr(cfg, "model", None))
     model_type_str = str(model_type).lower() if model_type else ""
 
+    # Native implementations of animal Re-ID baselines
+    if model_type_str in ("arbase", "native_arbase"):
+        from .native_baselines import NativeARBase
+        return NativeARBase(cfg)
+    elif model_type_str in ("mgn", "native_mgn"):
+        from .native_baselines import NativeMGN
+        return NativeMGN(cfg)
+
     oa_names = {
         "bot", "oa_bot", "openanimals_bot",
         "oa_dinov2", "oa_dinov2_bot", "openanimals_dinov2_bot",
-        "agw", "oa_agw", "openanimals_agw",
-        "sbs", "oa_sbs", "openanimals_sbs",
-        "mgn", "oa_mgn", "openanimals_mgn",
-        "arbase", "oa_arbase", "openanimals_arbase",
+        "agw", "native_agw", "oa_agw", "openanimals_agw",
+        "sbs", "native_sbs", "oa_sbs", "openanimals_sbs",
+        "oa_mgn", "openanimals_mgn",
+        "oa_arbase", "openanimals_arbase",
         "arbase_mb", "oa_arbase_mb", "arbase_mgn",
     }
 
-    # OpenAnimals architectures (SBS, AGW, MGN, ARBase, OA_BoT, OA_DINOv2_BoT)
+    # OpenAnimals architectures (legacy wrapper)
     if model_type_str in oa_names or model_type_str.startswith("oa_") or model_type_str.startswith("openanimals_"):
         from .openanimals_models import OpenAnimalsVideoModel
         return OpenAnimalsVideoModel(

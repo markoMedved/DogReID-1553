@@ -2,7 +2,7 @@
 #SBATCH --job-name=v_agw
 #SBATCH --output=logs_jobs/video_agw_%j.out
 #SBATCH --error=logs_jobs/video_agw_%j.err
-#SBATCH --time=3-00:00:00
+#SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=h100
@@ -15,39 +15,45 @@ source $(conda info --base)/etc/profile.d/conda.sh
 conda activate project
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTHONUNBUFFERED=1
+export PYTHONPATH=OpenAnimals:$PYTHONPATH
 
 cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings (AGW in DogReID Framework) ---
+# --- Experiment Settings (OpenAnimals AGW - ResNet-50-IBN-a + NonLocal + GeM, 256x128, 1.0x LR, MultiStepLR) ---
 MODEL="agw"
 POOLING="attention"
 WORLD="closed"
 BATCH_SIZE=64   # P×K = 64 (P=16, K=4)
 K=4
 CLIP_LEN=8
-EPOCHS=120
+EPOCHS=50
 LR=3.5e-04
+BACKBONE_LR_FACTOR=1.0
 VAL_SPLIT=0          # train on full train split, evaluate on test split
-EVAL_PERIOD=1
+EVAL_PERIOD=5
 ACCUM_STEPS=1
 
 echo "=========================================================="
-echo "Starting Video-to-Video Training: AGW (Native Framework)"
-echo "  Model        : ${MODEL}"
-echo "  Method       : bot"
-echo "  Pooling      : ${POOLING}"
-echo "  World        : ${WORLD}"
-echo "  Batch / K    : ${BATCH_SIZE} / ${K} (P = $((BATCH_SIZE / K)) identities)"
-echo "  Clip Length  : ${CLIP_LEN} frames"
-echo "  Learning Rate: ${LR}"
-echo "  Epochs       : ${EPOCHS}"
+echo "Starting Video-to-Video Training: Native AGW (1.0x LR)"
+echo "  Model             : ${MODEL}"
+echo "  Pooling           : ${POOLING}"
+echo "  World             : ${WORLD}"
+echo "  Batch / K         : ${BATCH_SIZE} / ${K} (P = $((BATCH_SIZE / K)) identities)"
+echo "  Clip Length       : ${CLIP_LEN} frames"
+echo "  Learning Rate     : Head ${LR}, Backbone ${LR} (factor: ${BACKBONE_LR_FACTOR})"
+echo "  Epochs            : ${EPOCHS}"
+echo "  Resolution        : 256x128"
+echo "  Backbone          : ResNet-50-IBN-a + Non-Local blocks"
+echo "  Pooling           : GeM (p=3.0)"
+echo "  Loss              : Weighted Regularized Soft-margin Triplet + CE"
+echo "  Scheduler         : MultiStepLR (steps 15, 30)"
+echo "  Fine-tuning       : Full fine-tuning (backbone LR factor ${BACKBONE_LR_FACTOR}x)"
 echo "=========================================================="
 
 python train.py \
     --model ${MODEL} \
-    --reid_method bot \
     --world ${WORLD} \
     --batch_size ${BATCH_SIZE} \
     --k ${K} \
@@ -59,6 +65,6 @@ python train.py \
     --eval_period ${EVAL_PERIOD} \
     --accum_steps ${ACCUM_STEPS} \
     --full_finetune \
-    --resume
+    --backbone_lr_factor ${BACKBONE_LR_FACTOR}
 
-echo "Video AGW job complete!"
+echo "Video Native AGW job complete!"

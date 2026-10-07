@@ -2,7 +2,7 @@
 #SBATCH --job-name=v_mgn
 #SBATCH --output=logs_jobs/video_mgn_%j.out
 #SBATCH --error=logs_jobs/video_mgn_%j.err
-#SBATCH --time=3-00:00:00
+#SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=h100
@@ -20,34 +20,40 @@ cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings (MGN in DogReID Framework) ---
+# --- Experiment Settings (Native MGN - 3 Branches, 8 Stripe Pools & Heads, 384x128, 1.0x LR) ---
 MODEL="mgn"
 POOLING="attention"
 WORLD="closed"
 BATCH_SIZE=64   # P×K = 64 (P=16, K=4)
 K=4
 CLIP_LEN=8
-EPOCHS=120
+EPOCHS=50
 LR=3.5e-04
+BACKBONE_LR_FACTOR=1.0
 VAL_SPLIT=0          # train on full train split, evaluate on test split
-EVAL_PERIOD=1
+EVAL_PERIOD=5
 ACCUM_STEPS=1
 
 echo "=========================================================="
-echo "Starting Video-to-Video Training: MGN (Native Framework)"
-echo "  Model        : ${MODEL}"
-echo "  Method       : bot"
-echo "  Pooling      : ${POOLING}"
-echo "  World        : ${WORLD}"
-echo "  Batch / K    : ${BATCH_SIZE} / ${K} (P = $((BATCH_SIZE / K)) identities)"
-echo "  Clip Length  : ${CLIP_LEN} frames"
-echo "  Learning Rate: ${LR}"
-echo "  Epochs       : ${EPOCHS}"
+echo "Starting Video-to-Video Training: Native MGN (1.0x LR)"
+echo "  Model             : ${MODEL}"
+echo "  Pooling           : ${POOLING}"
+echo "  World             : ${WORLD}"
+echo "  Batch / K         : ${BATCH_SIZE} / ${K} (P = $((BATCH_SIZE / K)) identities)"
+echo "  Clip Length       : ${CLIP_LEN} frames"
+echo "  Learning Rate     : Head ${LR}, Backbone ${LR} (factor: ${BACKBONE_LR_FACTOR})"
+echo "  Epochs            : ${EPOCHS}"
+echo "  Resolution        : 384x128"
+echo "  Backbone          : ResNet-50-IBN-a + 3 Multi-Branch Paths"
+echo "  Granularities     : 8 stripe heads (b1, b2, b21, b22, b3, b31, b32, b33)"
+echo "  Eval Feat Dim     : 16,384"
+echo "  Loss              : 8x CE (scale 0.125) + 5x Triplet (scale 0.2, margin 0.3)"
+echo "  Scheduler         : CosineAnnealingLR (delay 12 epochs)"
+echo "  Fine-tuning       : Full fine-tuning (backbone LR factor ${BACKBONE_LR_FACTOR}x)"
 echo "=========================================================="
 
 python train.py \
     --model ${MODEL} \
-    --reid_method bot \
     --world ${WORLD} \
     --batch_size ${BATCH_SIZE} \
     --k ${K} \
@@ -59,6 +65,6 @@ python train.py \
     --eval_period ${EVAL_PERIOD} \
     --accum_steps ${ACCUM_STEPS} \
     --full_finetune \
-    --resume
+    --backbone_lr_factor ${BACKBONE_LR_FACTOR}
 
-echo "Video MGN job complete!"
+echo "Video Native MGN job complete!"

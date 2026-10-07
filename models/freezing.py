@@ -20,6 +20,8 @@ def _core_network(model):
         backbone = model.oa_model.backbone
         if hasattr(backbone, "adapter"):
             backbone = backbone.adapter
+    elif hasattr(model, "shared_base"):
+        backbone = model.shared_base
     else:
         backbone = getattr(model, "backbone", None)
 
@@ -151,11 +153,16 @@ def apply_freezing(model, cfg):
         )
 
     # --- Always-Trainable Components ---
-    # Temporal pooling, BN necks and identity heads, for both the current
-    # VideoReID layout (ModuleLists) and the single-branch builders.
-    for attr in ("pools", "heads", "temporal_pool", "temporal_attn",
-                 "bn", "bottleneck", "classifier", "temporal_pools"):
+    # Temporal pooling, BN necks, classifiers, branches, and heads
+    for attr in ("pools", "heads", "head", "temporal_pool", "temporal_attn",
+                 "bn", "bottleneck", "classifier", "temporal_pools",
+                 "b1", "b2", "b3", "b1_head", "b2_head", "b21_head", "b22_head",
+                 "b3_head", "b31_head", "b32_head", "b33_head"):
         _unfreeze(getattr(model, attr, None))
+
+    if hasattr(model, "backbone"):
+        for nl in ("NL_1", "NL_2", "NL_3", "NL_4"):
+            _unfreeze(getattr(model.backbone, nl, None))
 
     if hasattr(model, "oa_model"):
         _unfreeze(getattr(model.oa_model, "heads", None))

@@ -181,7 +181,12 @@ for ckpt in all_checkpoints:
 
 if latest_ckpt:
     MODEL_PATH = str(latest_ckpt)
-    print(f"-> Selected latest epoch checkpoint: {latest_ckpt.name}")
+elif (checkpoint_dir / "latest_model.pth").exists():
+    MODEL_PATH = str(checkpoint_dir / "latest_model.pth")
+    print("-> Found 'latest_model.pth'.")
+elif (checkpoint_dir / "best_model.pth").exists():
+    MODEL_PATH = str(checkpoint_dir / "best_model.pth")
+    print("-> Found 'best_model.pth'.")
 elif (checkpoint_dir / "model.pth").exists():
     MODEL_PATH = str(checkpoint_dir / "model.pth")
     print("-> No numbered epoch checkpoints found. Falling back to 'model.pth'.")

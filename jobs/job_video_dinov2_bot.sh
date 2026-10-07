@@ -2,7 +2,7 @@
 #SBATCH --job-name=v_dino_bot
 #SBATCH --output=logs_jobs/video_dinov2_bot_%j.out
 #SBATCH --error=logs_jobs/video_dinov2_bot_%j.err
-#SBATCH --time=3-00:00:00
+#SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=h100
@@ -28,10 +28,10 @@ WORLD="closed"
 BATCH_SIZE=64   # P×K = 64 (P=16, K=4)
 K=4
 CLIP_LEN=8
-EPOCHS=120
+EPOCHS=50
 LR=3.5e-04
 VAL_SPLIT=0          # train on full train split, evaluate on test split
-EVAL_PERIOD=1
+EVAL_PERIOD=5
 ACCUM_STEPS=1
 
 echo "=========================================================="
@@ -44,6 +44,7 @@ echo "  Batch / K    : ${BATCH_SIZE} / ${K} (P = $((BATCH_SIZE / K)) identities)
 echo "  Clip Length  : ${CLIP_LEN} frames"
 echo "  Learning Rate: ${LR}"
 echo "  Epochs       : ${EPOCHS}"
+echo "  Scheduler    : MultiStepLR (milestones 15, 30)"
 echo "=========================================================="
 
 python train.py \
@@ -61,7 +62,6 @@ python train.py \
     --accum_steps ${ACCUM_STEPS} \
     --no_full_finetune \
     --unfreeze_blocks 2 \
-    --backbone_lr_factor 0.1 \
-    --resume
+    --backbone_lr_factor 0.1
 
 echo "Video Native DINOv2 BoT job complete!"

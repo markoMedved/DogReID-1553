@@ -70,9 +70,35 @@ class Trainer:
         self.best_r1 = 0.0
         self.start_epoch = 0
 
+        # --- Clean Output Dir if Starting From Scratch ---
+        if not getattr(cfg, "resume", False) and self.cfg.output_dir.exists():
+            for f in self.cfg.output_dir.iterdir():
+                if f.is_file():
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+            print(f"[trainer] Starting from scratch. Cleared prior files in {self.cfg.output_dir}")
+
         # --- Resume Checkpoint if Requested ---
         if getattr(cfg, "resume", False):
             latest_path = self.cfg.output_dir / "latest_model.pth"
+            if not latest_path.exists():
+                candidates = []
+                leg_dir = getattr(self.cfg, "legacy_output_dir", None)
+                if leg_dir:
+                    candidates.append(leg_dir / "latest_model.pth")
+                root = getattr(self.cfg, "project_root", None)
+                if root:
+                    if hasattr(self.cfg, "legacy_run_name"):
+                        candidates.append(root / "checkpoints_o" / self.cfg.legacy_run_name / "latest_model.pth")
+                    if hasattr(self.cfg, "run_name"):
+                        candidates.append(root / "checkpoints_o" / self.cfg.run_name / "latest_model.pth")
+                for cand in candidates:
+                    if cand.exists():
+                        latest_path = cand
+                        print(f"[resume] Note: found checkpoint under fallback path: {latest_path}")
+                        break
             if latest_path.exists():
                 print(f"[resume] Loading checkpoint from {latest_path} ...")
                 ckpt = torch.load(latest_path, map_location=self.device)
@@ -98,7 +124,9 @@ class Trainer:
                       f"current LR = {self.optimizer.param_groups[0]['lr']:.2e}")
                 print(f"[resume] Successfully resumed model state from epoch {self.start_epoch}")
 
-                hist_file = self.cfg.output_dir / "training_history.json"
+                hist_file = latest_path.parent / "training_history.json"
+                if not hist_file.exists():
+                    hist_file = self.cfg.output_dir / "training_history.json"
                 if hist_file.exists():
                     try:
                         with open(hist_file, "r") as f:
@@ -110,6 +138,18 @@ class Trainer:
                         print(f"[resume] Loaded history ({len(self.history.get('epochs', []))} epochs). Best mAP so far: {self.best_mAP:.2%}")
                     except Exception as e:
                         print(f"[resume] Warning loading history: {e}")
+
+                if latest_path.parent != self.cfg.output_dir:
+                    src_best = latest_path.parent / "best_model.pth"
+                    dst_best = self.cfg.output_dir / "best_model.pth"
+                    if src_best.exists() and not dst_best.exists():
+                        import shutil
+                        try:
+                            self.cfg.output_dir.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(src_best, dst_best)
+                            print(f"[resume] Copied best model from {src_best} -> {dst_best}")
+                        except Exception as e:
+                            print(f"[resume] Warning copying best model: {e}")
             else:
                 print(f"[resume] Checkpoint {latest_path} not found. Starting from scratch (epoch 0).")
 
@@ -207,13 +247,13 @@ class Trainer:
                         }, best_path)
                         print(f"--> [BEST] New best model saved! (Rank-1: {r1:.2%}, mAP: {mAP:.2%}, Val Loss: {val_loss:.4f}) -> {best_path}")
 
-            # Save latest checkpoint every epoch
+            # Save latest checkpoint every epoch (overwritten each epoch; represents the final model at completion)
             latest_path = self.cfg.output_dir / "latest_model.pth"
             torch.save(self._training_state(epoch), latest_path)
 
-            # Periodic checkpoint (every save_period epochs)
-            save_period = getattr(self.cfg, 'save_period', 10)
-            if (epoch + 1) % save_period == 0:
+            # Periodic checkpoint saving disabled (only latest_model.pth and best_model.pth are retained)
+            save_period = getattr(self.cfg, 'save_period', 0)
+            if save_period > 0 and (epoch + 1) % save_period == 0:
                 checkpoint_path = self.cfg.output_dir / f"model_epoch_{epoch + 1}.pth"
                 torch.save(self._training_state(epoch), checkpoint_path)
                 print(f"--> Saved periodic checkpoint to {checkpoint_path}")
@@ -221,11 +261,7 @@ class Trainer:
             # Update live training curves PNG and history JSON
             self._save_and_plot_history()        
 
-        # --- Final Model Saving ---
-        # Automatically saves the model if trained on the full dataset
-        if val_split <= 0.01:
-            print("!!! Final training run detected (val_split=0). Saving final model...")
-            self.save_checkpoint("model.pth")
+        print(f"Training complete. Final model saved to: {self.cfg.output_dir / 'latest_model.pth'}")
 
     def train_epoch(self, epoch):
         """Train for one epoch"""
@@ -261,55 +297,61 @@ class Trainer:
                                 enabled=self.amp_enabled):
                 outputs = self.model(videos, targets=labels)
 
-            if isinstance(outputs, tuple):
-                embeddings, logits = outputs
-            else:
-                embeddings, logits = outputs, None
-
-            # Losses are computed in float32; metric learning is sensitive to
-            # reduced precision in the distance matrix
-            if isinstance(embeddings, (list, tuple)):
-                embeddings = [e.float() for e in embeddings]
-            else:
-                embeddings = embeddings.float()
-            if logits is not None:
-                if isinstance(logits, (list, tuple)):
-                    logits = [l.float() for l in logits]
-                else:
-                    logits = logits.float()
-
-            # --- Triplet Loss Computation ---
-            if getattr(self.model, "is_openanimals", False):
-                from openanimals.modeling.losses.triplet_loss import triplet_loss as oa_triplet_loss
-                tri_cfg = self.model.oa_cfg.MODEL.LOSSES.TRI
-                feats = embeddings if isinstance(embeddings, (list, tuple)) else [embeddings]
-                # Raw (unnormalised) features; NORM_FEAT decides euclidean vs cosine as in
-                # OpenAnimals. Multiple feature sets (MGN: b1,b2,b3,b22,b33) are averaged,
-                # i.e. x0.2 each, matching MGN.losses.
-                loss_triplet = sum(
-                    oa_triplet_loss(
-                        f, labels,
-                        margin=tri_cfg.MARGIN,
-                        norm_feat=tri_cfg.NORM_FEAT,
-                        hard_mining=tri_cfg.HARD_MINING
-                    ) for f in feats
-                ) / len(feats) * tri_cfg.SCALE
-            else:
-                hard_pairs = self.miner(embeddings, labels)
-                loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
-
-            # --- Metric Learning & Identity Loss ---
-            if logits is not None and getattr(self.cfg, 'num_classes', 0) > 0:
-                if isinstance(logits, (list, tuple)):
-                    loss_id = sum(self.id_loss_fn(l, labels) for l in logits) / len(logits)
-                else:
-                    loss_id = self.id_loss_fn(logits, labels)
-                total_loss = loss_triplet + self.id_loss_weight * loss_id
+            if hasattr(self.model, "compute_loss"):
+                total_loss, loss_triplet, loss_id = self.model.compute_loss(outputs, labels)
                 has_sub = True
                 running_cls += loss_id.item()
                 running_tri += loss_triplet.item()
             else:
-                total_loss = loss_triplet
+                if isinstance(outputs, tuple):
+                    embeddings, logits = outputs
+                else:
+                    embeddings, logits = outputs, None
+
+                # Losses are computed in float32; metric learning is sensitive to
+                # reduced precision in the distance matrix
+                if isinstance(embeddings, (list, tuple)):
+                    embeddings = [e.float() for e in embeddings]
+                else:
+                    embeddings = embeddings.float()
+                if logits is not None:
+                    if isinstance(logits, (list, tuple)):
+                        logits = [l.float() for l in logits]
+                    else:
+                        logits = logits.float()
+
+                # --- Triplet Loss Computation ---
+                if getattr(self.model, "is_openanimals", False):
+                    from openanimals.modeling.losses.triplet_loss import triplet_loss as oa_triplet_loss
+                    tri_cfg = self.model.oa_cfg.MODEL.LOSSES.TRI
+                    feats = embeddings if isinstance(embeddings, (list, tuple)) else [embeddings]
+                    # Raw (unnormalised) features; NORM_FEAT decides euclidean vs cosine as in
+                    # OpenAnimals. Multiple feature sets (MGN: b1,b2,b3,b22,b33) are averaged,
+                    # i.e. x0.2 each, matching MGN.losses.
+                    loss_triplet = sum(
+                        oa_triplet_loss(
+                            f, labels,
+                            margin=tri_cfg.MARGIN,
+                            norm_feat=tri_cfg.NORM_FEAT,
+                            hard_mining=tri_cfg.HARD_MINING
+                        ) for f in feats
+                    ) / len(feats) * tri_cfg.SCALE
+                else:
+                    hard_pairs = self.miner(embeddings, labels)
+                    loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
+
+                # --- Metric Learning & Identity Loss ---
+                if logits is not None and getattr(self.cfg, 'num_classes', 0) > 0:
+                    if isinstance(logits, (list, tuple)):
+                        loss_id = sum(self.id_loss_fn(l, labels) for l in logits) / len(logits)
+                    else:
+                        loss_id = self.id_loss_fn(logits, labels)
+                    total_loss = loss_triplet + self.id_loss_weight * loss_id
+                    has_sub = True
+                    running_cls += loss_id.item()
+                    running_tri += loss_triplet.item()
+                else:
+                    total_loss = loss_triplet
 
             # --- Backpropagation with Accumulation ---
             # Divides loss by accumulation steps to average gradients correctly
