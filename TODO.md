@@ -14,3 +14,5 @@ maybe the whole fine-tune is actually better for the resnet than the partially f
  for the other methods use everything default (including crops ), do we need linear warmup for dino(look at what this linear warmup is good for, how many epochs to even take)?
 
  if overfit change to previous bacbkbone smaller lr 
+
+ mogoce lahko probamo samo dropnt backbone lr po 5 epochih
