@@ -18,4 +18,5 @@ maybe the whole fine-tune is actually better for the resnet than the partially f
  RIGHT NOW THE LR DROPS AT EPOCH 5 AUTOMATICALLY
 
  TODO - give credit to psta and opeanimal repositories as well
- 
+
+ maybe we need to use the space annotation for it to not overfit so bad

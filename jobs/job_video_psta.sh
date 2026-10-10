@@ -2,7 +2,7 @@
 #SBATCH --job-name=v_psta
 #SBATCH --output=logs_jobs/video_psta_%j.out
 #SBATCH --error=logs_jobs/video_psta_%j.err
-#SBATCH --time=4:00:00
+#SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
