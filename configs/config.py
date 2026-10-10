@@ -66,6 +66,8 @@ class Config:
     warmup_factor  = 0.1          # 0.1 matches OpenAnimals (linear warmup from 0.1x to 1.0x)
     accum_steps    = 1            # gradient accumulation (1 for standard paper baseline)
     save_period    = 0            # 0 disables periodic checkpoints (saves only latest_model.pth)
+    backbone_drop_epoch = None    # Epoch at which backbone LR drops (e.g. 5)
+    backbone_drop_factor = 0.1    # Multiplier for backbone LR after drop epoch
 
     # --- Data Augmentation ---
     aug_pad = 10
@@ -141,6 +143,7 @@ class Config:
                 self.lr_sched = "cosine"
                 self.lr_delay_epochs = 12
                 self.chunk_size = 64
+                self.backbone_drop_epoch = 5
             elif "arbase" in self.backbone:
                 self.img_size = (384, 384)
                 self.re_prob = 0.0          # REA disabled for ARBase
@@ -150,6 +153,7 @@ class Config:
                 self.lr_sched = "cosine"
                 self.lr_delay_epochs = 12
                 self.chunk_size = 64
+                self.backbone_drop_epoch = 5
             elif "agw" in self.backbone:
                 self.img_size = (256, 128)
                 self.re_prob = 0.5          # REA enabled for AGW
@@ -159,6 +163,7 @@ class Config:
                 self.lr_sched = "multistep"
                 self.lr_milestones = (15, 30)
                 self.chunk_size = 64
+                self.backbone_drop_epoch = 5
             elif "sbs" in self.backbone:
                 self.img_size = (384, 128)
                 self.re_prob = 0.5          # REA enabled for SBS
@@ -169,6 +174,7 @@ class Config:
                 self.lr_sched = "cosine"
                 self.lr_delay_epochs = 12
                 self.chunk_size = 64
+                self.backbone_drop_epoch = None
             elif "bot" in self.backbone:
                 self.img_size = (256, 128)
                 self.re_prob = 0.5
@@ -178,6 +184,7 @@ class Config:
                 self.lr_sched = "multistep"
                 self.lr_milestones = (15, 30)
                 self.chunk_size = 64
+                self.backbone_drop_epoch = 5
             else:
                 self.img_size = (256, 128)
                 self.re_prob = 0.5
@@ -185,6 +192,24 @@ class Config:
 
             if getattr(self, "reid_method", None) is None:
                 self.reid_method = "bot"
+        elif self.backbone in ("psta", "video_psta"):
+            self.embedding_dim = 1024
+            self.img_size = (256, 128)
+            self.clip_len = 8
+            self.re_prob = 0.5
+            self.chunk_size = 64
+            self.optimizer = "adam"
+            self.weight_decay = 5e-04
+            self.backbone_lr_factor = 1.0
+            self.lr = 3.5e-04
+            self.margin = 0.3
+            self.epochs = 500
+            self.warmup_epochs = 10
+            self.warmup_factor = 0.01
+            self.lr_sched = "multistep"
+            self.lr_milestones = (70, 140, 210, 310, 410)
+            self.lr_gamma = 0.3
+            self.backbone_drop_epoch = None
         elif "resnet" in self.backbone:
             self.embedding_dim = 2048
             self.img_size = (256, 128)
@@ -199,6 +224,7 @@ class Config:
             self.warmup_epochs = 10
             self.lr_sched = "multistep"
             self.lr_milestones = (15, 30)
+            self.backbone_drop_epoch = 5
         elif "dinov2" in self.backbone:
             self.embedding_dim = 768
             self.img_size = (224, 224)
@@ -233,12 +259,12 @@ class Config:
         return name
 
     @staticmethod
-    def compose_run_name(backbone, reid_method=None, world="closed", pooling_type="attention", full_finetune=False, use_id_loss=None, mask_dog=False, backbone_lr_factor=None):
+    def compose_run_name(backbone, reid_method=None, world="closed", pooling_type="attention", full_finetune=False, use_id_loss=None, mask_dog=False, backbone_lr_factor=None, backbone_drop_epoch=None):
         """Clean and concise run naming convention."""
         bb = str(backbone).lower() if backbone else ""
         method = str(reid_method).lower() if reid_method else ""
-        if bb in ("arbase", "agw", "sbs", "mgn"):
-            base = bb
+        if bb in ("arbase", "agw", "sbs", "mgn", "psta", "video_psta"):
+            base = "psta" if "psta" in bb else bb
             if backbone_lr_factor is not None and abs(float(backbone_lr_factor) - 1.0) > 1e-4:
                 tune = f"{float(backbone_lr_factor):g}x"
                 name = f"{base}_{tune}"
@@ -271,6 +297,9 @@ class Config:
                 tune = f"frozen_{float(backbone_lr_factor):g}x" if (backbone_lr_factor is not None and abs(float(backbone_lr_factor) - 0.1) > 1e-4) else "frozen"
             name = f"{base}_{tune}"
 
+        if backbone_drop_epoch is not None:
+            name += f"_drop{backbone_drop_epoch}"
+
         if world and str(world).lower() != "closed":
             name += f"_{world}"
         if pooling_type and str(pooling_type).lower() != "attention":
@@ -285,12 +314,16 @@ class Config:
         self.run_name = self.compose_run_name(
             self.backbone, self.reid_method, self.world,
             self.pooling_type, self.full_finetune, getattr(self, "use_id_loss", False),
-            getattr(self, "mask_dog", False), getattr(self, "backbone_lr_factor", None)
+            getattr(self, "mask_dog", False), getattr(self, "backbone_lr_factor", None),
+            getattr(self, "backbone_drop_epoch", None)
         )
-        # Only map to legacy name if using the original regime backbone_lr_factor (1.0 for full, 0.1 for frozen)
+        # Only map to legacy name if using the original regime backbone_lr_factor (1.0 for full, 0.1 for frozen) and no backbone_drop_epoch
         bb_factor = getattr(self, "backbone_lr_factor", 1.0 if self.full_finetune else 0.1)
         expected_bb_factor = 1.0 if self.full_finetune else 0.1
-        if abs(float(bb_factor) - expected_bb_factor) < 1e-4:
+        if getattr(self, "backbone_drop_epoch", None) is not None:
+            self.legacy_run_name = None
+            self.legacy_output_dir = None
+        elif abs(float(bb_factor) - expected_bb_factor) < 1e-4:
             self.legacy_run_name = self.compose_legacy_run_name(
                 self.backbone, self.reid_method, self.world,
                 self.pooling_type, self.full_finetune, getattr(self, "use_id_loss", False),

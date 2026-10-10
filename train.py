@@ -100,6 +100,18 @@ def main():
         help='Multiplier for backbone LR relative to base LR (default: 1.0 to match OpenAnimals)'
     )
     parser.add_argument(
+        '--backbone_drop_epoch',
+        type=int,
+        default=None,
+        help='Epoch at which to drop backbone LR by 10x (default: model-dependent from config)'
+    )
+    parser.add_argument(
+        '--backbone_drop_factor',
+        type=float,
+        default=None,
+        help='Factor by which to drop backbone LR (default: 0.1)'
+    )
+    parser.add_argument(
         '--resume', 
         action='store_true', 
         default=False, 
@@ -164,6 +176,8 @@ def main():
     if args.eval_period is not None: cfg.eval_period = args.eval_period
     if args.full_finetune is not None: cfg.full_finetune = args.full_finetune
     if args.unfreeze_blocks is not None: cfg.unfreeze_blocks = args.unfreeze_blocks
+    if args.backbone_drop_epoch is not None: cfg.backbone_drop_epoch = args.backbone_drop_epoch
+    if args.backbone_drop_factor is not None: cfg.backbone_drop_factor = args.backbone_drop_factor
     cfg.refresh_run_name(make_dir=True)
     cfg.display()
 
@@ -189,7 +203,7 @@ def main():
     print(f"--> Total training dog identities (num_classes): {cfg.num_classes}")
 
     # If id_loss is disabled for baseline, reset num_classes = 0 so the classifier head isn't built
-    if not cfg.use_id_loss and cfg.reid_method not in ('bot', 'transreid'):
+    if not cfg.use_id_loss and cfg.reid_method not in ('bot', 'transreid') and str(getattr(cfg, "backbone", "")).lower() not in ('psta', 'video_psta'):
         cfg.num_classes = 0
 
     # ------------------------------------------------
@@ -211,6 +225,7 @@ def main():
             return False
         return (
             name.startswith('backbone')
+            or name.startswith('base.')
             or name.startswith('jpm.')
             or name.startswith('oa_model.backbone')
             or name.startswith('oa_model.b1')
@@ -235,9 +250,9 @@ def main():
     bb_lr_factor = float(getattr(cfg, "backbone_lr_factor", 1.0))
     param_groups = []
     if backbone_params:
-        param_groups.append({"params": backbone_params, "lr": cfg.lr * bb_lr_factor})
+        param_groups.append({"params": backbone_params, "lr": cfg.lr * bb_lr_factor, "is_backbone": True})
     if head_params:
-        param_groups.append({"params": head_params, "lr": cfg.lr})
+        param_groups.append({"params": head_params, "lr": cfg.lr, "is_backbone": False})
 
     if not param_groups:
         raise ValueError(
@@ -247,7 +262,8 @@ def main():
 
     n_bb = sum(p.numel() for p in backbone_params)
     n_hd = sum(p.numel() for p in head_params)
-    print(f"[optim] Backbone: {n_bb:,} params, base LR = {cfg.lr * bb_lr_factor:.2e} ({bb_lr_factor}x) | Head: {n_hd:,} params, base LR = {cfg.lr:.2e}")
+    drop_info = f", drop 0.1x at epoch {cfg.backbone_drop_epoch}" if getattr(cfg, "backbone_drop_epoch", None) else ""
+    print(f"[optim] Backbone: {n_bb:,} params, base LR = {cfg.lr * bb_lr_factor:.2e} ({bb_lr_factor}x{drop_info}) | Head: {n_hd:,} params, base LR = {cfg.lr:.2e}")
     opt_name = str(getattr(cfg, "optimizer", "adam")).lower()
     if opt_name == "sgd":
         optimizer = torch.optim.SGD(param_groups, momentum=0.9, weight_decay=getattr(cfg, "weight_decay", 5e-4))
@@ -270,7 +286,7 @@ def main():
         except Exception as e:
             print(f"[scheduler] Warning: failed to build OpenAnimals scheduler ({e}), falling back to WarmupMultiStepLR")
             scheduler = build_scheduler(optimizer, cfg)
-    elif cfg.reid_method in ('bot', 'transreid'):
+    elif cfg.reid_method in ('bot', 'transreid') or str(getattr(cfg, "backbone", "")).lower() in ('psta', 'video_psta'):
         scheduler = build_scheduler(optimizer, cfg)
 
     # ------------------------------------------------

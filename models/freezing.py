@@ -23,7 +23,7 @@ def _core_network(model):
     elif hasattr(model, "shared_base"):
         backbone = model.shared_base
     else:
-        backbone = getattr(model, "backbone", None)
+        backbone = getattr(model, "backbone", getattr(model, "base", None))
 
     if backbone is None:
         return None
@@ -157,7 +157,8 @@ def apply_freezing(model, cfg):
     for attr in ("pools", "heads", "head", "temporal_pool", "temporal_attn",
                  "bn", "bottleneck", "classifier", "temporal_pools",
                  "b1", "b2", "b3", "b1_head", "b2_head", "b21_head", "b22_head",
-                 "b3_head", "b31_head", "b32_head", "b33_head"):
+                 "b3_head", "b31_head", "b32_head", "b33_head",
+                 "down_channel", "layer1", "layer2", "layer3"):
         _unfreeze(getattr(model, attr, None))
 
     if hasattr(model, "backbone"):

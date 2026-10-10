@@ -15,4 +15,7 @@ maybe the whole fine-tune is actually better for the resnet than the partially f
 
  if overfit change to previous bacbkbone smaller lr 
 
- mogoce lahko probamo samo dropnt backbone lr po 5 epochih
+ RIGHT NOW THE LR DROPS AT EPOCH 5 AUTOMATICALLY
+
+ TODO - give credit to psta and opeanimal repositories as well
+ 

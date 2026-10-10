@@ -92,8 +92,7 @@ class NonLocal2d(nn.Module):
     def __init__(self, in_channels: int, reduc_ratio: int = 2):
         super().__init__()
         self.in_channels = in_channels
-        # Matches OpenAnimals layer configuration
-        self.inter_channels = max(1, reduc_ratio // reduc_ratio)
+        self.inter_channels = max(1, in_channels // reduc_ratio)
 
         self.g = nn.Conv2d(in_channels, self.inter_channels, kernel_size=1, bias=False)
         self.theta = nn.Conv2d(in_channels, self.inter_channels, kernel_size=1, bias=False)
@@ -202,6 +201,12 @@ class ResNet50_IBN_a(nn.Module):
                     nn.init.constant_(m.weight, 1.0)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0.0)
+        # Non-Local blocks must start as identity mapping: W[1] BN weight initialized to 0
+        if getattr(self, 'with_nl', False):
+            for nl in list(self.NL_2) + list(self.NL_3):
+                if hasattr(nl, 'W') and len(nl.W) > 1 and isinstance(nl.W[1], nn.BatchNorm2d):
+                    nn.init.constant_(nl.W[1].weight, 0.0)
+                    nn.init.constant_(nl.W[1].bias, 0.0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv1(x)

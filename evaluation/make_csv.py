@@ -221,6 +221,8 @@ elif BASE_MODEL_NAME == "miewid":
     MODEL_CLASS = MiewIDReID
 elif BASE_MODEL_NAME in ("bot", "transreid"):
     MODEL_CLASS = None
+elif BASE_MODEL_NAME in ("psta", "video_psta", "agw", "mgn", "arbase", "sbs", "native_sbs"):
+    MODEL_CLASS = None
 elif BASE_MODEL_NAME.startswith("oa_") or BASE_MODEL_NAME.startswith("openanimals_"):
     MODEL_CLASS = None
 else:
@@ -268,6 +270,8 @@ if _is_mega:
     cfg.img_size = (384, 384) if "384" in getattr(_Config, "megadescriptor_variant", "") else (224, 224)
 elif "swin" in cfg.model.lower():
     cfg.img_size = (192, 192)
+elif cfg.model.lower() in ("psta", "video_psta"):
+    cfg.img_size = (256, 128)
 else:
     cfg.img_size = (224, 224)
 
@@ -349,6 +353,24 @@ elif BASE_MODEL_NAME.startswith("oa_") or BASE_MODEL_NAME.startswith("openanimal
         num_classes=oa_num_classes,
         chunk_size=32
     )
+elif BASE_MODEL_NAME in ("psta", "video_psta", "agw", "mgn", "arbase", "sbs", "native_sbs"):
+    from models.model_factory import build_model
+    print(f"-> Initializing Architecture via build_model: {BASE_MODEL_NAME}...")
+    cfg.model = BASE_MODEL_NAME
+    cfg.backbone = BASE_MODEL_NAME
+    cfg.num_classes = NUM_CLASSES
+    if cfg.num_classes == 0 and os.path.exists(MODEL_PATH):
+        try:
+            _ckpt = torch.load(MODEL_PATH, map_location="cpu")
+            _sd = _ckpt.get('model', _ckpt.get('state_dict', _ckpt))
+            for _k, _v in _sd.items():
+                if "classifier" in _k and "weight" in _k:
+                    cfg.num_classes = _v.shape[0]
+                    break
+            del _ckpt, _sd
+        except Exception:
+            pass
+    model = build_model(cfg)
 else:
     model = MODEL_CLASS()
 

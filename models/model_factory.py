@@ -24,11 +24,17 @@ def build_model(cfg):
     elif model_type_str in ("mgn", "native_mgn"):
         from .native_baselines import NativeMGN
         return NativeMGN(cfg)
+    elif model_type_str in ("psta", "video_psta"):
+        from .psta_builder import VideoPSTA
+        return VideoPSTA(cfg)
+    elif model_type_str in ("agw", "native_agw"):
+        from .native_baselines import NativeAGW
+        return NativeAGW(cfg)
 
     oa_names = {
         "bot", "oa_bot", "openanimals_bot",
         "oa_dinov2", "oa_dinov2_bot", "openanimals_dinov2_bot",
-        "agw", "native_agw", "oa_agw", "openanimals_agw",
+        "oa_agw", "openanimals_agw",
         "sbs", "native_sbs", "oa_sbs", "openanimals_sbs",
         "oa_mgn", "openanimals_mgn",
         "oa_arbase", "openanimals_arbase",

@@ -354,15 +354,16 @@ class Trainer:
                     total_loss = loss_triplet
 
             # --- Backpropagation with Accumulation ---
-            # Divides loss by accumulation steps to average gradients correctly
-            loss = total_loss / accum_steps
+            # Divides loss by accumulation steps (or remaining steps on the last batch) to average gradients correctly
+            is_last_step = (i + 1) == len(self.train_loader)
+            current_accum = (len(self.train_loader) % accum_steps) if (is_last_step and (len(self.train_loader) % accum_steps) != 0) else accum_steps
+            loss = total_loss / current_accum
             if self.scaler.is_enabled():
                 self.scaler.scale(loss).backward()
             else:
                 loss.backward()
 
             # Update weights after specified accumulation steps or at the end of epoch
-            is_last_step = (i + 1) == len(self.train_loader)
             if (i + 1) % accum_steps == 0 or is_last_step:
                 # Frozen params get no update at all (grad=None also skips weight decay),
                 # as in OpenAnimals' optimizer_wfl_step
