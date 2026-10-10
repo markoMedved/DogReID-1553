@@ -17,31 +17,33 @@ def build_model(cfg):
     model_type = getattr(cfg, "backbone", getattr(cfg, "model", None))
     model_type_str = str(model_type).lower() if model_type else ""
 
-    # Native implementations of animal Re-ID baselines
-    if model_type_str in ("arbase", "native_arbase"):
+    # Explicit native implementations
+    if model_type_str == "native_arbase":
         from .native_baselines import NativeARBase
         return NativeARBase(cfg)
-    elif model_type_str in ("mgn", "native_mgn"):
+    elif model_type_str == "native_mgn":
         from .native_baselines import NativeMGN
         return NativeMGN(cfg)
+    elif model_type_str == "native_agw":
+        from .native_baselines import NativeAGW
+        return NativeAGW(cfg)
+    elif model_type_str == "native_sbs":
+        from .native_baselines import NativeSBS
+        return NativeSBS(cfg)
     elif model_type_str in ("psta", "video_psta"):
         from .psta_builder import VideoPSTA
         return VideoPSTA(cfg)
-    elif model_type_str in ("agw", "native_agw"):
-        from .native_baselines import NativeAGW
-        return NativeAGW(cfg)
 
+    # OpenAnimals architectures (default for bot, agw, sbs, mgn, arbase)
     oa_names = {
         "bot", "oa_bot", "openanimals_bot",
         "oa_dinov2", "oa_dinov2_bot", "openanimals_dinov2_bot",
-        "oa_agw", "openanimals_agw",
-        "sbs", "native_sbs", "oa_sbs", "openanimals_sbs",
-        "oa_mgn", "openanimals_mgn",
-        "oa_arbase", "openanimals_arbase",
+        "agw", "oa_agw", "openanimals_agw",
+        "sbs", "oa_sbs", "openanimals_sbs",
+        "mgn", "oa_mgn", "openanimals_mgn",
+        "arbase", "oa_arbase", "openanimals_arbase",
         "arbase_mb", "oa_arbase_mb", "arbase_mgn",
     }
-
-    # OpenAnimals architectures (legacy wrapper)
     if model_type_str in oa_names or model_type_str.startswith("oa_") or model_type_str.startswith("openanimals_"):
         from .openanimals_models import OpenAnimalsVideoModel
         return OpenAnimalsVideoModel(

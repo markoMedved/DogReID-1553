@@ -179,12 +179,12 @@ class Config:
                 self.img_size = (256, 128)
                 self.re_prob = 0.5
                 self.margin = 0.3
-                self.epochs = 50
+                self.epochs = 120
                 self.lr = 3.5e-04
                 self.lr_sched = "multistep"
-                self.lr_milestones = (15, 30)
+                self.lr_milestones = (40, 90)
                 self.chunk_size = 64
-                self.backbone_drop_epoch = 5
+                self.backbone_drop_epoch = None
             else:
                 self.img_size = (256, 128)
                 self.re_prob = 0.5

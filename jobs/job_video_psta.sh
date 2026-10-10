@@ -2,14 +2,13 @@
 #SBATCH --job-name=v_psta
 #SBATCH --output=logs_jobs/video_psta_%j.out
 #SBATCH --error=logs_jobs/video_psta_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=4:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --constraint=h100
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=96G
-#SBATCH --exclude=gwn04,gwn08
+
 
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate project
@@ -62,7 +61,6 @@ python VideoReID-PSTA/Train.py \
     SOLVER.MAX_EPOCHS ${EPOCHS} \
     SOLVER.SEQS_PER_BATCH ${BATCH_SIZE} \
     SOLVER.BASE_LR ${LR} \
-    SOLVER.EVAL_PERIOD ${EVAL_PERIOD} \
-    MODEL.DEVICE_ID "0"
+    SOLVER.EVAL_PERIOD ${EVAL_PERIOD}
 
 echo "Video PSTA job complete!"

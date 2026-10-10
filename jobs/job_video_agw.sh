@@ -5,11 +5,9 @@
 #SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --constraint=h100
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=96G
-#SBATCH --exclude=gwn04,gwn08
 
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate project
