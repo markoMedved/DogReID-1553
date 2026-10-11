@@ -70,35 +70,27 @@ class Trainer:
         self.best_r1 = 0.0
         self.start_epoch = 0
 
-        # --- Clean Output Dir if Starting From Scratch ---
-        if not getattr(cfg, "resume", False) and self.cfg.output_dir.exists():
+        # --- Checkpoint Detection & Automatic Resume ---
+        latest_path = self.cfg.output_dir / "latest_model.pth"
+        explicit_overwrite = getattr(cfg, "overwrite", False)
+
+        if not getattr(cfg, "resume", False) and not explicit_overwrite:
+            if latest_path.exists():
+                print(f"[trainer] Found existing checkpoint at {latest_path}. Automatically enabling resume!")
+                cfg.resume = True
+
+        if explicit_overwrite and self.cfg.output_dir.exists():
             for f in self.cfg.output_dir.iterdir():
                 if f.is_file():
                     try:
                         f.unlink()
                     except Exception:
                         pass
-            print(f"[trainer] Starting from scratch. Cleared prior files in {self.cfg.output_dir}")
+            print(f"[trainer] Explicit overwrite requested. Cleared prior files in {self.cfg.output_dir}")
 
-        # --- Resume Checkpoint if Requested ---
+        # --- Resume Checkpoint if Requested or Auto-detected ---
         if getattr(cfg, "resume", False):
             latest_path = self.cfg.output_dir / "latest_model.pth"
-            if not latest_path.exists():
-                candidates = []
-                leg_dir = getattr(self.cfg, "legacy_output_dir", None)
-                if leg_dir:
-                    candidates.append(leg_dir / "latest_model.pth")
-                root = getattr(self.cfg, "project_root", None)
-                if root:
-                    if hasattr(self.cfg, "legacy_run_name"):
-                        candidates.append(root / "checkpoints_o" / self.cfg.legacy_run_name / "latest_model.pth")
-                    if hasattr(self.cfg, "run_name"):
-                        candidates.append(root / "checkpoints_o" / self.cfg.run_name / "latest_model.pth")
-                for cand in candidates:
-                    if cand.exists():
-                        latest_path = cand
-                        print(f"[resume] Note: found checkpoint under fallback path: {latest_path}")
-                        break
             if latest_path.exists():
                 print(f"[resume] Loading checkpoint from {latest_path} ...")
                 ckpt = torch.load(latest_path, map_location=self.device)
@@ -124,9 +116,7 @@ class Trainer:
                       f"current LR = {self.optimizer.param_groups[0]['lr']:.2e}")
                 print(f"[resume] Successfully resumed model state from epoch {self.start_epoch}")
 
-                hist_file = latest_path.parent / "training_history.json"
-                if not hist_file.exists():
-                    hist_file = self.cfg.output_dir / "training_history.json"
+                hist_file = self.cfg.output_dir / "training_history.json"
                 if hist_file.exists():
                     try:
                         with open(hist_file, "r") as f:
@@ -138,18 +128,6 @@ class Trainer:
                         print(f"[resume] Loaded history ({len(self.history.get('epochs', []))} epochs). Best mAP so far: {self.best_mAP:.2%}")
                     except Exception as e:
                         print(f"[resume] Warning loading history: {e}")
-
-                if latest_path.parent != self.cfg.output_dir:
-                    src_best = latest_path.parent / "best_model.pth"
-                    dst_best = self.cfg.output_dir / "best_model.pth"
-                    if src_best.exists() and not dst_best.exists():
-                        import shutil
-                        try:
-                            self.cfg.output_dir.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(src_best, dst_best)
-                            print(f"[resume] Copied best model from {src_best} -> {dst_best}")
-                        except Exception as e:
-                            print(f"[resume] Warning copying best model: {e}")
             else:
                 print(f"[resume] Checkpoint {latest_path} not found. Starting from scratch (epoch 0).")
 

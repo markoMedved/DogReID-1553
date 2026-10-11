@@ -2,7 +2,7 @@
 #SBATCH --job-name=v_agw
 #SBATCH --output=logs_jobs/video_agw_%j.out
 #SBATCH --error=logs_jobs/video_agw_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
@@ -26,7 +26,7 @@ WORLD="closed"
 BATCH_SIZE=64   # P×K = 64 (P=16, K=4)
 K=4
 CLIP_LEN=8
-EPOCHS=50
+EPOCHS=120
 LR=3.5e-04
 BACKBONE_LR_FACTOR=1.0
 VAL_SPLIT=0          # train on full train split, evaluate on test split
@@ -63,6 +63,7 @@ python train.py \
     --eval_period ${EVAL_PERIOD} \
     --accum_steps ${ACCUM_STEPS} \
     --full_finetune \
-    --backbone_lr_factor ${BACKBONE_LR_FACTOR}
+    --backbone_lr_factor ${BACKBONE_LR_FACTOR} \
+    --force_yolo
 
 echo "Video Native AGW job complete!"

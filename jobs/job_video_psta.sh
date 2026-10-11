@@ -2,7 +2,7 @@
 #SBATCH --job-name=v_psta
 #SBATCH --output=logs_jobs/video_psta_%j.out
 #SBATCH --error=logs_jobs/video_psta_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
@@ -58,6 +58,7 @@ python VideoReID-PSTA/Train.py \
     --root_dir . \
     --arch PSTA \
     --seq_len ${CLIP_LEN} \
+    --resume auto \
     SOLVER.MAX_EPOCHS ${EPOCHS} \
     SOLVER.SEQS_PER_BATCH ${BATCH_SIZE} \
     SOLVER.BASE_LR ${LR} \

@@ -65,7 +65,7 @@ class Config:
     backbone_lr_factor = 1.0      # 1.0 matches OpenAnimals (backbone LR == head LR == base LR)
     warmup_factor  = 0.1          # 0.1 matches OpenAnimals (linear warmup from 0.1x to 1.0x)
     accum_steps    = 1            # gradient accumulation (1 for standard paper baseline)
-    save_period    = 0            # 0 disables periodic checkpoints (saves only latest_model.pth)
+    save_period    = 10           # saves model_epoch_{N}.pth every 10 epochs so checkpoints are never lost
     backbone_drop_epoch = None    # Epoch at which backbone LR drops (e.g. 5)
     backbone_drop_factor = 0.1    # Multiplier for backbone LR after drop epoch
 
@@ -83,7 +83,7 @@ class Config:
     bbox_file = project_root / "bounding_boxes.csv"
     use_gt_for_query_mask = False
     use_gt_for_gallery_mask = False
-    force_yolo = False
+    force_yolo = True
 
     def __init__(self):
         self.update_model_settings()
@@ -135,44 +135,46 @@ class Config:
                 if not getattr(self, "full_finetune", False):
                     self.backbone_lr_factor = 0.1
             elif "mgn" in self.backbone:
-                self.img_size = (384, 128)
-                self.re_prob = 0.0          # REA disabled for MGN
-                self.margin = 0.3
-                self.epochs = 50
-                self.lr = 3.5e-04
+                self.img_size = (384, 384)
+                self.re_prob = 0.0          # REA disabled for MGN in OpenAnimals
+                self.margin = 0.3           # OpenAnimals Triplet margin = 0.3
+                self.epochs = 120           # OpenAnimals: 120 epochs
+                self.lr = 3.5e-04           # OpenAnimals: Adam lr = 3.5e-4
+                self.optimizer = "adam"     # OpenAnimals: Adam
+                self.weight_decay = 0.0005
                 self.lr_sched = "cosine"
-                self.lr_delay_epochs = 12
+                self.lr_delay_epochs = 60
                 self.chunk_size = 64
-                self.backbone_drop_epoch = 5
+                self.backbone_drop_epoch = None
             elif "arbase" in self.backbone:
                 self.img_size = (384, 384)
                 self.re_prob = 0.0          # REA disabled for ARBase
                 self.margin = 0.3
-                self.epochs = 50
+                self.epochs = 120
                 self.lr = 3.5e-04
                 self.lr_sched = "cosine"
-                self.lr_delay_epochs = 12
+                self.lr_delay_epochs = 60
                 self.chunk_size = 64
-                self.backbone_drop_epoch = 5
+                self.backbone_drop_epoch = None
             elif "agw" in self.backbone:
                 self.img_size = (256, 128)
                 self.re_prob = 0.5          # REA enabled for AGW
                 self.margin = 0.0           # Weighted soft-margin triplet
-                self.epochs = 50
+                self.epochs = 120
                 self.lr = 3.5e-04
                 self.lr_sched = "multistep"
-                self.lr_milestones = (15, 30)
+                self.lr_milestones = (40, 90)
                 self.chunk_size = 64
-                self.backbone_drop_epoch = 5
+                self.backbone_drop_epoch = None
             elif "sbs" in self.backbone:
                 self.img_size = (384, 128)
                 self.re_prob = 0.5          # REA enabled for SBS
                 self.autoaug_prob = 0.1     # AutoAugment p=0.1
                 self.margin = 0.0           # Soft-margin triplet
-                self.epochs = 50
+                self.epochs = 120
                 self.lr = 3.5e-04
                 self.lr_sched = "cosine"
-                self.lr_delay_epochs = 12
+                self.lr_delay_epochs = 30
                 self.chunk_size = 64
                 self.backbone_drop_epoch = None
             elif "bot" in self.backbone:

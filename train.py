@@ -82,6 +82,19 @@ def main():
         help='Mask out the dog for the background-only diagnostic experiment'
     )
     parser.add_argument(
+        '--force_yolo',
+        dest='force_yolo',
+        action='store_true',
+        default=True,
+        help='Use YOLO dog detector dynamically to crop subjects (default: True)'
+    )
+    parser.add_argument(
+        '--use_gt_boxes',
+        dest='force_yolo',
+        action='store_false',
+        help='Use precomputed ground truth bounding boxes from CSV instead of YOLO detector'
+    )
+    parser.add_argument(
         '--optimizer', 
         type=str, 
         default=None, 
@@ -114,8 +127,14 @@ def main():
     parser.add_argument(
         '--resume', 
         action='store_true', 
+        default=True, 
+        help='Resume training from the latest checkpoint if present (default: True)'
+    )
+    parser.add_argument(
+        '--overwrite', 
+        action='store_true', 
         default=False, 
-        help='Resume training from the latest checkpoint in output_dir'
+        help='Explicitly wipe the checkpoint directory and restart from epoch 0'
     )
 
     args = parser.parse_args()
@@ -128,8 +147,13 @@ def main():
     # --- Command-Line Overrides ---
     if args.resume:
         cfg.resume = True
+    if args.overwrite:
+        cfg.overwrite = True
+        cfg.resume = False
     if args.mask_dog:
         cfg.mask_dog = True
+    if hasattr(args, "force_yolo") and args.force_yolo is not None:
+        cfg.force_yolo = args.force_yolo
     if args.model is not None:
         cfg.model = args.model
         cfg.backbone = args.model

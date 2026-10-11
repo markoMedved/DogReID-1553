@@ -2,7 +2,7 @@
 #SBATCH --job-name=v_bot
 #SBATCH --output=logs_jobs/video_bot_%j.out
 #SBATCH --error=logs_jobs/video_bot_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
@@ -59,6 +59,7 @@ python train.py \
     --eval_period ${EVAL_PERIOD} \
     --accum_steps ${ACCUM_STEPS} \
     --full_finetune \
-    --backbone_lr_factor ${BACKBONE_LR_FACTOR}
+    --backbone_lr_factor ${BACKBONE_LR_FACTOR} \
+    --force_yolo
 
 echo "Video Native BoT ResNet-50 job complete!"
