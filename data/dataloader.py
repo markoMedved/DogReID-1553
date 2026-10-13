@@ -36,7 +36,7 @@ def build_dataloaders(cfg):
 
     loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
     if cfg.num_workers > 0:
-        loader_kwargs.update(persistent_workers=True, prefetch_factor=2)
+        loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
 
     # --- Full-train mode: train on the whole train split, evaluate on the test split ---
     if getattr(cfg, "val_split", 0) <= 0:
@@ -108,19 +108,18 @@ def build_dataloaders(cfg):
     )
 
     # --- Construct DataLoaders ---
-    # persistent_workers avoids respawning workers every epoch
     loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
     if cfg.num_workers > 0:
-        loader_kwargs.update(persistent_workers=True, prefetch_factor=2)
+        loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
 
     train_loader = DataLoader(
         train_dataset, batch_size=cfg.batch_size, sampler=sampler,
         drop_last=True, **loader_kwargs
     )
 
-    val_loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
+    val_loader_kwargs = dict(num_workers=min(cfg.num_workers, 4), pin_memory=True, worker_init_fn=_worker_init_fn)
     if cfg.num_workers > 0:
-        val_loader_kwargs.update(persistent_workers=True, prefetch_factor=2)
+        val_loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
 
     # For validation we need query and gallery dataloaders
     val_batch_size = min(cfg.batch_size, 32)
@@ -201,9 +200,10 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
     )
 
     # --- Construct Test DataLoaders ---
-    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
-    if cfg.num_workers > 0:
-        loader_kwargs.update(persistent_workers=True, prefetch_factor=2)
+    test_workers = min(cfg.num_workers, 4)
+    loader_kwargs = dict(num_workers=test_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
+    if test_workers > 0:
+        loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
 
     # Capped at 32 clips: 128 clips x 8 frames x 384^2 per batch exhausts host RAM
     test_batch_size = min(cfg.batch_size, 32)

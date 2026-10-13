@@ -65,7 +65,7 @@ class Config:
     backbone_lr_factor = 1.0      # 1.0 matches OpenAnimals (backbone LR == head LR == base LR)
     warmup_factor  = 0.1          # 0.1 matches OpenAnimals (linear warmup from 0.1x to 1.0x)
     accum_steps    = 1            # gradient accumulation (1 for standard paper baseline)
-    save_period    = 10           # saves model_epoch_{N}.pth every 10 epochs so checkpoints are never lost
+    save_period    = 0            # 0 disables periodic checkpoints (saves only latest_model.pth)
     backbone_drop_epoch = None    # Epoch at which backbone LR drops (e.g. 5)
     backbone_drop_factor = 0.1    # Multiplier for backbone LR after drop epoch
 

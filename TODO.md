@@ -22,6 +22,8 @@ maybe the whole fine-tune is actually better for the resnet than the partially f
  maybe we need to use the space annotation for it to not overfit so bad
 
 
+1. Maybe we can try simply reducing the learning rate as a whole (like most of the methods simply start overfitting after 10 epochs so the warmup is good but then it fails)
+
 2. Reduce the backbone learning rate
 Keep the new head's learning rate higher initially, while reducing the learning rate of the pretrained backbone. This helps preserve useful pretrained features.
 

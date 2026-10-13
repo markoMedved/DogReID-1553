@@ -199,6 +199,13 @@ class Trainer:
             elif self.scheduler is not None:
                 self.scheduler.step()
 
+            # Save latest_model.pth atomically right after training epoch (before evaluation)
+            self.cfg.output_dir.mkdir(parents=True, exist_ok=True)
+            latest_path = self.cfg.output_dir / "latest_model.pth"
+            tmp_path = self.cfg.output_dir / "latest_model.pth.tmp"
+            torch.save(self._training_state(epoch), tmp_path)
+            os.replace(tmp_path, latest_path)
+
             # --- Validation Evaluation (runs every epoch if eval_period=1) ---
             if self.cfg.world == "closed" and self.query_loader is not None:
                 if (epoch + 1) % self.cfg.eval_period == 0 or (epoch + 1) == self.cfg.epochs:
@@ -210,31 +217,14 @@ class Trainer:
                     self.history["rank5"].append(float(r5 * 100))
                     self.history["mAP"].append(float(mAP * 100))
 
-                    # Track and save best model
+                    # Track best metrics in memory/logs (only latest_model.pth is saved to disk)
                     if mAP > self.best_mAP:
                         self.best_mAP = mAP
                         self.best_r1 = r1
-                        best_path = self.cfg.output_dir / "best_model.pth"
-                        torch.save({
-                            'epoch': epoch + 1,
-                            'state_dict': self.model.state_dict(),
-                            'optimizer': self.optimizer.state_dict(),
-                            'mAP': mAP,
-                            'rank1': r1,
-                            'val_loss': val_loss
-                        }, best_path)
-                        print(f"--> [BEST] New best model saved! (Rank-1: {r1:.2%}, mAP: {mAP:.2%}, Val Loss: {val_loss:.4f}) -> {best_path}")
+                        print(f"--> [BEST] New best metrics! (Rank-1: {r1:.2%}, mAP: {mAP:.2%}, Val Loss: {val_loss:.4f})")
 
-            # Save latest checkpoint every epoch (overwritten each epoch; represents the final model at completion)
-            latest_path = self.cfg.output_dir / "latest_model.pth"
-            torch.save(self._training_state(epoch), latest_path)
-
-            # Periodic checkpoint saving disabled (only latest_model.pth and best_model.pth are retained)
-            save_period = getattr(self.cfg, 'save_period', 0)
-            if save_period > 0 and (epoch + 1) % save_period == 0:
-                checkpoint_path = self.cfg.output_dir / f"model_epoch_{epoch + 1}.pth"
-                torch.save(self._training_state(epoch), checkpoint_path)
-                print(f"--> Saved periodic checkpoint to {checkpoint_path}")
+                    torch.save(self._training_state(epoch), tmp_path)
+                    os.replace(tmp_path, latest_path)
 
             # Update live training curves PNG and history JSON
             self._save_and_plot_history()        
