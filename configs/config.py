@@ -75,7 +75,7 @@ class Config:
     autoaug_prob = 0.0
 
     # --- Evaluation ---
-    eval_period = 1
+    eval_period = 5
     eval_only   = False  
 
     # Experiment for background noise
@@ -104,11 +104,14 @@ class Config:
 
         native_or_oa_baselines = (
             "bot", "oa_bot", "openanimals_bot",
-            "oa_dinov2", "oa_dinov2_bot", "openanimals_dinov2_bot",
+            "dinov2_bot", "oa_dinov2", "oa_dinov2_bot", "openanimals_dinov2_bot",
             "agw", "oa_agw", "openanimals_agw",
+            "dinov2_agw", "oa_dinov2_agw", "openanimals_dinov2_agw",
             "sbs", "oa_sbs", "openanimals_sbs",
+            "dinov2_sbs", "oa_dinov2_sbs", "openanimals_dinov2_sbs",
             "mgn", "oa_mgn", "openanimals_mgn",
             "arbase", "oa_arbase", "openanimals_arbase",
+            "dinov2_arbase", "oa_dinov2_arbase", "openanimals_dinov2_arbase",
             "arbase_mb", "oa_arbase_mb", "arbase_mgn",
         )
 
@@ -128,12 +131,48 @@ class Config:
 
             if "dinov2" in self.backbone:
                 self.img_size = (224, 224)
-                self.re_prob = 0.5
-                self.margin = 0.3
-                self.lr = 3.5e-04
-                self.chunk_size = 32
-                if not getattr(self, "full_finetune", False):
-                    self.backbone_lr_factor = 0.1
+                self.epochs = 50
+                self.eval_period = 5
+                self.lr = 2e-05
+                self.backbone_lr_factor = 0.1
+                self.optimizer = "adamw"
+                self.weight_decay = 1e-05
+                self.amp = "bf16"
+                self.batch_size = 64
+                self.k = 4
+                self.accum_steps = 1
+                self.num_workers = 12
+                self.clip_len = 8
+                self.warmup_epochs = 5
+                self.warmup_factor = 0.01
+                self.unfreeze_blocks = getattr(self, "unfreeze_blocks", 2)
+
+                if "sbs" in self.backbone:
+                    self.freeze_epochs = 5
+                    self.autoaug_prob = 0.1
+                    self.re_prob = 0.5
+                    self.margin = 0.0
+                    self.lr_sched = "cosine"
+                    self.lr_delay_epochs = 25
+                    self.lr_eta_min = 7e-08
+                elif "arbase" in self.backbone:
+                    self.re_prob = 0.0          # REA disabled for ARBase
+                    self.margin = 0.3
+                    self.lr_sched = "cosine"
+                    self.lr_delay_epochs = 25   # Cosine decay begins at epoch 25 of 50
+                    self.lr_eta_min = 7e-08
+                elif "agw" in self.backbone:
+                    self.re_prob = 0.5
+                    self.margin = 0.0           # Weighted soft-margin triplet
+                    self.lr_sched = "multistep"
+                    self.lr_milestones = (25, 35)
+                    self.lr_gamma = 0.1
+                else:  # BoT / default dinov2
+                    self.re_prob = 0.5
+                    self.margin = 0.3
+                    self.lr_sched = "multistep"
+                    self.lr_milestones = (25, 35)
+                    self.lr_gamma = 0.1
             elif "mgn" in self.backbone:
                 self.img_size = (384, 384)
                 self.re_prob = 0.0          # REA disabled for MGN in OpenAnimals
@@ -232,15 +271,17 @@ class Config:
             self.img_size = (224, 224)
             self.re_prob = 0.5
             self.chunk_size = 32
-            self.optimizer = "adam"
-            self.weight_decay = 5e-04
+            self.optimizer = "adamw"
+            self.weight_decay = 1e-05
             self.backbone_lr_factor = 1.0 if getattr(self, "full_finetune", False) else 0.1
-            self.lr = 3.5e-04
+            self.lr = 2e-05
             self.margin = 0.3
             self.epochs = 50
-            self.warmup_epochs = 10
+            self.warmup_epochs = 5
+            self.warmup_factor = 0.01
             self.lr_sched = "multistep"
-            self.lr_milestones = (15, 30)
+            self.lr_milestones = (25, 35)
+            self.lr_gamma = 0.1
         else:
             self.embedding_dim = 768
             self.img_size = (224, 224)
@@ -273,7 +314,12 @@ class Config:
             else:
                 name = base
         elif "dinov2" in bb:
-            base = "dinov2_bot" if (method in ("bot", "transreid") or "bot" in bb) else "dinov2"
+            for v in ("dinov2_bot", "dinov2_agw", "dinov2_sbs", "dinov2_arbase"):
+                if v in bb:
+                    base = v
+                    break
+            else:
+                base = "dinov2_bot" if (method in ("bot", "transreid") or "bot" in bb) else "dinov2"
             if full_finetune:
                 name = f"{base}_full"
             elif backbone_lr_factor is not None and abs(float(backbone_lr_factor) - 0.1) > 1e-4:
@@ -334,11 +380,47 @@ class Config:
             self.legacy_output_dir = self.project_root / "checkpoints" / self.legacy_run_name
         else:
             self.legacy_run_name = None
-            self.legacy_output_dir = None
-        self.output_dir = self.project_root / "checkpoints" / self.run_name
+        bb = str(self.backbone).lower() if self.backbone else ""
+        ckpt_dir_name = "checkpoints_dinov2" if "dinov2" in bb else "checkpoints"
+        model_folder = self.run_name
+
+        # Multi-run subfolder support:
+        # Hierarchy: checkpoints_dinov2/<model_name>/<run_name>/
+        run_name_override = getattr(self, "custom_run_name", None) or getattr(self, "run_subfolder", None)
+        if run_name_override:
+            self.run_subfolder = str(run_name_override)
+            self.output_dir = self.project_root / ckpt_dir_name / model_folder / self.run_subfolder
+        else:
+            default_sub = "v1_cls_lr2e-5" if "dinov2" in bb else "default"
+            self.run_subfolder = default_sub
+            self.output_dir = self.project_root / ckpt_dir_name / model_folder / self.run_subfolder
+
         if make_dir:
             self.output_dir.mkdir(parents=True, exist_ok=True)
         return self.run_name
+
+    def to_dict(self):
+        d = {}
+        for k, v in self.__dict__.items():
+            if k.startswith("_"):
+                continue
+            if isinstance(v, (str, int, float, bool, list, tuple)):
+                d[k] = list(v) if isinstance(v, tuple) else v
+            elif isinstance(v, Path):
+                d[k] = str(v)
+            elif hasattr(v, "type"):
+                d[k] = str(v)
+        return d
+
+    def save_config(self, path=None):
+        import json
+        if path is None:
+            path = self.output_dir / "config.json"
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f, indent=4)
+        print(f"[config] Saved run parameters to {path}")
 
     def display(self):
         """Print a formatted table of the configuration settings."""

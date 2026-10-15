@@ -5,23 +5,22 @@ EXPERIMENTS:
 - dinov2 frozen (bot already started, use resume flag)
 
 
-maybe the whole fine-tune is actually better for the resnet than the partially frozen (but use the smaller learning rate)
+TODO:
+READ ABOUT HOW THE MODELS WORK AND DECIDE HOW TO TRANSFORM THEM TO BE READY FOR DINOV2 ADAPTATION
+RUN THE DINOV2 JOBS IN A SEPERATE CHECKPOINTS_DINOV2 FOLDER FIRST MAYBE FOR ABOUT 50 EPOCHS IS FINE
 
 
-- try a combination of different components observed in openanimals (No random erasing and stuff) - which ones work good,
- that can still go with the dinov2 (note that for dinov2 the crops are square by default)
-
- for the other methods use everything default (including crops ), do we need linear warmup for dino(look at what this linear warmup is good for, how many epochs to even take)?
-
- if overfit change to previous bacbkbone smaller lr 
-
- RIGHT NOW THE LR DROPS AT EPOCH 5 AUTOMATICALLY
 
  TODO - give credit to psta and opeanimal repositories as well
 
+
+
+# Improvements
+
  maybe we need to use the space annotation for it to not overfit so bad
+ make our own baseline slightly better than the other models
 
-
+# Resnet Tuning 
 1. Maybe we can try simply reducing the learning rate as a whole (like most of the methods simply start overfitting after 10 epochs so the warmup is good but then it fails)
 
 2. Reduce the backbone learning rate

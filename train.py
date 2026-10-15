@@ -27,6 +27,7 @@ def main():
     parser.add_argument('--epochs', type=int, default=None, help='Number of training epochs')
     parser.add_argument('--val_split', type=float, default=None, help='Validation split ratio (e.g., 0.2 for 20%% validation)')
     parser.add_argument('--eval_period', type=int, default=None, help='Evaluation frequency in epochs (default from config: 1)')
+    parser.add_argument('--num_workers', type=int, default=None, help='Number of dataloader workers')
 
     # Re-ID methodology flags
     parser.add_argument(
@@ -136,6 +137,18 @@ def main():
         default=False, 
         help='Explicitly wipe the checkpoint directory and restart from epoch 0'
     )
+    parser.add_argument(
+        '--run_name',
+        type=str,
+        default=None,
+        help='Run name for organizing multiple experiment configurations under the model checkpoint folder (e.g. v1_cls_lr2e-5)'
+    )
+    parser.add_argument(
+        '--output_dir',
+        type=str,
+        default=None,
+        help='Explicit output directory for checkpoints and logs'
+    )
 
     args = parser.parse_args()
 
@@ -167,6 +180,7 @@ def main():
     if args.epochs is not None: cfg.epochs = args.epochs
     if args.val_split is not None: cfg.val_split = args.val_split
     if args.eval_period is not None: cfg.eval_period = args.eval_period
+    if args.num_workers is not None: cfg.num_workers = args.num_workers
     if args.accum_steps is not None: cfg.accum_steps = args.accum_steps
     if args.reid_method is not None:
         cfg.reid_method = None if args.reid_method == 'baseline' else args.reid_method
@@ -201,9 +215,15 @@ def main():
     if args.full_finetune is not None: cfg.full_finetune = args.full_finetune
     if args.unfreeze_blocks is not None: cfg.unfreeze_blocks = args.unfreeze_blocks
     if args.backbone_drop_epoch is not None: cfg.backbone_drop_epoch = args.backbone_drop_epoch
-    if args.backbone_drop_factor is not None: cfg.backbone_drop_factor = args.backbone_drop_factor
+    if getattr(args, "run_name", None) is not None:
+        cfg.custom_run_name = args.run_name
     cfg.refresh_run_name(make_dir=True)
+    if hasattr(args, "output_dir") and args.output_dir is not None:
+        from pathlib import Path
+        cfg.output_dir = Path(args.output_dir)
+        cfg.output_dir.mkdir(parents=True, exist_ok=True)
     cfg.display()
+    cfg.save_config()
 
     # ------------------------------------------------
     # BUILD DATA LOADERS

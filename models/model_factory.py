@@ -34,14 +34,17 @@ def build_model(cfg):
         from .psta_builder import VideoPSTA
         return VideoPSTA(cfg)
 
-    # OpenAnimals architectures (default for bot, agw, sbs, mgn, arbase)
+    # OpenAnimals architectures (default for bot, agw, sbs, mgn, arbase, and dinov2 variants)
     oa_names = {
         "bot", "oa_bot", "openanimals_bot",
-        "oa_dinov2", "oa_dinov2_bot", "openanimals_dinov2_bot",
+        "dinov2_bot", "oa_dinov2", "oa_dinov2_bot", "openanimals_dinov2_bot",
         "agw", "oa_agw", "openanimals_agw",
+        "dinov2_agw", "oa_dinov2_agw", "openanimals_dinov2_agw",
         "sbs", "oa_sbs", "openanimals_sbs",
+        "dinov2_sbs", "oa_dinov2_sbs", "openanimals_dinov2_sbs",
         "mgn", "oa_mgn", "openanimals_mgn",
         "arbase", "oa_arbase", "openanimals_arbase",
+        "dinov2_arbase", "oa_dinov2_arbase", "openanimals_dinov2_arbase",
         "arbase_mb", "oa_arbase_mb", "arbase_mgn",
     }
     if model_type_str in oa_names or model_type_str.startswith("oa_") or model_type_str.startswith("openanimals_"):
@@ -50,7 +53,8 @@ def build_model(cfg):
             model_name=model_type_str,
             pooling_type=getattr(cfg, "pooling_type", "attention"),
             num_classes=getattr(cfg, "num_classes", 0),
-            chunk_size=getattr(cfg, "chunk_size", 32)
+            chunk_size=getattr(cfg, "chunk_size", 32),
+            unfreeze_blocks=getattr(cfg, "unfreeze_blocks", 2),
         )
 
     # --- Re-ID Method Routing (BoT / TransReID) ---

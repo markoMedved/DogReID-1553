@@ -5,13 +5,6 @@ from .dataset import DOGVideoREIDDataset
 from pytorch_metric_learning.samplers import MPerClassSampler
 from data.reid_transforms import build_video_transforms
 
-def _worker_init_fn(worker_id):
-    import torch
-    import os
-    torch.set_num_threads(1)
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-
 def build_dataloaders(cfg):
     """Build the train and validation dataloaders for our experiments"""
     
@@ -34,9 +27,9 @@ def build_dataloaders(cfg):
     # classifier has #train-ID outputs (as in OpenAnimals), not one per dog in the dataset.
     base_train_dataset = DOGVideoREIDDataset(split="train", transform=train_tf, label_map=None, **dataset_kwargs)
 
-    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
+    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
     if cfg.num_workers > 0:
-        loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
+        loader_kwargs.update(persistent_workers=True, prefetch_factor=4, timeout=300)
 
     # --- Full-train mode: train on the whole train split, evaluate on the test split ---
     if getattr(cfg, "val_split", 0) <= 0:
@@ -108,18 +101,18 @@ def build_dataloaders(cfg):
     )
 
     # --- Construct DataLoaders ---
-    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
+    loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
     if cfg.num_workers > 0:
-        loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
+        loader_kwargs.update(persistent_workers=True, prefetch_factor=4, timeout=300)
 
     train_loader = DataLoader(
         train_dataset, batch_size=cfg.batch_size, sampler=sampler,
         drop_last=True, **loader_kwargs
     )
 
-    val_loader_kwargs = dict(num_workers=min(cfg.num_workers, 4), pin_memory=True, worker_init_fn=_worker_init_fn)
+    val_loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
     if cfg.num_workers > 0:
-        val_loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
+        val_loader_kwargs.update(persistent_workers=True, prefetch_factor=4, timeout=300)
 
     # For validation we need query and gallery dataloaders
     val_batch_size = min(cfg.batch_size, 32)
@@ -200,10 +193,10 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
     )
 
     # --- Construct Test DataLoaders ---
-    test_workers = min(cfg.num_workers, 4)
-    loader_kwargs = dict(num_workers=test_workers, pin_memory=True, worker_init_fn=_worker_init_fn)
+    test_workers = cfg.num_workers
+    loader_kwargs = dict(num_workers=test_workers, pin_memory=True)
     if test_workers > 0:
-        loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
+        loader_kwargs.update(persistent_workers=True, prefetch_factor=4, timeout=300)
 
     # Capped at 32 clips: 128 clips x 8 frames x 384^2 per batch exhausts host RAM
     test_batch_size = min(cfg.batch_size, 32)

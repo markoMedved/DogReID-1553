@@ -91,6 +91,10 @@ class Trainer:
         # --- Resume Checkpoint if Requested or Auto-detected ---
         if getattr(cfg, "resume", False):
             latest_path = self.cfg.output_dir / "latest_model.pth"
+            if not latest_path.exists() and not getattr(self.cfg, "custom_run_name", None):
+                fallback = self.cfg.output_dir.parent / "latest_model.pth"
+                if fallback.exists():
+                    latest_path = fallback
             if latest_path.exists():
                 print(f"[resume] Loading checkpoint from {latest_path} ...")
                 ckpt = torch.load(latest_path, map_location=self.device)
@@ -393,7 +397,11 @@ class Trainer:
         if oa_cfg is None:
             return []
         layers = list(oa_cfg.MODEL.FREEZE_LAYERS)
-        freeze_iters = oa_cfg.SOLVER.FREEZE_ITERS
+        freeze_epochs = getattr(self.cfg, "freeze_epochs", None)
+        if freeze_epochs is not None and freeze_epochs > 0:
+            freeze_iters = freeze_epochs * len(self.train_loader)
+        else:
+            freeze_iters = oa_cfg.SOLVER.FREEZE_ITERS
         if not layers or freeze_iters <= 0:
             return []
 
