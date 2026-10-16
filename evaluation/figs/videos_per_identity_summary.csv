@@ -1,0 +1,8 @@
+Subset,Unique IDs,Total Videos,Mean,Std,Min,25%,Median,75%,Max
+Overall Dataset,1553,7463,4.81,1.58,1,4.0,5.0,5.0,17
+Closed-Set Train,776,3788,4.88,1.68,1,4.0,5.0,5.0,17
+Closed-Set Query,680,1677,2.47,0.95,1,2.0,2.0,3.0,8
+Closed-Set Gallery,777,1998,2.57,1.18,1,2.0,2.0,3.0,11
+Open-Set Train,776,3708,4.78,1.62,1,4.0,5.0,5.0,15
+Open-Set Query,777,2459,3.16,1.57,1,2.0,3.0,4.0,13
+Open-Set Gallery,512,1296,2.53,1.03,1,2.0,2.0,3.0,10
