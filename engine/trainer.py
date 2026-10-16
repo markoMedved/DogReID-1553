@@ -160,6 +160,12 @@ class Trainer:
         # --- Get the validation split ratio ---
         val_split = getattr(self.cfg, 'val_split', 0)
 
+        # --- TF-CLIP Stage 1: Precompute CLIP-Memory bank if needed ---
+        raw_model = getattr(self.model, "module", self.model)
+        if getattr(raw_model, "is_tfclip", False):
+            if not bool(getattr(raw_model, "memory_initialized", False)):
+                raw_model.compute_clip_memory(self.train_loader, self.device)
+
         # --- Main Training Loop ---
         for epoch in range(self.start_epoch, self.cfg.epochs):
             self.current_epoch = epoch
@@ -199,7 +205,10 @@ class Trainer:
                 delay_epochs = oa_cfg.SOLVER.DELAY_EPOCHS if oa_cfg else 0
                 warmup_iters = oa_cfg.SOLVER.WARMUP_ITERS if oa_cfg else 1000
                 if self.total_iters >= warmup_iters and (epoch + 1) > delay_epochs:
-                    self.oa_sched_dict["lr_sched"].step()
+                    lr_sched = self.oa_sched_dict["lr_sched"]
+                    if isinstance(lr_sched, torch.optim.lr_scheduler.MultiStepLR):
+                        lr_sched.last_epoch = epoch
+                    lr_sched.step()
             elif self.scheduler is not None:
                 self.scheduler.step()
 

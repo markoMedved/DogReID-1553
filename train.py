@@ -247,7 +247,7 @@ def main():
     print(f"--> Total training dog identities (num_classes): {cfg.num_classes}")
 
     # If id_loss is disabled for baseline, reset num_classes = 0 so the classifier head isn't built
-    if not cfg.use_id_loss and cfg.reid_method not in ('bot', 'transreid') and str(getattr(cfg, "backbone", "")).lower() not in ('psta', 'video_psta'):
+    if not cfg.use_id_loss and cfg.reid_method not in ('bot', 'transreid'):
         cfg.num_classes = 0
 
     # ------------------------------------------------
@@ -271,6 +271,7 @@ def main():
             name.startswith('backbone')
             or name.startswith('base.')
             or name.startswith('jpm.')
+            or name.startswith('image_encoder.')
             or name.startswith('oa_model.backbone')
             or name.startswith('oa_model.b1')
             or name.startswith('oa_model.b2')
@@ -325,12 +326,34 @@ def main():
     if getattr(model, "is_openanimals", False):
         try:
             from openanimals.solver.build import build_lr_scheduler
-            oa_sched_dict = build_lr_scheduler(model.oa_cfg, optimizer, len(train_loader))
-            print(f"[scheduler] Initialized OpenAnimals native scheduler: {model.oa_cfg.SOLVER.SCHED}")
+            # Align warmup iters and schedule parameters to cfg
+            iters_per_epoch = len(train_loader)
+            warmup_epochs = getattr(cfg, "warmup_epochs", 5)
+            model.oa_cfg.SOLVER.MAX_EPOCH = int(getattr(cfg, "epochs", model.oa_cfg.SOLVER.MAX_EPOCH))
+            model.oa_cfg.SOLVER.BASE_LR = float(getattr(cfg, "lr", model.oa_cfg.SOLVER.BASE_LR))
+            model.oa_cfg.SOLVER.WARMUP_ITERS = warmup_epochs * iters_per_epoch
+            model.oa_cfg.SOLVER.WARMUP_FACTOR = getattr(cfg, "warmup_factor", 0.1)
+            lr_sched_type = str(getattr(cfg, "lr_sched", "")).lower()
+            if lr_sched_type == "multistep":
+                model.oa_cfg.SOLVER.SCHED = "MultiStepLR"
+                model.oa_cfg.SOLVER.STEPS = [int(m) for m in getattr(cfg, "lr_milestones", (15, 25))]
+                model.oa_cfg.SOLVER.GAMMA = float(getattr(cfg, "lr_gamma", 0.1))
+                model.oa_cfg.SOLVER.DELAY_EPOCHS = 0
+            elif lr_sched_type == "cosine":
+                model.oa_cfg.SOLVER.SCHED = "CosineAnnealingLR"
+                model.oa_cfg.SOLVER.DELAY_EPOCHS = int(getattr(cfg, "lr_delay_epochs", model.oa_cfg.SOLVER.DELAY_EPOCHS))
+                model.oa_cfg.SOLVER.ETA_MIN_LR = float(getattr(cfg, "lr_eta_min", model.oa_cfg.SOLVER.ETA_MIN_LR))
+            oa_sched_dict = build_lr_scheduler(model.oa_cfg, optimizer, iters_per_epoch)
+            sched_detail = (
+                f"steps={model.oa_cfg.SOLVER.STEPS}"
+                if model.oa_cfg.SOLVER.SCHED == "MultiStepLR"
+                else f"delay={model.oa_cfg.SOLVER.DELAY_EPOCHS}"
+            )
+            print(f"[scheduler] Initialized OpenAnimals native scheduler: {model.oa_cfg.SOLVER.SCHED} ({sched_detail}, warmup: {warmup_epochs} epochs = {model.oa_cfg.SOLVER.WARMUP_ITERS} iters)")
         except Exception as e:
             print(f"[scheduler] Warning: failed to build OpenAnimals scheduler ({e}), falling back to WarmupMultiStepLR")
             scheduler = build_scheduler(optimizer, cfg)
-    elif cfg.reid_method in ('bot', 'transreid') or str(getattr(cfg, "backbone", "")).lower() in ('psta', 'video_psta'):
+    elif cfg.reid_method in ('bot', 'transreid') or getattr(model, "is_tfclip", False):
         scheduler = build_scheduler(optimizer, cfg)
 
     # ------------------------------------------------

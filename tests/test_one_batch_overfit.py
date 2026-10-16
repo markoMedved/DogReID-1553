@@ -24,7 +24,7 @@ from openanimals.solver import build_optimizer as build_oa_optimizer
 def main():
     parser = argparse.ArgumentParser(description="One-Batch Overfit Test")
     parser.add_argument("--model", type=str, default="oa_bot",
-                        choices=["oa_bot", "oa_agw", "oa_sbs", "oa_mgn", "oa_arbase", "dinov2"],
+                        choices=["oa_bot", "oa_agw", "oa_sbs", "oa_mgn", "oa_arbase", "dinov2", "tfclip"],
                         help="Model architecture to test")
     parser.add_argument("--steps", type=int, default=50, help="Number of training steps on the batch")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size (e.g. 16 clips = 4 dogs x 4 clips)")
@@ -75,6 +75,9 @@ def main():
     # 3. Build Model
     model = build_model(cfg).to(device)
     model.train()
+    if getattr(model, "is_tfclip", False):
+        model.clip_memory.copy_(torch.randn(cfg.num_classes, 512, device=device))
+        model.memory_initialized.copy_(torch.tensor(True, dtype=torch.bool, device=device))
 
     # 4. Build Optimizer
     if getattr(model, "is_openanimals", False):
@@ -101,6 +104,16 @@ def main():
         if getattr(model, "is_openanimals", False):
             feat, cls_outputs, total_loss, loss_dict = model(videos, targets=labels)
             breakdown = " ".join(f"{k.replace('loss_', '')}:{v.item():.3f}" for k, v in loss_dict.items())
+        elif hasattr(model, "compute_loss"):
+            outputs = model(videos)
+            total_loss, loss_tri, loss_ce = model.compute_loss(outputs, labels)
+            if isinstance(outputs, dict):
+                feat = outputs["feats"][-1]
+                cls_outputs = outputs["logits"]
+            else:
+                feat = outputs[0][-1] if isinstance(outputs[0], (list, tuple)) else outputs[0]
+                cls_outputs = outputs[1][-1] if isinstance(outputs[1], (list, tuple)) else outputs[1]
+            breakdown = f"tri:{loss_tri.item():.3f} ce:{loss_ce.item():.3f}"
         else:
             outputs = model(videos)
             feat, logits = outputs if isinstance(outputs, tuple) else (outputs, None)

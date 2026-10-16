@@ -186,11 +186,21 @@ class OpenAnimalsVideoModel(nn.Module):
                 oa_cfg.SOLVER.STEPS = [25, 35]
                 oa_cfg.SOLVER.GAMMA = 0.1
 
-            oa_cfg.SOLVER.OPT = "AdamW"
-            oa_cfg.SOLVER.BASE_LR = 2e-05
-            oa_cfg.SOLVER.WEIGHT_DECAY = 1e-05
+            oa_cfg.SOLVER.OPT = "Adam"
+            oa_cfg.SOLVER.BASE_LR = 3.5e-04
+            oa_cfg.SOLVER.WEIGHT_DECAY = 5e-04
             oa_cfg.SOLVER.MAX_EPOCH = 50
-            oa_cfg.SOLVER.WARMUP_FACTOR = 0.01
+            oa_cfg.SOLVER.WARMUP_FACTOR = 0.1
+        else:
+            oa_cfg.SOLVER.OPT = "Adam"
+            oa_cfg.SOLVER.BASE_LR = 1.2e-04
+            oa_cfg.SOLVER.WEIGHT_DECAY = 5e-04
+            oa_cfg.SOLVER.MAX_EPOCH = 35
+            oa_cfg.SOLVER.WARMUP_FACTOR = 0.1
+            oa_cfg.SOLVER.SCHED = "MultiStepLR"
+            oa_cfg.SOLVER.STEPS = [15, 25]
+            oa_cfg.SOLVER.GAMMA = 0.1
+            oa_cfg.SOLVER.DELAY_EPOCHS = 0
 
         self.oa_cfg = oa_cfg
         self.is_openanimals = True

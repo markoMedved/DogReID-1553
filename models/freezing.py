@@ -129,9 +129,14 @@ def _unfreeze_last_blocks(net, n=2):
 
     return False
 
-
 def apply_freezing(model, cfg):
     """Set requires_grad across the model according to cfg.full_finetune."""
+
+    # --- TF-CLIP Full Fine-Tuning with Differential LR ---
+    if getattr(model, "is_tfclip", False):
+        for p in model.parameters():
+            p.requires_grad = True
+        return model
 
     # --- Full Fine-Tuning ---
     if getattr(cfg, "full_finetune", False):

@@ -21,14 +21,14 @@ echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=cs
 
 # --- Experiment Settings (DINOv2 AGW with Pure [CLS] Representation + Weighted Triplet) ---
 MODEL="dinov2_agw"
-RUN_NAME="v1_cls_lr2e-5"
+RUN_NAME="v1_cls_lr3.5e-4"
 POOLING="attention"
 WORLD="closed"
 BATCH_SIZE=64   # P×K = 64 (P=16, K=4)
 K=4
 CLIP_LEN=8
 EPOCHS=50
-LR=2e-05
+LR=3.5e-04
 BACKBONE_LR_FACTOR=0.1
 UNFREEZE_BLOCKS=2
 VAL_SPLIT=0          # train on full train split, evaluate on test split

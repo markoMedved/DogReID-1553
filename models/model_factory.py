@@ -30,9 +30,6 @@ def build_model(cfg):
     elif model_type_str == "native_sbs":
         from .native_baselines import NativeSBS
         return NativeSBS(cfg)
-    elif model_type_str in ("psta", "video_psta"):
-        from .psta_builder import VideoPSTA
-        return VideoPSTA(cfg)
 
     # OpenAnimals architectures (default for bot, agw, sbs, mgn, arbase, and dinov2 variants)
     oa_names = {
@@ -60,6 +57,11 @@ def build_model(cfg):
     # --- Re-ID Method Routing (BoT / TransReID) ---
     if getattr(cfg, "reid_method", None) in ("bot", "transreid"):
         return VideoReID(cfg)
+
+    # TF-CLIP (Text-Free CLIP Video Re-ID)
+    if model_type_str in ("tfclip", "tf_clip", "tf-clip", "clip"):
+        from .tfclip import TFCLIPVideoModel
+        return TFCLIPVideoModel(cfg)
 
     # MiewID is a fixed pretrained baseline; it bypasses the BoT/TransReID
     if model_type == "miewid":

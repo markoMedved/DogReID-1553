@@ -9,8 +9,8 @@ class Config:
     """
     
     # --- Experiment Settings ---
-    model         = "dinov2"       # Options: 'dinov2', 'swin', 'vit', 'convnetxt'
-    backbone      = "dinov2"       # Options: 'dinov2', 'osnet', 'megadescriptor', 'vit', 'swin', 'convnext', 'miewid'
+    model         = "dinov2"       # Options: 'dinov2', 'tfclip', 'swin', 'vit', 'convnetxt'
+    backbone      = "dinov2"       # Options: 'dinov2', 'tfclip', 'osnet', 'megadescriptor', 'vit', 'swin', 'convnext', 'miewid'
     reid_method   = None           # Options: None (baseline/rebuttal), 'bot', 'transreid'
     world         = "closed"       # Options: 'closed', 'open'
     pooling_type  = "attention"    # Options: 'attention', 'mean', 'max'
@@ -133,10 +133,10 @@ class Config:
                 self.img_size = (224, 224)
                 self.epochs = 50
                 self.eval_period = 5
-                self.lr = 2e-05
+                self.lr = 3.5e-04
                 self.backbone_lr_factor = 0.1
-                self.optimizer = "adamw"
-                self.weight_decay = 1e-05
+                self.optimizer = "adam"
+                self.weight_decay = 5e-04
                 self.amp = "bf16"
                 self.batch_size = 64
                 self.k = 4
@@ -144,7 +144,7 @@ class Config:
                 self.num_workers = 12
                 self.clip_len = 8
                 self.warmup_epochs = 5
-                self.warmup_factor = 0.01
+                self.warmup_factor = 0.1
                 self.unfreeze_blocks = getattr(self, "unfreeze_blocks", 2)
 
                 if "sbs" in self.backbone:
@@ -177,32 +177,44 @@ class Config:
                 self.img_size = (384, 384)
                 self.re_prob = 0.0          # REA disabled for MGN in OpenAnimals
                 self.margin = 0.3           # OpenAnimals Triplet margin = 0.3
-                self.epochs = 120           # OpenAnimals: 120 epochs
-                self.lr = 3.5e-04           # OpenAnimals: Adam lr = 3.5e-4
-                self.optimizer = "adam"     # OpenAnimals: Adam
+                self.epochs = 35
+                self.warmup_epochs = 5
+                self.warmup_factor = 0.1
+                self.lr = 1.2e-04
+                self.backbone_lr_factor = 1.0
+                self.optimizer = "adam"
                 self.weight_decay = 0.0005
-                self.lr_sched = "cosine"
-                self.lr_delay_epochs = 60
+                self.lr_sched = "multistep"
+                self.lr_milestones = (15, 25)
+                self.lr_gamma = 0.1
                 self.chunk_size = 64
                 self.backbone_drop_epoch = None
             elif "arbase" in self.backbone:
                 self.img_size = (384, 384)
                 self.re_prob = 0.0          # REA disabled for ARBase
                 self.margin = 0.3
-                self.epochs = 120
-                self.lr = 3.5e-04
-                self.lr_sched = "cosine"
-                self.lr_delay_epochs = 60
+                self.epochs = 35
+                self.warmup_epochs = 5
+                self.warmup_factor = 0.1
+                self.lr = 1.2e-04
+                self.backbone_lr_factor = 1.0
+                self.lr_sched = "multistep"
+                self.lr_milestones = (15, 25)
+                self.lr_gamma = 0.1
                 self.chunk_size = 64
                 self.backbone_drop_epoch = None
             elif "agw" in self.backbone:
                 self.img_size = (256, 128)
                 self.re_prob = 0.5          # REA enabled for AGW
                 self.margin = 0.0           # Weighted soft-margin triplet
-                self.epochs = 120
-                self.lr = 3.5e-04
+                self.epochs = 35
+                self.warmup_epochs = 5
+                self.warmup_factor = 0.1
+                self.lr = 1.2e-04
+                self.backbone_lr_factor = 1.0
                 self.lr_sched = "multistep"
-                self.lr_milestones = (40, 90)
+                self.lr_milestones = (15, 25)
+                self.lr_gamma = 0.1
                 self.chunk_size = 64
                 self.backbone_drop_epoch = None
             elif "sbs" in self.backbone:
@@ -210,20 +222,29 @@ class Config:
                 self.re_prob = 0.5          # REA enabled for SBS
                 self.autoaug_prob = 0.1     # AutoAugment p=0.1
                 self.margin = 0.0           # Soft-margin triplet
-                self.epochs = 120
-                self.lr = 3.5e-04
-                self.lr_sched = "cosine"
-                self.lr_delay_epochs = 30
+                self.epochs = 35
+                self.warmup_epochs = 5
+                self.warmup_factor = 0.1
+                self.freeze_epochs = 5
+                self.lr = 1.2e-04
+                self.backbone_lr_factor = 1.0
+                self.lr_sched = "multistep"
+                self.lr_milestones = (15, 25)
+                self.lr_gamma = 0.1
                 self.chunk_size = 64
                 self.backbone_drop_epoch = None
             elif "bot" in self.backbone:
                 self.img_size = (256, 128)
                 self.re_prob = 0.5
                 self.margin = 0.3
-                self.epochs = 120
-                self.lr = 3.5e-04
+                self.epochs = 35
+                self.warmup_epochs = 5
+                self.warmup_factor = 0.1
+                self.lr = 1.2e-04
+                self.backbone_lr_factor = 1.0
                 self.lr_sched = "multistep"
-                self.lr_milestones = (40, 90)
+                self.lr_milestones = (15, 25)
+                self.lr_gamma = 0.1
                 self.chunk_size = 64
                 self.backbone_drop_epoch = None
             else:
@@ -233,24 +254,6 @@ class Config:
 
             if getattr(self, "reid_method", None) is None:
                 self.reid_method = "bot"
-        elif self.backbone in ("psta", "video_psta"):
-            self.embedding_dim = 1024
-            self.img_size = (256, 128)
-            self.clip_len = 8
-            self.re_prob = 0.5
-            self.chunk_size = 64
-            self.optimizer = "adam"
-            self.weight_decay = 5e-04
-            self.backbone_lr_factor = 1.0
-            self.lr = 3.5e-04
-            self.margin = 0.3
-            self.epochs = 500
-            self.warmup_epochs = 10
-            self.warmup_factor = 0.01
-            self.lr_sched = "multistep"
-            self.lr_milestones = (70, 140, 210, 310, 410)
-            self.lr_gamma = 0.3
-            self.backbone_drop_epoch = None
         elif "resnet" in self.backbone:
             self.embedding_dim = 2048
             self.img_size = (256, 128)
@@ -282,6 +285,25 @@ class Config:
             self.lr_sched = "multistep"
             self.lr_milestones = (25, 35)
             self.lr_gamma = 0.1
+        elif "tfclip" in self.backbone or "tf_clip" in self.backbone or self.backbone == "clip":
+            self.embedding_dim = 2048
+            self.img_size = (224, 224)
+            self.re_prob = 0.5
+            self.batch_size = 16
+            self.k = 4
+            self.num_ids = 4
+            self.chunk_size = 32
+            self.optimizer = "adam"
+            self.weight_decay = 1e-04
+            self.lr = 5e-05
+            self.backbone_lr_factor = 0.1
+            self.margin = 0.3
+            self.epochs = 80
+            self.warmup_epochs = 5
+            self.warmup_factor = 0.1
+            self.lr_sched = "multistep"
+            self.lr_milestones = (30, 50, 70)
+            self.lr_gamma = 0.1
         else:
             self.embedding_dim = 768
             self.img_size = (224, 224)
@@ -306,8 +328,9 @@ class Config:
         """Clean and concise run naming convention."""
         bb = str(backbone).lower() if backbone else ""
         method = str(reid_method).lower() if reid_method else ""
-        if bb in ("arbase", "agw", "sbs", "mgn", "psta", "video_psta"):
-            base = "psta" if "psta" in bb else bb
+        clean_oa = bb.replace("openanimals_", "").replace("oa_", "")
+        if clean_oa in ("bot", "arbase", "agw", "sbs", "mgn", "arbase_mb", "arbase_mgn"):
+            base = clean_oa
             if backbone_lr_factor is not None and abs(float(backbone_lr_factor) - 1.0) > 1e-4:
                 tune = f"{float(backbone_lr_factor):g}x"
                 name = f"{base}_{tune}"
@@ -381,17 +404,30 @@ class Config:
         else:
             self.legacy_run_name = None
         bb = str(self.backbone).lower() if self.backbone else ""
-        ckpt_dir_name = "checkpoints_dinov2" if "dinov2" in bb else "checkpoints"
+        clean_oa = bb.replace("openanimals_", "").replace("oa_", "")
+        is_resnet_model = ("resnet" in bb) or (clean_oa in ("bot", "arbase", "agw", "sbs", "mgn", "arbase_mb", "arbase_mgn") and "dinov2" not in bb)
+        if "dinov2" in bb:
+            ckpt_dir_name = "checkpoints_dinov2"
+        elif is_resnet_model:
+            ckpt_dir_name = "checkpoints_resnet"
+        else:
+            ckpt_dir_name = "checkpoints"
         model_folder = self.run_name
 
         # Multi-run subfolder support:
-        # Hierarchy: checkpoints_dinov2/<model_name>/<run_name>/
-        run_name_override = getattr(self, "custom_run_name", None) or getattr(self, "run_subfolder", None)
+        # Hierarchy: checkpoints_<family>/<model_name>/<params>/
+        run_name_override = getattr(self, "custom_run_name", None)
         if run_name_override:
             self.run_subfolder = str(run_name_override)
             self.output_dir = self.project_root / ckpt_dir_name / model_folder / self.run_subfolder
         else:
-            default_sub = "v1_cls_lr2e-5" if "dinov2" in bb else "default"
+            if "dinov2" in bb:
+                default_sub = "v1_cls_lr2e-5"
+            elif is_resnet_model:
+                ms_str = "-".join(str(m) for m in getattr(self, "lr_milestones", (15, 25)))
+                default_sub = f"lr{self.lr:g}_ep{self.epochs}_ms{ms_str}_bb{bb_factor:g}x"
+            else:
+                default_sub = "default"
             self.run_subfolder = default_sub
             self.output_dir = self.project_root / ckpt_dir_name / model_folder / self.run_subfolder
 

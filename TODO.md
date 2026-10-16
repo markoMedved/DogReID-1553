@@ -11,8 +11,9 @@ RUN THE DINOV2 JOBS IN A SEPERATE CHECKPOINTS_DINOV2 FOLDER FIRST MAYBE FOR ABOU
 
 
 
- TODO - give credit to psta and opeanimal repositories as well
+ TODO - give credit to tf-clip and opeanimal repositories as well
 
+for TF-clip we use a square resolution since thatis what they say in openanimals
 
 
 # Improvements
