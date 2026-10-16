@@ -67,9 +67,15 @@ def main():
     df = pd.read_csv(csv_path)
     print(f"Loaded {len(df)} video records across {df['DOG_ID'].nunique()} dogs from {csv_path}")
 
-    # Pure matplotlib styling
+    # Matplotlib styling with prominent font sizes
     plt.rcParams.update({
-        "font.size": 11,
+        "font.size": 15,
+        "axes.labelsize": 16,
+        "axes.titlesize": 18,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 14,
+        "figure.titlesize": 20,
         "axes.edgecolor": "#333333",
         "axes.grid": True,
         "grid.color": "#e0e0e0",
@@ -118,7 +124,7 @@ def main():
     # Plot 1: Overall Dataset Distribution (Histogram + Boxplot)
     # -------------------------------------------------------------
     fig, (ax_hist, ax_box) = plt.subplots(
-        2, 1, figsize=(10, 7), sharex=True, gridspec_kw={"height_ratios": [0.75, 0.25]}
+        2, 1, figsize=(11, 8), sharex=True, gridspec_kw={"height_ratios": [0.75, 0.25]}
     )
 
     max_val = int(overall_counts.max())
@@ -134,23 +140,22 @@ def main():
     )
     mean_v = float(overall_counts.mean())
     med_v = float(overall_counts.median())
-    ax_hist.axvline(mean_v, color="#e74c3c", linestyle="--", linewidth=2, label=f"Mean: {mean_v:.2f}")
-    ax_hist.axvline(med_v, color="#2ecc71", linestyle="-", linewidth=2, label=f"Median: {med_v:.1f}")
-    ax_hist.set_title("Overall Videos per Dog Identity (DogReID-1553)", fontsize=14, fontweight="bold")
-    ax_hist.set_ylabel("Number of Identities")
-    ax_hist.legend(fontsize=11)
+    ax_hist.axvline(mean_v, color="#e74c3c", linestyle="--", linewidth=2.5, label=f"Mean: {mean_v:.2f}")
+    ax_hist.axvline(med_v, color="#2ecc71", linestyle="-", linewidth=2.5, label=f"Median: {med_v:.1f}")
+    ax_hist.set_ylabel("Number of Identities", fontsize=22)
+    ax_hist.legend(fontsize=22)
 
     ax_box.boxplot(
         overall_counts,
         vert=False,
         patch_artist=True,
         boxprops=dict(facecolor="#729fcf", color="black"),
-        medianprops=dict(color="red", linewidth=2),
-        whiskerprops=dict(color="black"),
-        capprops=dict(color="black"),
-        flierprops=dict(marker="o", color="black", alpha=0.5, markersize=4)
+        medianprops=dict(color="red", linewidth=2.5),
+        whiskerprops=dict(color="black", linewidth=1.5),
+        capprops=dict(color="black", linewidth=1.5),
+        flierprops=dict(marker="o", color="black", alpha=0.5, markersize=5)
     )
-    ax_box.set_xlabel("Number of Videos per Identity")
+    ax_box.set_xlabel("Number of Videos per Identity", fontsize=20)
     ax_box.set_yticks([])
 
     out_overall = out_dir / "videos_per_id_overall.png"
@@ -161,7 +166,7 @@ def main():
     # -------------------------------------------------------------
     # Plot 2: Closed-Set vs Open-Set Comparison (Subplots)
     # -------------------------------------------------------------
-    fig, axes = plt.subplots(2, 3, figsize=(16, 9), sharey=True)
+    fig, axes = plt.subplots(2, 3, figsize=(18, 11), sharey=True)
 
     split_configs = [
         # Row 1: Closed-Set
@@ -188,14 +193,14 @@ def main():
         )
         m_val = float(counts.mean())
         md_val = float(counts.median())
-        ax.axvline(m_val, color="red", linestyle="--", linewidth=1.5, label=f"Mean: {m_val:.2f}")
-        ax.axvline(md_val, color="darkgreen", linestyle="-", linewidth=1.5, label=f"Med: {md_val:.1f}")
-        ax.set_title(f"{title} (n={len(counts)} dogs)", fontsize=12, fontweight="bold")
-        ax.set_xlabel("Videos per Dog")
-        ax.set_ylabel("Count of Dogs")
-        ax.legend(fontsize=10, loc="upper right")
+        ax.axvline(m_val, color="red", linestyle="--", linewidth=2, label=f"Mean: {m_val:.2f}")
+        ax.axvline(md_val, color="darkgreen", linestyle="-", linewidth=2, label=f"Med: {md_val:.1f}")
+        ax.set_title(f"{title} (n={len(counts)})", fontsize=16, fontweight="bold", pad=8)
+        ax.set_xlabel("Videos per Dog", fontsize=15)
+        ax.set_ylabel("Count of Dogs", fontsize=15)
+        ax.legend(fontsize=13, loc="upper right")
 
-    fig.suptitle("Videos per Identity Distribution Across Closed-Set and Open-Set Splits", fontsize=15, fontweight="bold", y=1.02)
+    fig.suptitle("Videos per Identity Distribution Across Closed-Set and Open-Set Splits", fontsize=20, fontweight="bold", y=1.02)
     plt.tight_layout()
     out_splits = out_dir / "videos_per_id_splits_breakdown.png"
     plt.savefig(out_splits, dpi=300, bbox_inches="tight")
@@ -205,7 +210,7 @@ def main():
     # -------------------------------------------------------------
     # Plot 3: Boxplot Comparison across all subsets
     # -------------------------------------------------------------
-    plt.figure(figsize=(11, 6))
+    plt.figure(figsize=(13, 7))
     subsets_data = [
         ("Closed Train", closed_train),
         ("Closed Query", closed_query),
@@ -224,21 +229,22 @@ def main():
         tick_labels=labels,
         patch_artist=True,
         showmeans=True,
-        meanprops={"marker": "^", "markerfacecolor": "white", "markeredgecolor": "black", "markersize": 8},
-        medianprops={"color": "red", "linewidth": 2},
-        whiskerprops={"color": "#333333"},
-        capprops={"color": "#333333"},
-        flierprops={"marker": "o", "color": "gray", "alpha": 0.4, "markersize": 4}
+        meanprops={"marker": "^", "markerfacecolor": "white", "markeredgecolor": "black", "markersize": 10},
+        medianprops={"color": "red", "linewidth": 2.5},
+        whiskerprops={"color": "#333333", "linewidth": 1.5},
+        capprops={"color": "#333333", "linewidth": 1.5},
+        flierprops={"marker": "o", "color": "gray", "alpha": 0.4, "markersize": 5}
     )
 
     for patch, color in zip(box["boxes"], colors):
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
 
-    plt.title("Videos per Identity Comparison Across Subsets (▲ = Mean, Red Bar = Median)", fontsize=13, fontweight="bold")
-    plt.xlabel("Dataset Split / Subset")
-    plt.ylabel("Number of Videos")
-    plt.xticks(rotation=15)
+    plt.title("Videos per Identity Comparison Across Subsets (▲ = Mean, Red Bar = Median)", fontsize=18, fontweight="bold", pad=12)
+    plt.xlabel("Dataset Split / Subset", fontsize=16)
+    plt.ylabel("Number of Videos", fontsize=16)
+    plt.xticks(rotation=20, fontsize=14)
+    plt.yticks(fontsize=14)
     plt.tight_layout()
 
     out_box = out_dir / "videos_per_id_subsets_boxplot.png"
