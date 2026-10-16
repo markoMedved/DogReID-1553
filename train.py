@@ -293,22 +293,33 @@ def main():
     ]
 
     bb_lr_factor = float(getattr(cfg, "backbone_lr_factor", 1.0))
-    param_groups = []
-    if backbone_params:
-        param_groups.append({"params": backbone_params, "lr": cfg.lr * bb_lr_factor, "is_backbone": True})
-    if head_params:
-        param_groups.append({"params": head_params, "lr": cfg.lr, "is_backbone": False})
-
-    if not param_groups:
-        raise ValueError(
-            "No trainable parameters found for optimizer! "
-            "Ensure at least part of the backbone or head has requires_grad=True."
+    if getattr(model, "is_tfclip", False) and hasattr(model, "get_parameter_groups"):
+        param_groups = model.get_parameter_groups(
+            base_lr=cfg.lr,
+            weight_decay=cfg.weight_decay,
+            bias_lr_factor=2.0,
+            large_fc_lr=True
         )
+        n_bb = sum(p.numel() for n, p in model.named_parameters() if p.requires_grad and n.startswith("image_encoder."))
+        n_hd = sum(p.numel() for n, p in model.named_parameters() if p.requires_grad and not n.startswith("image_encoder."))
+        print(f"[optim] TF-CLIP Stage-2 Groups | Backbone: {n_bb:,} params (LR={cfg.lr:.2e}) | TMD/SSP/Heads: {n_hd:,} params (Base LR={cfg.lr:.2e}, bias=2x, classifier_proj_temp=10x)")
+    else:
+        param_groups = []
+        if backbone_params:
+            param_groups.append({"params": backbone_params, "lr": cfg.lr * bb_lr_factor, "is_backbone": True})
+        if head_params:
+            param_groups.append({"params": head_params, "lr": cfg.lr, "is_backbone": False})
 
-    n_bb = sum(p.numel() for p in backbone_params)
-    n_hd = sum(p.numel() for p in head_params)
-    drop_info = f", drop 0.1x at epoch {cfg.backbone_drop_epoch}" if getattr(cfg, "backbone_drop_epoch", None) else ""
-    print(f"[optim] Backbone: {n_bb:,} params, base LR = {cfg.lr * bb_lr_factor:.2e} ({bb_lr_factor}x{drop_info}) | Head: {n_hd:,} params, base LR = {cfg.lr:.2e}")
+        if not param_groups:
+            raise ValueError(
+                "No trainable parameters found for optimizer! "
+                "Ensure at least part of the backbone or head has requires_grad=True."
+            )
+
+        n_bb = sum(p.numel() for p in backbone_params)
+        n_hd = sum(p.numel() for p in head_params)
+        drop_info = f", drop 0.1x at epoch {cfg.backbone_drop_epoch}" if getattr(cfg, "backbone_drop_epoch", None) else ""
+        print(f"[optim] Backbone: {n_bb:,} params, base LR = {cfg.lr * bb_lr_factor:.2e} ({bb_lr_factor}x{drop_info}) | Head: {n_hd:,} params, base LR = {cfg.lr:.2e}")
     opt_name = str(getattr(cfg, "optimizer", "adam")).lower()
     if opt_name == "sgd":
         optimizer = torch.optim.SGD(param_groups, momentum=0.9, weight_decay=getattr(cfg, "weight_decay", 5e-4))

@@ -41,9 +41,8 @@ def batch_hard_triplet_loss(embeddings: torch.Tensor, labels: torch.Tensor, marg
     is_pos = labels.expand(N, N).eq(labels.expand(N, N).t())
     is_neg = labels.expand(N, N).ne(labels.expand(N, N).t())
 
-    # Replace invalid entries with extreme values for max/min reduction
-    dist_ap = dist_mat[is_pos].view(N, -1).max(dim=1)[0]
-    dist_an = dist_mat[is_neg].view(N, -1).min(dim=1)[0]
+    dist_ap = dist_mat.masked_fill(~is_pos, float("-inf")).max(dim=1)[0]
+    dist_an = dist_mat.masked_fill(~is_neg, float("inf")).min(dim=1)[0]
 
     y = torch.ones_like(dist_an)
     loss = F.margin_ranking_loss(dist_an, dist_ap, y, margin=margin)
@@ -128,32 +127,79 @@ class TFCLIPVideoModel(nn.Module):
         self.margin = getattr(cfg, "margin", 0.3)
         self.label_smoothing = 0.1
 
+    def _build_stage1_loader(self, train_loader):
+        """
+        Build a deterministic, unaugmented DataLoader over all training videos
+        (no RandomErasing, no RandomCrop, no MPerClassSampler, drop_last=False)
+        matching TF-CLIP's train_loader_stage1 / train_set_normal.
+        """
+        from torch.utils.data import DataLoader, Subset
+        from data.dataset import DOGVideoREIDDataset
+        from data.reid_transforms import build_video_transforms
+
+        eval_tf = build_video_transforms(self.cfg, is_train=False)
+        train_ds = train_loader.dataset
+        base_ds = train_ds.dataset if isinstance(train_ds, Subset) else train_ds
+
+        clean_base_ds = DOGVideoREIDDataset(
+            root_dir=self.cfg.data_root,
+            split_file=self.cfg.split_file,
+            split="train",
+            is_train=False,
+            clip_len=self.cfg.clip_len,
+            transform=eval_tf,
+            world=self.cfg.world,
+            label_map=getattr(base_ds, "id_map", None),
+            mask_dog=getattr(self.cfg, "mask_dog", False),
+            force_yolo=getattr(self.cfg, "force_yolo", False),
+            bbox_file=getattr(self.cfg, "bbox_file", None),
+        )
+        stage1_ds = Subset(clean_base_ds, train_ds.indices) if isinstance(train_ds, Subset) else clean_base_ds
+
+        num_workers = getattr(self.cfg, "num_workers", 4)
+        loader_kwargs = dict(num_workers=num_workers, pin_memory=True)
+        if num_workers > 0:
+            loader_kwargs.update(persistent_workers=False, prefetch_factor=4, timeout=300)
+
+        return DataLoader(
+            stage1_ds,
+            batch_size=min(getattr(self.cfg, "batch_size", 16), 32),
+            shuffle=False,
+            drop_last=False,
+            **loader_kwargs
+        )
+
     @torch.no_grad()
     def compute_clip_memory(self, train_loader, device):
         """
         Stage 1: Precompute identity centroid representations (CLIP-Memory)
-        using the frozen CLIP visual backbone across the training set.
+        using the frozen CLIP visual backbone across the full unaugmented training set.
         """
         was_training = self.training
         self.eval()
         device = torch.device(device)
 
-        # Check disk cache first to avoid recomputing Stage 1 (25 mins)
+        # Check disk cache first to avoid recomputing Stage 1
         cache_dir = getattr(self.cfg, "output_dir", None)
         if cache_dir is not None:
             cache_file = Path(cache_dir) / f"clip_memory_{self.num_classes}ids.pt"
             if cache_file.exists():
-                print(f"=> [TF-CLIP] Found cached CLIP-Memory at {cache_file}. Loading...")
                 cached = torch.load(cache_file, map_location=device)
-                self.clip_memory.copy_(cached)
-                self.memory_initialized.copy_(torch.tensor(True, dtype=torch.bool))
-                self.train(was_training)
-                return
+                unobserved_count = int((cached.norm(dim=-1) < 1.0).sum().item())
+                if cached.shape == (self.num_classes, 512) and unobserved_count == 0:
+                    print(f"=> [TF-CLIP] Found valid cached CLIP-Memory at {cache_file}. Loading...")
+                    self.clip_memory.copy_(cached)
+                    self.memory_initialized.copy_(torch.tensor(True, dtype=torch.bool))
+                    self.train(was_training)
+                    return
+                else:
+                    print(f"=> [TF-CLIP] Cached CLIP-Memory at {cache_file} has {unobserved_count} unobserved IDs; recomputing cleanly...")
 
-        print("=> [TF-CLIP] Generating CLIP-Memory identity centroids from training set...")
+        stage1_loader = self._build_stage1_loader(train_loader)
+        print(f"=> [TF-CLIP] Generating CLIP-Memory identity centroids over {len(stage1_loader.dataset)} clean training videos...")
         feats_by_id = {}
 
-        for batch in tqdm(train_loader, desc="[TF-CLIP] Building Memory"):
+        for batch in tqdm(stage1_loader, desc="[TF-CLIP] Building Memory"):
             clips = batch[0]  # [B, T, C, H, W]
             labels = batch[1]  # [B]
 
@@ -169,22 +215,23 @@ class TFCLIPVideoModel(nn.Module):
                 lbl = int(label.item()) if hasattr(label, "item") else int(label)
                 if lbl not in feats_by_id:
                     feats_by_id[lbl] = []
-                feats_by_id[lbl].append(feat.detach().cpu())
+                feats_by_id[lbl].append(feat.detach().float().cpu())
 
         # Construct memory matrix [num_classes, 512]
         memory = torch.zeros(self.num_classes, 512, device=device)
+        missing_ids = 0
         for lbl in range(self.num_classes):
             if lbl in feats_by_id and len(feats_by_id[lbl]) > 0:
                 stacked = torch.stack(feats_by_id[lbl], dim=0)
                 centroid = stacked.mean(dim=0).to(device)
                 memory[lbl] = centroid
             else:
-                # Fallback for unobserved IDs: random small vector
+                missing_ids += 1
                 memory[lbl] = torch.randn(512, device=device) * 0.01
 
         self.clip_memory.copy_(memory)
         self.memory_initialized.copy_(torch.tensor(True, dtype=torch.bool))
-        print(f"=> [TF-CLIP] Successfully initialized CLIP-Memory for {self.num_classes} identities.")
+        print(f"=> [TF-CLIP] Successfully initialized CLIP-Memory for {self.num_classes - missing_ids}/{self.num_classes} identities.")
 
         # Save to disk cache
         if cache_dir is not None:
@@ -306,36 +353,27 @@ class TFCLIPVideoModel(nn.Module):
         total_loss = loss_id + loss_triplet + loss_i2t + loss_frame
         return total_loss, loss_triplet, loss_id
 
-    def get_parameter_groups(self, base_lr: float = 5e-5, backbone_lr_factor: float = 0.1, weight_decay: float = 1e-4):
+    def get_parameter_groups(self, base_lr: float = 5e-6, weight_decay: float = 1e-4, bias_lr_factor: float = 2.0, large_fc_lr: bool = True):
         """
-        Parameter groups with 10x lower learning rate for CLIP backbone
-        and base learning rate for TMD, SSP, and classification heads.
+        Matches TF-CLIP solver/make_optimizer_prompt.py (make_optimizer_2stage):
+        - Base parameters (CLIP backbone, TMD, SSP, bottlenecks, classifier2, classifier_proj): base_lr (5e-6)
+        - Bias parameters: base_lr * bias_lr_factor (2x = 1e-5)
+        - classifier_proj_temp (when large_fc_lr=True): base_lr * 10 (5e-5)
         """
-        backbone_params = []
-        head_params = []
-
-        for name, param in self.named_parameters():
-            if not param.requires_grad:
-                continue
-            if name.startswith("image_encoder."):
-                backbone_params.append(param)
-            else:
-                head_params.append(param)
-
         param_groups = []
-        if backbone_params:
+        for key, value in self.named_parameters():
+            if not value.requires_grad:
+                continue
+            lr = base_lr
+            wd = weight_decay
+            if "bias" in key:
+                lr = base_lr * bias_lr_factor
+            if large_fc_lr and ("classifier_proj_temp" in key or "arcface" in key):
+                lr = lr * 10.0
             param_groups.append({
-                "params": backbone_params,
-                "lr": base_lr * backbone_lr_factor,
-                "weight_decay": weight_decay,
-                "is_backbone": True
+                "params": [value],
+                "lr": lr,
+                "weight_decay": wd,
+                "is_backbone": key.startswith("image_encoder.")
             })
-        if head_params:
-            param_groups.append({
-                "params": head_params,
-                "lr": base_lr,
-                "weight_decay": weight_decay,
-                "is_backbone": False
-            })
-
         return param_groups

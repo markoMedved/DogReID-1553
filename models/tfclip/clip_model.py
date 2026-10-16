@@ -12,18 +12,13 @@ CLIP_VITB16_URL = "https://openaipublic.azureedge.net/clip/models/5806e77cd80f8b
 CLIP_VITB16_SHA256 = "5806e77cd80f8b59890b7e101eabd078d9fb84e6937f9e85e4ecb61988df416f"
 
 
-class LayerNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-12):
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.bias = nn.Parameter(torch.zeros(hidden_size))
-        self.variance_epsilon = eps
+class LayerNorm(nn.LayerNorm):
+    """Subclass torch's LayerNorm to handle fp16/bf16 in float32."""
 
-    def forward(self, x):
-        u = x.mean(-1, keepdim=True)
-        s = (x - u).pow(2).mean(-1, keepdim=True)
-        x = (x - u) / torch.sqrt(s + self.variance_epsilon)
-        return self.weight * x + self.bias
+    def forward(self, x: torch.Tensor):
+        orig_type = x.dtype
+        ret = super().forward(x.type(torch.float32))
+        return ret.type(orig_type)
 
 
 class QuickGELU(nn.Module):

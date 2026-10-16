@@ -293,16 +293,17 @@ class Config:
             self.k = 4
             self.num_ids = 4
             self.chunk_size = 32
+            self.full_finetune = True
             self.optimizer = "adam"
             self.weight_decay = 1e-04
-            self.lr = 5e-05
-            self.backbone_lr_factor = 0.1
+            self.lr = 5e-06
+            self.backbone_lr_factor = 1.0
             self.margin = 0.3
-            self.epochs = 80
-            self.warmup_epochs = 5
+            self.epochs = 60
+            self.warmup_epochs = 10
             self.warmup_factor = 0.1
             self.lr_sched = "multistep"
-            self.lr_milestones = (30, 50, 70)
+            self.lr_milestones = (30, 50)
             self.lr_gamma = 0.1
         else:
             self.embedding_dim = 768
@@ -336,6 +337,8 @@ class Config:
                 name = f"{base}_{tune}"
             else:
                 name = base
+        elif "tfclip" in bb or "tf_clip" in bb or bb == "clip":
+            name = "tfclip"
         elif "dinov2" in bb:
             for v in ("dinov2_bot", "dinov2_agw", "dinov2_sbs", "dinov2_arbase"):
                 if v in bb:
@@ -406,10 +409,13 @@ class Config:
         bb = str(self.backbone).lower() if self.backbone else ""
         clean_oa = bb.replace("openanimals_", "").replace("oa_", "")
         is_resnet_model = ("resnet" in bb) or (clean_oa in ("bot", "arbase", "agw", "sbs", "mgn", "arbase_mb", "arbase_mgn") and "dinov2" not in bb)
+        is_tfclip_model = ("tfclip" in bb or "tf_clip" in bb or bb == "clip")
         if "dinov2" in bb:
             ckpt_dir_name = "checkpoints_dinov2"
         elif is_resnet_model:
             ckpt_dir_name = "checkpoints_resnet"
+        elif is_tfclip_model:
+            ckpt_dir_name = "checkpoints_tfclip"
         else:
             ckpt_dir_name = "checkpoints"
         model_folder = self.run_name
@@ -426,6 +432,8 @@ class Config:
             elif is_resnet_model:
                 ms_str = "-".join(str(m) for m in getattr(self, "lr_milestones", (15, 25)))
                 default_sub = f"lr{self.lr:g}_ep{self.epochs}_ms{ms_str}_bb{bb_factor:g}x"
+            elif is_tfclip_model:
+                default_sub = "v1_tfclip_vitb16"
             else:
                 default_sub = "default"
             self.run_subfolder = default_sub

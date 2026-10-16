@@ -120,6 +120,86 @@ class ClipTransform:
         return torch.stack(out, dim=0)
 
 
+class TFCLIPSeqTransform:
+    """Exact port of TF-CLIP's SeqT augmentation pipeline (utils/seqtransforms.py).
+
+    Training:
+      1. RectScale(height, width, Image.BILINEAR) (no Pad, no RandomCrop)
+      2. Sequence-level RandomHorizontalFlip(p=0.5)
+      3. Per-frame RandomSizedEarser(sl=0.02, sh=0.2, asratio=0.3, p=re_prob)
+      4. ToTensor() + Normalize(IMAGENET_MEAN, IMAGENET_STD)
+    Evaluation / Stage 1:
+      1. RectScale(height, width, Image.BILINEAR)
+      2. ToTensor() + Normalize(IMAGENET_MEAN, IMAGENET_STD)
+    """
+
+    def __init__(self, size=(224, 224), is_train=True, re_prob=0.5, sl=0.02, sh=0.2, asratio=0.3):
+        from PIL import Image
+        self.height, self.width = int(size[0]), int(size[1])
+        self.is_train = is_train
+        self.re_prob = re_prob
+        self.sl = sl
+        self.sh = sh
+        self.asratio = asratio
+        self.interpolation = Image.BILINEAR
+        self.to_tensor = transforms.ToTensor()
+        self.normalize = transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD)
+        # Marker attribute so DOGVideoREIDDataset passes the full clip list directly
+        self.frame_tf = True
+
+    def _erase_frame(self, frame):
+        from PIL import Image
+        if random.uniform(0.0, 1.0) > self.re_prob:
+            return frame
+        W, H = frame.size
+        area = H * W
+        for _ in range(100):
+            Se = random.uniform(self.sl, self.sh) * area
+            re = random.uniform(self.asratio, 1.0 / self.asratio)
+            He = np.sqrt(Se * re)
+            We = np.sqrt(Se / re)
+            xe = random.uniform(0, W - We)
+            ye = random.uniform(0, H - He)
+            if xe + We <= W and ye + He <= H and xe > 0 and ye > 0:
+                x1 = int(np.ceil(xe))
+                y1 = int(np.ceil(ye))
+                x2 = int(np.floor(x1 + We))
+                y2 = int(np.floor(y1 + He))
+                if x2 > x1 and y2 > y1:
+                    frame = frame.copy()
+                    Rc = random.randint(0, 255)
+                    Gc = random.randint(0, 255)
+                    Bc = random.randint(0, 255)
+                    patch = Image.new("RGB", (x2 - x1, y2 - y1), (Rc, Gc, Bc))
+                    frame.paste(patch, (x1, y1))
+                    break
+        return frame
+
+    def __call__(self, frames):
+        from PIL import Image
+        # 1. RectScale (Bilinear resize without padding or random crop)
+        scaled = [
+            f if f.size == (self.width, self.height) else f.resize((self.width, self.height), self.interpolation)
+            for f in frames
+        ]
+
+        if self.is_train:
+            # 2. Sequence-level RandomHorizontalFlip (p=0.5 across whole clip)
+            if random.random() < 0.5:
+                scaled = [f.transpose(Image.FLIP_LEFT_RIGHT) for f in scaled]
+            # 3. Per-frame RandomSizedEarser (sl=0.02, sh=0.2, asratio=0.3, p=0.5)
+            scaled = [self._erase_frame(f) for f in scaled]
+
+        # 4. ToTensor + Normalize
+        out = [self.normalize(self.to_tensor(f)) for f in scaled]
+        return torch.stack(out, dim=0)
+
+
 def build_video_transforms(cfg, is_train: bool):
     """Build a clip-level transform that is consistent across frames."""
+    bb = str(getattr(cfg, "backbone", getattr(cfg, "model", ""))).lower()
+    if "tfclip" in bb or "tf_clip" in bb or bb == "clip":
+        size = tuple(getattr(cfg, "img_size", (224, 224)))
+        re_prob = getattr(cfg, "re_prob", 0.5)
+        return TFCLIPSeqTransform(size=size, is_train=is_train, re_prob=re_prob)
     return ClipTransform(build_transforms(cfg, is_train))

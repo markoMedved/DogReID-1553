@@ -27,9 +27,9 @@ WORLD="closed"
 BATCH_SIZE=16   # P×K = 16 (P=4, K=4, matching base TF-CLIP paper)
 K=4
 CLIP_LEN=8
-EPOCHS=80
-LR=5e-05
-BACKBONE_LR_FACTOR=0.1
+EPOCHS=60
+LR=5e-06        # Base LR = 5e-6 (bias=2x, classifier_proj_temp=10x, matching TF-CLIP Stage 2)
+BACKBONE_LR_FACTOR=1.0
 WEIGHT_DECAY=1e-04
 VAL_SPLIT=0     # train on full train split, evaluate on query/gallery test set
 EVAL_PERIOD=5
@@ -46,9 +46,9 @@ echo "  World        : ${WORLD}"
 echo "  Batch / K    : ${BATCH_SIZE} / ${K} (P = $((BATCH_SIZE / K)) identities)"
 echo "  Clip Length  : ${CLIP_LEN} frames"
 echo "  Resolution   : 224x224"
-echo "  Learning Rate: Head/Prompt ${LR}, Backbone $(python -c "print(${LR} * ${BACKBONE_LR_FACTOR})")"
-echo "  Epochs       : ${EPOCHS}"
-echo "  Scheduler    : WarmupMultiStepLR (milestones 30, 50, 70)"
+echo "  Learning Rate: Base ${LR} (bias=2x, classifier_proj_temp=10x)"
+echo "  Epochs       : ${EPOCHS} (10-epoch linear warmup)"
+echo "  Scheduler    : WarmupMultiStepLR (milestones 30, 50)"
 echo "  Workers      : ${NUM_WORKERS}"
 echo "=========================================================="
 
@@ -66,6 +66,7 @@ python train.py \
     --val_split ${VAL_SPLIT} \
     --eval_period ${EVAL_PERIOD} \
     --accum_steps ${ACCUM_STEPS} \
-    --num_workers ${NUM_WORKERS}
+    --num_workers ${NUM_WORKERS} \
+    --full_finetune
 
 echo "Video TF-CLIP job complete!"

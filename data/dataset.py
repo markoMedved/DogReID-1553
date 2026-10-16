@@ -135,7 +135,8 @@ def mask_frame(
 class DOGVideoREIDDataset(Dataset):
     def __init__(self, root_dir, split_file, split="train", clip_len=16, 
                  transform=None, use_videos=True, world="closed", label_map=None,
-                 mask_dog=False, force_yolo=False, yolo_model: str | None = "yolo11n.pt", bbox_file: str | None = None):
+                 mask_dog=False, force_yolo=False, yolo_model: str | None = "yolo11n.pt", bbox_file: str | None = None,
+                 is_train: bool | None = None):
 
         self.root_dir = root_dir
         self.clip_len = clip_len
@@ -143,6 +144,7 @@ class DOGVideoREIDDataset(Dataset):
         self.use_videos = use_videos
         self.world = world
         self.split = split
+        self.is_train = (split == "train") if is_train is None else bool(is_train)
         self.mask_dog = mask_dog
         self.force_yolo = force_yolo
 
@@ -228,7 +230,7 @@ class DOGVideoREIDDataset(Dataset):
 
         # --- Data Loading ---
         if self.use_videos:
-            clip = load_video_clip(path, self.clip_len, is_training=(self.split == "train"))
+            clip = load_video_clip(path, self.clip_len, is_training=self.is_train)
         else:
             img = Image.open(path).convert("RGB")
             clip = [np.array(img)]
@@ -269,7 +271,7 @@ class DOGVideoREIDDataset(Dataset):
                 transformed_frames = []
                 seed = np.random.randint(2147483647)
                 for pil_img in pil_clip:
-                    if self.split == "train":
+                    if self.is_train:
                         random.seed(seed)
                         torch.manual_seed(seed)
                         np.random.seed(seed)

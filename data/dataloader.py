@@ -1,9 +1,88 @@
+import copy
+import random
+from collections import defaultdict
 import pandas as pd
 import numpy as np
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, Sampler
 from .dataset import DOGVideoREIDDataset
 from pytorch_metric_learning.samplers import MPerClassSampler
 from data.reid_transforms import build_video_transforms
+
+
+class TFCLIPRandomIdentitySampler(Sampler):
+    """Exact port of TF-CLIP's RandomIdentitySampler (datasets/samplers.py).
+
+    Guarantees every identity in the training set is visited in every epoch by
+    padding identities with < num_instances samples up to num_instances (with
+    replacement) and sampling num_pids_per_batch identities without replacement
+    until all identities have been drawn.
+    """
+
+    def __init__(self, labels, batch_size: int, num_instances: int = 4):
+        self.batch_size = int(batch_size)
+        self.num_instances = int(num_instances)
+        self.num_pids_per_batch = self.batch_size // self.num_instances
+        self.index_dic = defaultdict(list)
+        for index, pid in enumerate(labels):
+            self.index_dic[int(pid)].append(index)
+        self.pids = list(self.index_dic.keys())
+        self.num_identities = len(self.pids)
+
+        self.length = 0
+        for pid in self.pids:
+            idxs = self.index_dic[pid]
+            num = len(idxs)
+            if num < self.num_instances:
+                num = self.num_instances
+            self.length += num - num % self.num_instances
+
+    def __iter__(self):
+        batch_idxs_dict = defaultdict(list)
+
+        for pid in self.pids:
+            idxs = copy.deepcopy(self.index_dic[pid])
+            if len(idxs) < self.num_instances:
+                idxs = np.random.choice(idxs, size=self.num_instances, replace=True).tolist()
+            random.shuffle(idxs)
+            batch_idxs = []
+            for idx in idxs:
+                batch_idxs.append(int(idx))
+                if len(batch_idxs) == self.num_instances:
+                    batch_idxs_dict[pid].append(batch_idxs)
+                    batch_idxs = []
+
+        avai_pids = copy.deepcopy(self.pids)
+        final_idxs = []
+
+        while len(avai_pids) >= self.num_pids_per_batch:
+            selected_pids = random.sample(avai_pids, self.num_pids_per_batch)
+            for pid in selected_pids:
+                batch_idxs = batch_idxs_dict[pid].pop(0)
+                final_idxs.extend(batch_idxs)
+                if len(batch_idxs_dict[pid]) == 0:
+                    avai_pids.remove(pid)
+
+        return iter(final_idxs)
+
+    def __len__(self):
+        return self.length
+
+
+def _build_pk_sampler(cfg, labels, dataset_len):
+    bb = str(getattr(cfg, "backbone", getattr(cfg, "model", ""))).lower()
+    if "tfclip" in bb or "tf_clip" in bb or bb == "clip":
+        return TFCLIPRandomIdentitySampler(
+            labels=labels,
+            batch_size=cfg.batch_size,
+            num_instances=cfg.k,
+        )
+    return MPerClassSampler(
+        labels=labels,
+        m=cfg.k,
+        batch_size=cfg.batch_size,
+        length_before_new_iter=dataset_len,
+    )
+
 
 def build_dataloaders(cfg):
     """Build the train and validation dataloaders for our experiments"""
@@ -33,12 +112,7 @@ def build_dataloaders(cfg):
 
     # --- Full-train mode: train on the whole train split, evaluate on the test split ---
     if getattr(cfg, "val_split", 0) <= 0:
-        sampler = MPerClassSampler(
-            labels=base_train_dataset.labels,
-            m=cfg.k,
-            batch_size=cfg.batch_size,
-            length_before_new_iter=len(base_train_dataset),
-        )
+        sampler = _build_pk_sampler(cfg, base_train_dataset.labels, len(base_train_dataset))
         train_loader = DataLoader(
             base_train_dataset, batch_size=cfg.batch_size, sampler=sampler,
             drop_last=True, **loader_kwargs
@@ -50,7 +124,7 @@ def build_dataloaders(cfg):
         print(f"Evaluation on TEST split: Query={len(query_loader.dataset)}, Gallery={len(gallery_loader.dataset)}")
         return train_loader, query_loader, gallery_loader
 
-    base_val_dataset = DOGVideoREIDDataset(split="train", transform=eval_tf,
+    base_val_dataset = DOGVideoREIDDataset(split="train", is_train=False, transform=eval_tf,
                                            label_map=base_train_dataset.id_map, **dataset_kwargs)
 
     # --- Split Dog IDs for Validation ---
@@ -93,12 +167,7 @@ def build_dataloaders(cfg):
     # Ensures batches contain 'P' identities with 'K' clips each
     subset_labels = [base_train_dataset.labels[i] for i in train_indices]
     
-    sampler = MPerClassSampler(
-        labels=subset_labels,  
-        m=cfg.k,
-        batch_size=cfg.batch_size,
-        length_before_new_iter=len(train_dataset) # Only use the length of the dataset
-    )
+    sampler = _build_pk_sampler(cfg, subset_labels, len(train_dataset))
 
     # --- Construct DataLoaders ---
     loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)

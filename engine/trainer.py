@@ -351,8 +351,8 @@ class Trainer:
                 for p in frozen_params:
                     p.grad = None
 
-                # OpenAnimals has gradient clipping disabled (SOLVER.CLIP_GRADIENTS.ENABLED=False)
-                clip = not getattr(self.model, "is_openanimals", False)
+                # OpenAnimals and TF-CLIP have gradient clipping disabled
+                clip = not (getattr(self.model, "is_openanimals", False) or getattr(self.model, "is_tfclip", False))
                 if self.scaler.is_enabled():
                     self.scaler.unscale_(self.optimizer)
                     if clip:
