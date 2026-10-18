@@ -21,9 +21,10 @@ def main():
     parser.add_argument('--weight_decay', type=float, default=None, help='L2 regularization')
     parser.add_argument('--batch_size', type=int, default=None, help='Batch size (P*K)')
     parser.add_argument('--k', type=int, default=None, help='Clips per dog ID')
-    parser.add_argument('--model', type=str, default=None, help="Backbone: 'dinov2', 'swin', 'vit', 'convnetxt'")
+    parser.add_argument('--model', type=str, default=None, help="Model/backbone: 'dinov2', 'bot', 'arbase', 'agw', 'sbs', 'mgn', 'tfclip'")
     parser.add_argument('--world', type=str, default=None, help="'closed' or 'open'")
     parser.add_argument('--clip_len', type=int, default=None, help='Frames per video clip')
+    parser.add_argument('--use_images', action='store_true', default=False, help='Train on static images instead of video clips (Image-to-Image training)')
     parser.add_argument('--epochs', type=int, default=None, help='Number of training epochs')
     parser.add_argument('--val_split', type=float, default=None, help='Validation split ratio (e.g., 0.2 for 20%% validation)')
     parser.add_argument('--eval_period', type=int, default=None, help='Evaluation frequency in epochs (default from config: 1)')
@@ -34,8 +35,8 @@ def main():
         '--reid_method', 
         type=str, 
         default=None,
-        choices=['bot', 'transreid', 'baseline'],
-        help="Re-ID method: 'bot', 'transreid'; 'baseline' uses legacy baseline builders"
+        choices=['bot', 'baseline'],
+        help="Re-ID method: 'bot'"
     )
     parser.add_argument(
         '--pooling_type', 
@@ -64,6 +65,13 @@ def main():
         help='Trailing backbone blocks to train when not full fine-tuning'
     )
     parser.add_argument(
+        '--representation_type',
+        type=str,
+        default=None,
+        choices=['cls', 'patch_mean', 'patch_gem', 'gem', 'cls_mean', 'cls_gem'],
+        help="Feature representation for DINOv2: 'cls', 'patch_mean', 'patch_gem', 'cls_mean', or 'cls_gem'"
+    )
+    parser.add_argument(
         '--use_id_loss', 
         dest='use_id_loss', 
         action='store_true', 
@@ -75,6 +83,58 @@ def main():
         dest='use_id_loss', 
         action='store_false', 
         help='Disable Identity Classification Loss'
+    )
+    parser.add_argument(
+        '--use_bnneck',
+        dest='use_bnneck',
+        action='store_true',
+        default=None,
+        help='Enable BN-Neck in ReID model head (default: True)'
+    )
+    parser.add_argument(
+        '--no_bnneck',
+        dest='use_bnneck',
+        action='store_false',
+        help='Disable BN-Neck in ReID model head'
+    )
+    parser.add_argument(
+        '--label_smoothing',
+        type=float,
+        default=None,
+        help='Label smoothing epsilon for ID loss (default: 0.1)'
+    )
+    parser.add_argument(
+        '--no_label_smoothing', '--no_ls',
+        dest='label_smoothing',
+        action='store_const',
+        const=0.0,
+        help='Disable label smoothing for ID loss (sets label_smoothing=0.0)'
+    )
+    parser.add_argument(
+        '--re_prob',
+        type=float,
+        default=None,
+        help='Random Erasing probability (default: 0.5)'
+    )
+    parser.add_argument(
+        '--no_re', '--no_random_erasing',
+        dest='re_prob',
+        action='store_const',
+        const=0.0,
+        help='Disable Random Erasing data augmentation (sets re_prob=0.0)'
+    )
+    parser.add_argument(
+        '--autoaug_prob',
+        type=float,
+        default=None,
+        help='AutoAugment probability (e.g. 0.1 for SBS AutoAug, default: 0.0)'
+    )
+    parser.add_argument(
+        '--autoaug',
+        dest='autoaug_prob',
+        action='store_const',
+        const=0.1,
+        help='Enable SBS AutoAugment with probability 0.1'
     )
     parser.add_argument(
         '--mask_dog', 
@@ -126,6 +186,43 @@ def main():
         help='Factor by which to drop backbone LR (default: 0.1)'
     )
     parser.add_argument(
+        '--lr_sched',
+        type=str,
+        default=None,
+        choices=['multistep', 'cosine'],
+        help='Learning rate scheduler: multistep or cosine'
+    )
+    parser.add_argument(
+        '--lr_delay_epochs',
+        type=int,
+        default=None,
+        help='Delay epochs before cosine annealing begins'
+    )
+    parser.add_argument(
+        '--chunk_size',
+        type=int,
+        default=None,
+        help='Frame chunk size for video backbone forward pass'
+    )
+    parser.add_argument(
+        '--warmup_epochs',
+        type=int,
+        default=None,
+        help='Number of linear warmup epochs'
+    )
+    parser.add_argument(
+        '--warmup_factor',
+        type=float,
+        default=None,
+        help='Initial LR multiplier at start of warmup'
+    )
+    parser.add_argument(
+        '--lr_milestones',
+        type=str,
+        default=None,
+        help='Comma-separated epoch milestones for MultiStepLR (e.g. "25,35")'
+    )
+    parser.add_argument(
         '--resume', 
         action='store_true', 
         default=True, 
@@ -157,7 +254,22 @@ def main():
     # ------------------------------------------------
     cfg = Config()
 
-    # --- Command-Line Overrides ---
+    # --- Pre-update Model & Finetune Flags ---
+    if args.model is not None:
+        cfg.model = args.model
+        cfg.backbone = args.model
+    if args.full_finetune is not None:
+        cfg.full_finetune = args.full_finetune
+    if args.unfreeze_blocks is not None:
+        cfg.unfreeze_blocks = args.unfreeze_blocks
+    if args.reid_method is not None:
+        cfg.reid_method = None if args.reid_method == 'baseline' else args.reid_method
+    if args.representation_type is not None:
+        cfg.representation_type = args.representation_type
+
+    cfg.update_model_settings()
+
+    # --- Command-Line Overrides (applied after model defaults) ---
     if args.resume:
         cfg.resume = True
     if args.overwrite:
@@ -167,11 +279,11 @@ def main():
         cfg.mask_dog = True
     if hasattr(args, "force_yolo") and args.force_yolo is not None:
         cfg.force_yolo = args.force_yolo
-    if args.model is not None:
-        cfg.model = args.model
-        cfg.backbone = args.model
     if args.world is not None: cfg.world = args.world
     if args.clip_len is not None: cfg.clip_len = args.clip_len
+    if args.use_images:
+        cfg.use_videos = False
+        cfg.clip_len = 1
     if args.lr is not None: cfg.lr = args.lr
     if args.margin is not None: cfg.margin = args.margin
     if args.weight_decay is not None: cfg.weight_decay = args.weight_decay
@@ -182,39 +294,27 @@ def main():
     if args.eval_period is not None: cfg.eval_period = args.eval_period
     if args.num_workers is not None: cfg.num_workers = args.num_workers
     if args.accum_steps is not None: cfg.accum_steps = args.accum_steps
+    if args.chunk_size is not None: cfg.chunk_size = args.chunk_size
+    if args.warmup_epochs is not None: cfg.warmup_epochs = args.warmup_epochs
+    if args.warmup_factor is not None: cfg.warmup_factor = args.warmup_factor
+    if args.lr_milestones is not None:
+        cfg.lr_milestones = tuple(int(x.strip()) for x in args.lr_milestones.split(",") if x.strip())
     if args.reid_method is not None:
         cfg.reid_method = None if args.reid_method == 'baseline' else args.reid_method
     if args.pooling_type is not None: cfg.pooling_type = args.pooling_type
     if args.full_finetune is not None: cfg.full_finetune = args.full_finetune
     if args.unfreeze_blocks is not None: cfg.unfreeze_blocks = args.unfreeze_blocks
     if args.use_id_loss is not None: cfg.use_id_loss = args.use_id_loss
-
     if args.optimizer is not None: cfg.optimizer = args.optimizer
     if args.backbone_lr_factor is not None: cfg.backbone_lr_factor = args.backbone_lr_factor
-
-    # Re-ID BoT hyperparameter adjustments if reid_method is active and not overridden
-    if cfg.reid_method in ('bot', 'transreid'):
-        if args.epochs is None: cfg.epochs = getattr(cfg, "epochs", 120)
-        if args.lr is None: cfg.lr = getattr(cfg, "lr", 3.5e-04)
-        if args.clip_len is None: cfg.clip_len = 8
-        if args.accum_steps is None: cfg.accum_steps = getattr(cfg, "accum_steps", 1)
-
-        if not any(m < cfg.epochs for m in cfg.lr_milestones):
-            raise ValueError(
-                f"lr_milestones {cfg.lr_milestones} all fall outside epochs={cfg.epochs}; "
-                f"the learning rate would never decay. Rescale them together."
-            )
-
-    cfg.update_model_settings()
-    if args.optimizer is not None: cfg.optimizer = args.optimizer
-    if args.backbone_lr_factor is not None: cfg.backbone_lr_factor = args.backbone_lr_factor
-    if args.lr is not None: cfg.lr = args.lr
-    if args.epochs is not None: cfg.epochs = args.epochs
-    if args.val_split is not None: cfg.val_split = args.val_split
-    if args.eval_period is not None: cfg.eval_period = args.eval_period
-    if args.full_finetune is not None: cfg.full_finetune = args.full_finetune
-    if args.unfreeze_blocks is not None: cfg.unfreeze_blocks = args.unfreeze_blocks
+    if args.lr_sched is not None: cfg.lr_sched = args.lr_sched
+    if args.lr_delay_epochs is not None: cfg.lr_delay_epochs = args.lr_delay_epochs
     if args.backbone_drop_epoch is not None: cfg.backbone_drop_epoch = args.backbone_drop_epoch
+    if args.backbone_drop_factor is not None: cfg.backbone_drop_factor = args.backbone_drop_factor
+    if args.use_bnneck is not None: cfg.use_bnneck = args.use_bnneck
+    if args.label_smoothing is not None: cfg.label_smoothing = args.label_smoothing
+    if args.re_prob is not None: cfg.re_prob = args.re_prob
+    if getattr(args, "autoaug_prob", None) is not None: cfg.autoaug_prob = args.autoaug_prob
     if getattr(args, "run_name", None) is not None:
         cfg.custom_run_name = args.run_name
     cfg.refresh_run_name(make_dir=True)
@@ -247,7 +347,7 @@ def main():
     print(f"--> Total training dog identities (num_classes): {cfg.num_classes}")
 
     # If id_loss is disabled for baseline, reset num_classes = 0 so the classifier head isn't built
-    if not cfg.use_id_loss and cfg.reid_method not in ('bot', 'transreid'):
+    if not cfg.use_id_loss and cfg.reid_method != 'bot':
         cfg.num_classes = 0
 
     # ------------------------------------------------
@@ -265,7 +365,7 @@ def main():
     oa_sched_dict = None
 
     def is_pretrained(name):
-        if 'NL_' in name or 'nonlocal' in name.lower():
+        if 'NL_' in name or 'nonlocal' in name.lower() or 'gem' in name.lower():
             return False
         return (
             name.startswith('backbone')
@@ -364,7 +464,7 @@ def main():
         except Exception as e:
             print(f"[scheduler] Warning: failed to build OpenAnimals scheduler ({e}), falling back to WarmupMultiStepLR")
             scheduler = build_scheduler(optimizer, cfg)
-    elif cfg.reid_method in ('bot', 'transreid') or getattr(model, "is_tfclip", False):
+    else:
         scheduler = build_scheduler(optimizer, cfg)
 
     # ------------------------------------------------

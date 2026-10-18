@@ -19,7 +19,7 @@ cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings (OpenAnimals AGW - ResNet-50-IBN-a + NonLocal + GeM, 256x128, 1.0x LR, MultiStepLR) ---
+# --- Experiment Settings (OpenAnimals AGW - ResNet-50-IBN-a + NonLocal + GeM, 384x384, 1.0x LR, MultiStepLR) ---
 MODEL="agw"
 RUN_NAME="lr1.2e-4_ep35_ms15-25_bb1x"
 POOLING="attention"
@@ -44,7 +44,7 @@ echo "  Batch / K         : ${BATCH_SIZE} / ${K} (P = $((BATCH_SIZE / K)) identi
 echo "  Clip Length       : ${CLIP_LEN} frames"
 echo "  Learning Rate     : Head ${LR}, Backbone ${LR} (factor: ${BACKBONE_LR_FACTOR})"
 echo "  Epochs            : ${EPOCHS} (5-epoch warmup)"
-echo "  Resolution        : 256x128"
+echo "  Resolution        : 384x384"
 echo "  Backbone          : ResNet-50-IBN-a + Non-Local blocks"
 echo "  Pooling           : GeM (p=3.0)"
 echo "  Loss              : Weighted Regularized Soft-margin Triplet + CE"

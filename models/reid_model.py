@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .reid_heads import JPM, BNNeckHead
+from .reid_heads import BNNeckHead
 
 
 def _null_context():
@@ -12,9 +12,6 @@ def _null_context():
 
 
 # --- Backbone Adapters ---
-# Each adapter exposes a uniform interface over a different backbone family:
-#   pooled(x)      -> (N, D) frame-level feature
-#   penultimate(x) -> (N, 1+L, D) token sequence before the final block (JPM only)
 
 class DINOv2Adapter(nn.Module):
     """DINOv2 backbone loaded via torch.hub."""
@@ -27,11 +24,21 @@ class DINOv2Adapter(nn.Module):
         "vitl14_reg":1024,
     }
 
-    def __init__(self, variant: str = "vitb14_reg"):
+    def __init__(self, variant: str = "vitb14_reg", representation_type: str = "cls", gem_p: float = 3.0):
         super().__init__()
         hub_name = variant if variant.startswith("dinov2_") else f"dinov2_{variant}"
         self.net = torch.hub.load("facebookresearch/dinov2", hub_name)
-        self.dim = self.EMBED_DIMS[variant.replace("dinov2_", "")]
+        base_dim = self.EMBED_DIMS[variant.replace("dinov2_", "")]
+        self.representation_type = (representation_type or "cls").lower()
+        if self.representation_type in ("cls_mean", "cls_gem"):
+            self.dim = base_dim * 2
+        elif self.representation_type in ("cls", "patch_mean", "mean", "patch_gem", "gem"):
+            self.dim = base_dim
+        else:
+            raise ValueError(f"Unknown representation_type: {representation_type!r}")
+
+        if self.representation_type in ("patch_gem", "gem", "cls_gem"):
+            self.gem_p = nn.Parameter(torch.ones(1) * float(gem_p))
 
     @property
     def last_block(self):
@@ -61,152 +68,52 @@ class DINOv2Adapter(nn.Module):
             tokens = block(tokens)
         return tokens
 
-    def penultimate(self, x, n_grad=None):
-        # The final block is applied by JPM, so one fewer trainable block here
-        n_grad_here = None if n_grad is None else max(n_grad - 1, 0)
-        with torch.no_grad() if n_grad_here == 0 else _null_context():
-            tokens = self.net.prepare_tokens_with_masks(x, None)
-        return self._run_blocks(tokens, self.net.blocks[:-1], n_grad_here)
+    def _aggregate_tokens(self, normed_tokens):
+        cls_tok = normed_tokens[:, 0]
+        if self.representation_type == "cls":
+            return cls_tok
+
+        n_reg = getattr(self.net, "num_register_tokens", 4)
+        patch_toks = normed_tokens[:, 1 + n_reg:]
+
+        if self.representation_type in ("patch_mean", "mean"):
+            return patch_toks.mean(dim=1)
+        if self.representation_type in ("patch_gem", "gem"):
+            p = self.gem_p.clamp(min=1.0)
+            return (patch_toks.clamp(min=1e-6).pow(p).mean(dim=1)).pow(1.0 / p)
+        if self.representation_type == "cls_mean":
+            return torch.cat([cls_tok, patch_toks.mean(dim=1)], dim=-1)
+        if self.representation_type == "cls_gem":
+            p = self.gem_p.clamp(min=1.0)
+            patch_gem = (patch_toks.clamp(min=1e-6).pow(p).mean(dim=1)).pow(1.0 / p)
+            return torch.cat([cls_tok, patch_gem], dim=-1)
+        raise ValueError(f"Unknown representation_type: {self.representation_type!r}")
 
     def pooled(self, x, n_grad=None):
-        if n_grad is None:
+        if n_grad is None and self.representation_type == "cls":
             return self.net(x)
 
-        with torch.no_grad():
+        if n_grad is None:
             tokens = self.net.prepare_tokens_with_masks(x, None)
-        tokens = self._run_blocks(tokens, self.net.blocks, n_grad)
-        return self.net.norm(tokens)[:, 0]
-
-
-class TimmAdapter(nn.Module):
-    """Backbones loaded from timm. Provides pooled features only."""
-
-    def __init__(self, name: str):
-        super().__init__()
-        import timm
-        self.net = timm.create_model(name, pretrained=True, num_classes=0)
-        self.dim = self.net.num_features
-
-    def penultimate(self, x, n_grad=None):
-        raise NotImplementedError(
-            "This backbone exposes no flat token sequence. "
-            "reid_method='transreid' requires a ViT-family backbone."
-        )
-
-    def pooled(self, x, n_grad=None):
-        return self.net(x)
-
-
-class OSNetAdapter(nn.Module):
-    """OSNet from Torchreid, a re-identification-specific architecture.
-
-    Zhou, Yang, Cavallaro, Xiang. "Omni-Scale Feature Learning for Person
-    Re-Identification", ICCV 2019, extended in TPAMI 2021. arXiv:1905.00953
-    Library: Zhou and Xiang, "Torchreid", arXiv:1910.10093
-    https://github.com/KaiyangZhou/deep-person-reid
-
-    Unlike the other backbones here this is a CNN designed for re-ID rather than
-    a general-purpose feature extractor, so it provides pooled features only.
-
-    `weights` may point to a checkpoint from the Torchreid model zoo, which
-    gives person-re-ID-pretrained rather than ImageNet-pretrained initialization.
-    """
-
-    def __init__(self, name: str = "osnet_x1_0", pretrained: bool = True, weights: str = None):
-        super().__init__()
-
-        try:
-            import importlib
-            # The AIN variants live in a separate module from the base ones
-            modules = [importlib.import_module(f"torchreid.reid.models.{m}")
-                       for m in ("osnet", "osnet_ain")]
-        except ImportError as exc:
-            raise ImportError(
-                "backbone='osnet' requires torchreid. Importing it also pulls in "
-                "scipy, opencv, tensorboard and gdown:\n"
-                "  pip install torchreid scipy opencv-python-headless tensorboard gdown"
-            ) from exc
-
-        factory = next((getattr(m, name) for m in modules if hasattr(m, name)), None)
-        if factory is None:
-            available = sorted({n for m in modules for n in dir(m) if n.startswith("osnet_")})
-            raise ValueError(f"Unknown OSNet variant {name!r}; available: {available}")
-
-        # num_classes is a placeholder: identity logits come from BNNeckHead.
-        # Torchreid's own classifier is then discarded, both because it is
-        # unused and because leaving it in the state_dict gives the checkpoint
-        # two different '*.classifier.weight' entries.
-        # An explicit checkpoint supersedes the ImageNet initialization, so skip
-        # that download: it would be overwritten anyway, and it fails on compute
-        # nodes without outbound network access.
-        imagenet_init = pretrained and not weights
-
-        self.net = factory(num_classes=1, loss="triplet", pretrained=imagenet_init)
-        self.net.classifier = nn.Identity()
-        self.dim = self.net.feature_dim
-
-        if weights:
-            self._load_reid_weights(weights)
-
-    def _load_reid_weights(self, path):
-        """Load a Torchreid model-zoo checkpoint, ignoring its classifier."""
-        ckpt = torch.load(path, map_location="cpu")
-        state = ckpt.get("state_dict", ckpt)
-        state = {k[7:] if k.startswith("module.") else k: v for k, v in state.items()}
-        state = {k: v for k, v in state.items() if not k.startswith("classifier.")}
-        missing, unexpected = self.net.load_state_dict(state, strict=False)
-        print(f"[osnet] loaded {path}: {len(missing)} missing, {len(unexpected)} unexpected keys")
-
-    def penultimate(self, x, n_grad=None):
-        raise NotImplementedError(
-            "OSNet is a CNN and exposes no flat token sequence. "
-            "reid_method='transreid' requires a ViT-family backbone."
-        )
-
-    def pooled(self, x, n_grad=None):
-        # Bypass the Torchreid head, which returns (logits, features) in train
-        # mode and features in eval mode
-        f = self.net.featuremaps(x)
-        v = self.net.global_avgpool(f).view(f.size(0), -1)
-        if self.net.fc is not None:
-            v = self.net.fc(v)
-        return v
-
-
-TIMM_BACKBONES = {
-    "vit":       "vit_base_patch16_224.augreg_in21k",
-    "swin":      "swinv2_base_window12_192.ms_in22k",
-    "convnext":  "convnext_base.fb_in22k",
-    "convnetxt": "convnext_base.fb_in22k",
-    "resnet50":  "resnet50.a1_in1k",
-    "resnet":    "resnet50.a1_in1k",
-}
+            tokens = self._run_blocks(tokens, self.net.blocks, None)
+        else:
+            with torch.no_grad():
+                tokens = self.net.prepare_tokens_with_masks(x, None)
+            tokens = self._run_blocks(tokens, self.net.blocks, n_grad)
+        normed = self.net.norm(tokens)
+        return self._aggregate_tokens(normed)
 
 
 def build_backbone(cfg):
     """Instantiate the backbone adapter named by cfg.backbone."""
-    name = getattr(cfg, "backbone", getattr(cfg, "model", "dinov2"))
+    name = str(getattr(cfg, "backbone", getattr(cfg, "model", "dinov2"))).lower()
 
-    if name == "dinov2":
-        return DINOv2Adapter(getattr(cfg, "dinov2_variant", "vitb14_reg"))
-
-    if name == "osnet":
-        return OSNetAdapter(
-            getattr(cfg, "osnet_variant", "osnet_x1_0"),
-            pretrained=getattr(cfg, "osnet_pretrained", True),
-            weights=getattr(cfg, "osnet_weights", None),
+    if name in ("dinov2", "baseline", "dinov2_baseline"):
+        return DINOv2Adapter(
+            variant=getattr(cfg, "dinov2_variant", "vitb14_reg"),
+            representation_type=getattr(cfg, "representation_type", "cls"),
+            gem_p=getattr(cfg, "gem_p", 3.0),
         )
-
-    if name == "megadescriptor":
-        # A wildlife-re-ID-pretrained Swin fetched from the HuggingFace hub
-        # through timm. Swin exposes no flat token sequence, so this pairs with
-        # reid_method='bot' only; 'transreid' is rejected in VideoReID.
-        return TimmAdapter(
-            getattr(cfg, "megadescriptor_variant", "hf-hub:BVRA/MegaDescriptor-L-224")
-        )
-
-    if name in TIMM_BACKBONES:
-        return TimmAdapter(TIMM_BACKBONES[name])
 
     raise ValueError(f"Unknown backbone requested: {name!r}")
 
@@ -241,111 +148,61 @@ class TemporalPool(nn.Module):
 # --- Model ---
 
 class VideoReID(nn.Module):
-    """Video re-ID model combining a backbone, temporal pooling and BNNeck heads.
-
-    reid_method:
-        "bot"       BNNeck baseline, one branch (Luo et al., 2020).
-        "transreid" Jigsaw Patch Module, one global plus k local branches
-                    (He et al., 2021). Requires a ViT-family backbone.
-    """
+    """Video re-ID model combining a backbone, temporal pooling and BNNeck head (BoT)."""
 
     def __init__(self, cfg):
         super().__init__()
         self.backbone = build_backbone(cfg)
-        self.method = getattr(cfg, "reid_method", "bot")
+        self.method = getattr(cfg, "reid_method", None) or "bot"
         self.chunk_size = getattr(cfg, "chunk_size", 16)
         self.num_classes = getattr(cfg, "num_classes", 0)
         self.embed_dim = self.backbone.dim
 
         # --- Activation Memory ---
-        # Under partial fine-tuning the leading blocks are frozen, so their
-        # activations need not be retained. n_grad = None means "keep
-        # everything", which is what full fine-tuning requires.
         self.n_grad = (None if getattr(cfg, "full_finetune", False)
                        else getattr(cfg, "unfreeze_blocks", 2))
 
-        # --- Branch Configuration ---
-        if self.method == "transreid":
-            if not (hasattr(self.backbone, "last_block") and hasattr(self.backbone, "final_norm")):
-                raise ValueError(
-                    f"reid_method='transreid' requires a ViT-family backbone exposing its "
-                    f"final block; {type(self.backbone).__name__} does not. "
-                    f"Use backbone='dinov2' or set reid_method='bot'."
-                )
-            self.jpm = JPM(
-                self.backbone.last_block,
-                self.backbone.final_norm,
-                k=getattr(cfg, "jpm_parts", 4),
-                shift=getattr(cfg, "jpm_shift", 5),
-                shuffle_groups=getattr(cfg, "jpm_shuffle_groups", 2),
-            )
-            self.n_branches = self.jpm.k + 1
-        elif self.method == "bot":
-            self.jpm = None
-            self.n_branches = 1
-        else:
-            raise ValueError(f"Unknown reid_method: {self.method!r}")
-
-        # --- Per-Branch Pooling and Heads ---
-        # Branch heads are kept separate; sharing them collapses the local features.
+        # --- Branch Configuration (BoT Single Branch) ---
+        self.n_branches = 1
         pooling = getattr(cfg, "pooling_type", "attention")
-        self.pools = nn.ModuleList(
-            [TemporalPool(self.embed_dim, pooling) for _ in range(self.n_branches)]
-        )
-        self.heads = nn.ModuleList(
-            [BNNeckHead(self.embed_dim, self.num_classes) for _ in range(self.n_branches)]
-        )
+        use_bnneck = getattr(cfg, "use_bnneck", True)
+        self.pools = nn.ModuleList([TemporalPool(self.embed_dim, pooling)])
+        self.heads = nn.ModuleList([BNNeckHead(self.embed_dim, self.num_classes, use_bnneck=use_bnneck)])
 
     def _frame_features(self, x):
-        """Extract one feature per branch for a batch of frames."""
+        """Extract features for a batch of frames."""
         n_grad = self.n_grad if self.training else 0
-        if self.jpm is None:
-            return [self.backbone.pooled(x, n_grad=n_grad)]
-        return self.jpm(self.backbone.penultimate(x, n_grad=n_grad))
+        return [self.backbone.pooled(x, n_grad=n_grad)]
 
     def forward(self, x, targets=None):
         if x.dim() == 5:
             B, T, C, H, W = x.shape
-
-            # Time-major ordering: (T*B, C, H, W).
-            # When chunk_size == B, each chunk holds frame t across all B clips (identities),
-            # providing healthy BatchNorm statistics across diverse identities.
-            frames = x.transpose(0, 1).reshape(T * B, C, H, W)
+            frames = x.view(B * T, C, H, W)
 
             # --- Chunked Forward Pass ---
             chunks = torch.split(frames, self.chunk_size, dim=0)
             per_chunk = [self._frame_features(c) for c in chunks]
 
-            # Regroup by branch, restore temporal structure (B, T, D), then aggregate
+            # Restore temporal structure (B, T, D), then aggregate
             branch_feats = [
-                torch.cat([chunk[b] for chunk in per_chunk], dim=0).view(T, B, -1).transpose(0, 1)
-                for b in range(self.n_branches)
+                torch.cat([chunk[i] for chunk in per_chunk], dim=0).view(B, T, -1)
+                for i in range(self.n_branches)
             ]
-            branch_feats = [pool(f) for pool, f in zip(self.pools, branch_feats)]
+            branch_feats = [
+                pool(feat) for pool, feat in zip(self.pools, branch_feats)
+            ]
         else:
-            # Standard single-image inference
             branch_feats = self._frame_features(x)
 
         # --- BN-Neck Application ---
-        triplet_feats, retrieval_feats, logits = [], [], []
-        for head, feat in zip(self.heads, branch_feats):
-            tri, ret, logit = head(feat)
-            triplet_feats.append(tri)
-            retrieval_feats.append(ret)
-            if logit is not None:
-                logits.append(logit)
+        tri, ret, logit = self.heads[0](branch_feats[0])
 
         # --- Training Mode with Identity Head ---
-        # Triplet loss uses the pre-BN global feature; identity loss uses the logits.
-        if self.training and self.num_classes > 0 and len(logits) > 0:
-            embeddings = F.normalize(triplet_feats[0], dim=-1)
-            cls_score = logits[0] if len(logits) == 1 else torch.stack(logits, dim=0).mean(0)
-            return embeddings, cls_score
+        if self.training and self.num_classes > 0 and logit is not None:
+            return F.normalize(tri, dim=-1), logit
         elif self.training:
-            return F.normalize(triplet_feats[0], dim=-1)
+            return F.normalize(tri, dim=-1)
 
         # --- Inference Mode ---
-        # TransReID concatenates the global and local branch features.
-        if self.n_branches > 1:
-            return F.normalize(torch.cat(retrieval_feats, dim=-1), dim=-1)
-        return retrieval_feats[0]
+        return ret
+

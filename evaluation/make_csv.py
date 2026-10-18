@@ -1,443 +1,521 @@
 import sys
 import os
-import torch
+import re
+import json
 import argparse
 from pathlib import Path
 from collections import OrderedDict
-import re
+import torch
 
 # =================================================================
-# --- PATH CONFIGURATION (Must be before custom imports) ---
+# --- PATH CONFIGURATION ---
 # =================================================================
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.append(str(CURRENT_DIR))
 
-from configs.config import Config as _Config
-
-# =================================================================
-# --- COMMAND-LINE ARGUMENTS ---
-# =================================================================
-parser = argparse.ArgumentParser(description="Evaluate Dog Re-ID Models")
-
-parser.add_argument(
-    "--model_name", 
-    type=str, 
-    default="dinov2", 
-    help="Model identifier used for paths and architecture selection"
-)
-
-parser.add_argument(
-    "--world_type", 
-    type=str, 
-    default="closed", 
-    choices=["closed", "open"],
-    help="Evaluation environment: 'closed' (all queries in gallery) or 'open' (some not)"
-)
-
-# Synchronized with train.py
-parser.add_argument(
-    "--pooling_type",
-    type=str,
-    default="attention",
-    choices=["attention", "mean", "max", "none", "attn"],
-    help="Temporal aggregation method (must match training)"
-)
-
-parser.add_argument(
-    "--full_finetune",
-    action="store_true",
-    default=False,
-    help="Flag indicating whether backbone was completely fine-tuned during training"
-)
-
-parser.add_argument(
-    "--num_classes",
-    type=int,
-    default=0,
-    help="Number of training identities (set > 0 if model was trained with an identity classification head)"
-)
-
-# --- Cross-Modality Flags ---
-parser.add_argument(
-    "--use_images", 
-    action="store_true", 
-    help="Shortcut: Sets BOTH query and gallery to images (Image-to-Image)."
-)
-
-parser.add_argument(
-    "--query_images", 
-    action="store_true", 
-    help="Evaluate query set using single images instead of video clips."
-)
-
-parser.add_argument(
-    "--gallery_images", 
-    action="store_true", 
-    help="Evaluate gallery set using single images instead of video clips."
-)
-
-# --- Masking Baseline Flags ---
-parser.add_argument(
-    "--mask_dog", 
-    action="store_true", 
-    help="Mask out the dog for the background-only diagnostic baseline."
-)
-
-parser.add_argument(
-    "--use_gt_for_query_mask", 
-    action="store_true", 
-    help="Use Ground Truth bounding boxes specifically for masking the query set."
-)
-
-parser.add_argument(
-    "--use_gt_for_gallery_mask", 
-    action="store_true", 
-    help="Use Ground Truth bounding boxes specifically for masking the gallery set."
-)
-
-# --- BoT / Checkpoint Identification Flags ---
-parser.add_argument(
-    "--backbone",
-    type=str,
-    default=None,
-    choices=["dinov2", "osnet", "megadescriptor", "vit", "swin", "convnext", "convnetxt"],
-    help="Backbone used during training; defaults to the value in configs/config.py"
-)
-
-parser.add_argument(
-    "--run_name",
-    type=str,
-    default=None,
-    help="Override the derived checkpoint directory name"
-)
-
-args = parser.parse_args()
-
-# --- Assign Parsed Arguments ---
-BASE_MODEL_NAME = args.model_name
-POOLING_TYPE = args.pooling_type
-FULL_FINETUNE = args.full_finetune
-WORLD_TYPE = args.world_type
-MASK_DOG = args.mask_dog
-NUM_CLASSES = args.num_classes
-BACKBONE = args.backbone or getattr(_Config, "backbone", "dinov2")
-
-# Resolve Query/Gallery Modalities (use_images acts as a master toggle)
-QUERY_IMAGES = args.query_images or args.use_images
-GALLERY_IMAGES = args.gallery_images or args.use_images
-
-# Descriptive string representation (e.g., "img2vid", "img2img")
-q_type = "img" if QUERY_IMAGES else "vid"
-g_type = "img" if GALLERY_IMAGES else "vid"
-MODALITY_TAG = f"{q_type}2{g_type}"
-
-# =================================================================
-# --- PATH & FOLDER RESOLUTION ---
-# =================================================================
-if args.run_name is not None:
-    RUN_NAME = args.run_name
-elif BASE_MODEL_NAME in ("bot", "transreid"):
-    RUN_NAME = _Config.compose_run_name(
-        backbone=BACKBONE,
-        reid_method=BASE_MODEL_NAME,
-        world=WORLD_TYPE,
-        pooling_type=POOLING_TYPE,
-        full_finetune=FULL_FINETUNE,
-    )
-else:
-    # Check possible naming schemes in trained_models
-    cand_idloss = f"{BASE_MODEL_NAME}_{WORLD_TYPE}_{POOLING_TYPE}_finetune_{FULL_FINETUNE}_idloss_True"
-    cand_pool = f"{BASE_MODEL_NAME}_{WORLD_TYPE}_{POOLING_TYPE}_finetune_{FULL_FINETUNE}"
-    cand_std = f"{BASE_MODEL_NAME}_{WORLD_TYPE}"
-    
-    if (ROOT_DIR / "trained_models" / cand_pool).exists():
-        RUN_NAME = cand_pool
-    elif (ROOT_DIR / "trained_models" / cand_idloss).exists():
-        RUN_NAME = cand_idloss
-    elif (ROOT_DIR / "trained_models" / cand_std).exists():
-        RUN_NAME = cand_std
-    else:
-        RUN_NAME = cand_pool
-
-# --- Smart Checkpoint Resolution ---
-checkpoint_dir = ROOT_DIR / "trained_models" / RUN_NAME
-all_checkpoints = list(checkpoint_dir.glob("*.pth")) if checkpoint_dir.exists() else []
-
-max_epoch = -1
-latest_ckpt = None
-
-for ckpt in all_checkpoints:
-    if ckpt.name == "model.pth":
-        continue
-    match = re.search(r'(\d+)', ckpt.name)
-    if match:
-        epoch = int(match.group(1))
-        if epoch > max_epoch:
-            max_epoch = epoch
-            latest_ckpt = ckpt
-
-if latest_ckpt:
-    MODEL_PATH = str(latest_ckpt)
-elif (checkpoint_dir / "latest_model.pth").exists():
-    MODEL_PATH = str(checkpoint_dir / "latest_model.pth")
-    print("-> Found 'latest_model.pth'.")
-elif (checkpoint_dir / "best_model.pth").exists():
-    MODEL_PATH = str(checkpoint_dir / "best_model.pth")
-    print("-> Found 'best_model.pth'.")
-elif (checkpoint_dir / "model.pth").exists():
-    MODEL_PATH = str(checkpoint_dir / "model.pth")
-    print("-> No numbered epoch checkpoints found. Falling back to 'model.pth'.")
-elif (ROOT_DIR / "trained_models" / f"{RUN_NAME}.pth").exists():
-    MODEL_PATH = str(ROOT_DIR / "trained_models" / f"{RUN_NAME}.pth")
-    print(f"-> Found flat checkpoint file at {MODEL_PATH}")
-else:
-    MODEL_PATH = str(checkpoint_dir / "model.pth")
-    print(f"-> Target checkpoint path: {MODEL_PATH}")
-
-# =================================================================
-# --- MODEL ARCHITECTURE IMPORT & SELECTION ---
-# =================================================================
-from models.dinov2_builder import DINOv2ReID
-from models.swin_builder import VideoSwin
-from models.vit_builder import VideoViT
-from models.convnetxt_builder import VideoConvNeXt
-from models.megadescriptor_builder import MegaDescriptor
-from models.miewid_builder import MiewIDReID
-
-if BASE_MODEL_NAME == "dinov2":
-    MODEL_CLASS = DINOv2ReID
-elif BASE_MODEL_NAME == "swin":
-    MODEL_CLASS = VideoSwin
-elif BASE_MODEL_NAME == "vit":
-    MODEL_CLASS = VideoViT
-elif BASE_MODEL_NAME == "convnetxt":
-    MODEL_CLASS = VideoConvNeXt
-elif BASE_MODEL_NAME == "megadescriptor":
-    MODEL_CLASS = MegaDescriptor
-elif BASE_MODEL_NAME == "miewid":
-    MODEL_CLASS = MiewIDReID
-elif BASE_MODEL_NAME in ("bot", "transreid"):
-    MODEL_CLASS = None
-elif BASE_MODEL_NAME in ("psta", "video_psta", "agw", "mgn", "arbase", "sbs", "native_sbs"):
-    MODEL_CLASS = None
-elif BASE_MODEL_NAME.startswith("oa_") or BASE_MODEL_NAME.startswith("openanimals_"):
-    MODEL_CLASS = None
-else:
-    raise ValueError(f"Invalid base model name: {BASE_MODEL_NAME}")
-
-# =================================================================
-# --- Output Configuration ---
-# =================================================================
-suffix = ""
-if MASK_DOG:
-    suffix += "_masked"
-
-if args.use_gt_for_query_mask and args.use_gt_for_gallery_mask:
-    suffix += "_gtboth"
-elif args.use_gt_for_query_mask:
-    suffix += "_gtq"
-elif args.use_gt_for_gallery_mask:
-    suffix += "_gtg"
-
-base_folder_name = f"{RUN_NAME}_{MODALITY_TAG}"
-if suffix:
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / f"{base_folder_name}{suffix}"
-    CSV_NAME = f"{suffix.lstrip('_')}_{MODALITY_TAG}_{WORLD_TYPE}_dist_matrix.csv"
-else:
-    OUTPUT_FOLDER = ROOT_DIR / "evaluation" / "csvs" / base_folder_name
-    if BASE_MODEL_NAME in ("bot", "transreid"):
-        CSV_NAME = f"{WORLD_TYPE}_dist_matrix.csv"
-    else:
-        CSV_NAME = f"{MODALITY_TAG}_{WORLD_TYPE}_dist_matrix.csv"
-
-from data.dataloader import build_test_loaders
 from configs.config import Config
-from evaluation_utils import generate_distance_csv
+from models.model_factory import build_model
+from data.dataloader import build_test_loaders
+try:
+    from evaluation.evaluation_utils import generate_distance_csv, bootstrap_from_csv
+except ImportError:
+    from evaluation_utils import generate_distance_csv, bootstrap_from_csv
 
-# --- Setup Configuration Object ---
-cfg = Config()
 
-cfg.model = BACKBONE if BASE_MODEL_NAME in ("bot", "transreid") else BASE_MODEL_NAME
-cfg.backbone = cfg.model
-
-_is_mega = BASE_MODEL_NAME == "megadescriptor" or (
-    BASE_MODEL_NAME in ("bot", "transreid") and BACKBONE == "megadescriptor"
-)
-if _is_mega:
-    cfg.img_size = (384, 384) if "384" in getattr(_Config, "megadescriptor_variant", "") else (224, 224)
-elif "swin" in cfg.model.lower():
-    cfg.img_size = (192, 192)
-elif cfg.model.lower() in ("psta", "video_psta"):
-    cfg.img_size = (256, 128)
-else:
-    cfg.img_size = (224, 224)
-
-cfg.world = WORLD_TYPE
-cfg.query_images = QUERY_IMAGES
-cfg.gallery_images = GALLERY_IMAGES
-cfg.mask_dog = MASK_DOG 
-cfg.use_gt_for_query_mask = args.use_gt_for_query_mask
-cfg.use_gt_for_gallery_mask = args.use_gt_for_gallery_mask
-
-cfg.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-cfg.output_dir = OUTPUT_FOLDER
-cfg.output_dir.mkdir(parents=True, exist_ok=True)
-
-# -------------------------------------------------------------
-# --- Initialize Model ---
-# -------------------------------------------------------------
-if BASE_MODEL_NAME in ("bot", "transreid"):
-    from models.reid_model import VideoReID
-    print(f"-> Initializing Architecture: VideoReID ({BACKBONE}, {BASE_MODEL_NAME}, {POOLING_TYPE})...")
-    cfg.reid_method = BASE_MODEL_NAME
-    cfg.backbone = BACKBONE
-    cfg.model = BACKBONE
-    cfg.pooling_type = POOLING_TYPE
-
-    # Read num_classes from checkpoint if available to instantiate classification heads
-    if os.path.exists(MODEL_PATH):
-        _ckpt = torch.load(MODEL_PATH, map_location="cpu")
-        _sd = _ckpt.get('model', _ckpt.get('state_dict', _ckpt))
-        _cls = [v for k, v in _sd.items()
-                if k.startswith("heads.") and k.endswith("classifier.weight")]
-        cfg.num_classes = _cls[0].shape[0] if _cls else 0
-        print(f"-> num_classes from checkpoint: {cfg.num_classes}")
-        del _ckpt, _sd, _cls
-
-    model = VideoReID(cfg)
-elif BASE_MODEL_NAME == "megadescriptor":
-    print(f"-> Initializing Architecture: MegaDescriptor ({getattr(_Config, 'megadescriptor_variant', 'default')})...")
-    model = MegaDescriptor(variant=getattr(_Config, "megadescriptor_variant", "hf-hub:BVRA/MegaDescriptor-L-224"))
-elif BASE_MODEL_NAME == "miewid":
-    print("-> Initializing Architecture: MiewIDReID...")
-    model = MiewIDReID()
-elif BASE_MODEL_NAME == "dinov2":
-    print(f"-> Initializing Architecture: DINOv2ReID (Pooling: {POOLING_TYPE}, Num Classes: {NUM_CLASSES})...")
-    p_type = "attn" if POOLING_TYPE in ["attention", "attn"] else POOLING_TYPE
-    model = DINOv2ReID(
-        variant="vitb14_reg",
-        num_classes=NUM_CLASSES,
-        chunk_size=32,
-        pooling_type=p_type
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="DogReID-1553: Easy Distance Matrix Generation & Evaluation",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-elif BASE_MODEL_NAME in ["vit", "swin"]:
-    print(f"-> Initializing Architecture: {MODEL_CLASS.__name__}...")
-    try:
-        model = MODEL_CLASS(backbone_type="timm")
-    except TypeError:
-        model = MODEL_CLASS()
-elif BASE_MODEL_NAME == "convnetxt":
-    print(f"-> Initializing Architecture: VideoConvNeXt...")
-    model = VideoConvNeXt()
-elif BASE_MODEL_NAME.startswith("oa_") or BASE_MODEL_NAME.startswith("openanimals_"):
-    from models.openanimals_models import OpenAnimalsVideoModel
-    print(f"-> Initializing Architecture: OpenAnimalsVideoModel ({BASE_MODEL_NAME}, pooling={POOLING_TYPE})...")
-    oa_num_classes = NUM_CLASSES
-    if oa_num_classes == 0 and os.path.exists(MODEL_PATH):
-        try:
-            _ckpt = torch.load(MODEL_PATH, map_location="cpu")
-            _sd = _ckpt.get('model', _ckpt.get('state_dict', _ckpt))
-            for _k, _v in _sd.items():
-                if "heads.weight" in _k or "heads.classifier.weight" in _k:
-                    oa_num_classes = _v.shape[0]
-                    break
-            del _ckpt, _sd
-        except Exception:
-            pass
-    model = OpenAnimalsVideoModel(
-        model_name=BASE_MODEL_NAME,
-        pooling_type=POOLING_TYPE,
-        num_classes=oa_num_classes,
-        chunk_size=32
+
+    # Model & Checkpoint
+    parser.add_argument(
+        "--model", "--model_name",
+        dest="model_name",
+        type=str,
+        default="dinov2",
+        help="Model architecture: 'dinov2', 'bot', 'arbase', 'agw', 'sbs', 'mgn', 'tfclip', 'dinov2_bot', etc."
     )
-elif BASE_MODEL_NAME in ("psta", "video_psta", "agw", "mgn", "arbase", "sbs", "native_sbs"):
-    from models.model_factory import build_model
-    print(f"-> Initializing Architecture via build_model: {BASE_MODEL_NAME}...")
-    cfg.model = BASE_MODEL_NAME
-    cfg.backbone = BASE_MODEL_NAME
-    cfg.num_classes = NUM_CLASSES
-    if cfg.num_classes == 0 and os.path.exists(MODEL_PATH):
-        try:
-            _ckpt = torch.load(MODEL_PATH, map_location="cpu")
-            _sd = _ckpt.get('model', _ckpt.get('state_dict', _ckpt))
-            for _k, _v in _sd.items():
-                if "classifier" in _k and "weight" in _k:
-                    cfg.num_classes = _v.shape[0]
-                    break
-            del _ckpt, _sd
-        except Exception:
-            pass
-    model = build_model(cfg)
-else:
-    model = MODEL_CLASS()
+    parser.add_argument(
+        "--checkpoint", "--checkpoint_path", "-c",
+        dest="checkpoint",
+        type=str,
+        default=None,
+        help="Direct path to checkpoint (.pth) or checkpoint directory. If omitted, auto-discovers."
+    )
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        default=None,
+        help="Subfolder name or run tag to search for (e.g., 'lr1.2e-4_ep35_ms15-25_bb1x')."
+    )
 
-print(f"-> Loading Weights: {MODEL_PATH}")
+    # Evaluation Environment
+    parser.add_argument(
+        "--world", "--world_type",
+        dest="world_type",
+        type=str,
+        default=None,
+        choices=["closed", "open"],
+        help="Evaluation environment: 'closed' or 'open' (defaults to checkpoint config or 'closed')."
+    )
+    parser.add_argument(
+        "--pooling", "--pooling_type",
+        dest="pooling_type",
+        type=str,
+        default=None,
+        choices=["attention", "mean", "max", "none", "attn"],
+        help="Temporal aggregation method (defaults to checkpoint config or 'attention')."
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=32,
+        help="Batch size for feature extraction."
+    )
+    parser.add_argument(
+        "--clip_len",
+        type=int,
+        default=None,
+        help="Number of frames per video clip (defaults to config value)."
+    )
+    parser.add_argument(
+        "--num_classes",
+        type=int,
+        default=0,
+        help="Number of training identities (auto-detected from checkpoint if 0)."
+    )
+    parser.add_argument(
+        "--representation_type",
+        type=str,
+        default=None,
+        choices=["cls_gem", "cls_mean", "cls", "gem", "patch_mean"],
+        help="Feature representation for DINOv2 ('cls_gem', 'cls_mean', 'cls', 'gem'). Auto-detected if not specified."
+    )
 
-if os.path.exists(MODEL_PATH):
-    checkpoint = torch.load(MODEL_PATH, map_location=cfg.device)
-    state_dict = checkpoint.get('model', checkpoint.get('state_dict', checkpoint))
+    # Cross-Modality Flags
+    parser.add_argument(
+        "--use_images",
+        action="store_true",
+        help="Shortcut: Sets BOTH query and gallery to single images (Image-to-Image)."
+    )
+    parser.add_argument(
+        "--query_images",
+        action="store_true",
+        help="Evaluate query set using single images instead of video clips."
+    )
+    parser.add_argument(
+        "--gallery_images",
+        action="store_true",
+        help="Evaluate gallery set using single images instead of video clips."
+    )
 
-    new_state_dict = OrderedDict()
+    # Bounding Box & Masking Flags
+    parser.add_argument(
+        "--mask_dog",
+        action="store_true",
+        help="Mask out the dog for the background-only diagnostic baseline (blacks out inside bounding box)."
+    )
+    parser.add_argument(
+        "--use_gt_boxes", "--use_gt",
+        dest="use_gt_boxes",
+        action="store_true",
+        help="Use Ground Truth bounding boxes from bounding_boxes.csv instead of YOLO for image evaluation."
+    )
+    parser.add_argument(
+        "--use_gt_for_query_mask",
+        action="store_true",
+        help="Use Ground Truth bounding boxes specifically for the query set."
+    )
+    parser.add_argument(
+        "--use_gt_for_gallery_mask",
+        action="store_true",
+        help="Use Ground Truth bounding boxes specifically for the gallery set."
+    )
+
+    # Output Directory
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=None,
+        help="Directory to save distance matrix CSV. Defaults to evaluation/csvs/<run_name>_<modality>/."
+    )
+    parser.add_argument(
+        "--skip_bootstrap",
+        action="store_true",
+        help="Skip automatic bootstrap Rank/mAP calculation after CSV generation."
+    )
+
+    return parser.parse_args()
+
+
+def find_checkpoint_in_dir(directory: Path):
+    """Find the best checkpoint file in a directory."""
+    if not directory.exists() or not directory.is_dir():
+        return None
+
+    # Priority 1: latest_model.pth or best_model.pth
+    for priority_name in ("latest_model.pth", "best_model.pth"):
+        p = directory / priority_name
+        if p.exists():
+            return p
+
+    # Priority 2: highest numbered epoch checkpoint
+    epoch_ckpts = []
+    for ckpt in directory.glob("*.pth"):
+        if ckpt.name == "model.pth":
+            continue
+        match = re.search(r'(\d+)', ckpt.name)
+        if match:
+            epoch_ckpts.append((int(match.group(1)), ckpt))
+    if epoch_ckpts:
+        epoch_ckpts.sort(key=lambda x: x[0], reverse=True)
+        return epoch_ckpts[0][1]
+
+    # Priority 3: model.pth
+    if (directory / "model.pth").exists():
+        return directory / "model.pth"
+
+    # Priority 4: any .pth file
+    all_pth = list(directory.glob("*.pth"))
+    if all_pth:
+        return all_pth[0]
+
+    return None
+
+
+def auto_discover_checkpoint(model_name: str, run_name: str = None):
+    """
+    Intelligently searches across checkpoints_resnet, checkpoints_dinov2, checkpoints_tfclip,
+    checkpoints, and trained_models_neurips.
+    """
+    clean_name = model_name.lower().replace("-", "_")
+    search_names = [clean_name]
+    if clean_name in ("baseline", "dinov2_baseline"):
+        search_names.extend(["dinov2", "dinov2_baseline", "baseline"])
+    elif clean_name.startswith("oa_"):
+        search_names.append(clean_name[3:])
+    elif clean_name.startswith("openanimals_"):
+        search_names.append(clean_name[12:])
+    else:
+        search_names.append(f"oa_{clean_name}")
+
+    candidate_root_dirs = [
+        ROOT_DIR / "checkpoints_baseline",
+        ROOT_DIR / "checkpoints_resnet",
+        ROOT_DIR / "checkpoints_dinov2",
+        ROOT_DIR / "checkpoints_dinov2_oa",
+        ROOT_DIR / "checkpoints_tfclip",
+        ROOT_DIR / "checkpoints_resnet_og_params",
+        ROOT_DIR / "checkpoints",
+        ROOT_DIR / "trained_models_neurips",
+        ROOT_DIR / "trained_models",
+    ]
+
+    exact_matches = []
+    run_matches = []
+    prefix_matches = []
+
+    # Known hybrid suffixes to avoid when searching for base 'dinov2'
+    hybrids = {"dinov2_bot", "dinov2_agw", "dinov2_arbase", "dinov2_sbs", "dinov2_mgn"}
+
+    for root in candidate_root_dirs:
+        if not root.exists():
+            continue
+
+        for s_name in search_names:
+            # 1. Exact model directory match (e.g. checkpoints_resnet/bot or trained_models_neurips/oa_bot_...)
+            target_sub = root / s_name
+            if target_sub.is_dir():
+                if run_name:
+                    sub_with_run = target_sub / run_name
+                    if sub_with_run.is_dir():
+                        run_matches.append(sub_with_run)
+                else:
+                    children = [c for c in target_sub.iterdir() if c.is_dir()]
+                    if children:
+                        children.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                        exact_matches.extend(children)
+                    exact_matches.append(target_sub)
+
+            # 2. Iterate direct children of root
+            for c in root.iterdir():
+                if not c.is_dir():
+                    continue
+                # If searching for pure dinov2, skip hybrid model folders
+                if clean_name == "dinov2" and any(c.name.startswith(h) for h in hybrids):
+                    continue
+
+                if run_name and run_name in c.name:
+                    run_matches.append(c)
+                elif c.name == s_name:
+                    exact_matches.append(c)
+                elif c.name.startswith(f"{s_name}_"):
+                    prefix_matches.append(c)
+
+    candidate_dirs = run_matches + exact_matches + prefix_matches
+
+    # Check matched directories for checkpoints (avoiding duplicates)
+    seen_dirs = set()
+    for d in candidate_dirs:
+        resolved = d.resolve()
+        if resolved in seen_dirs:
+            continue
+        seen_dirs.add(resolved)
+        ckpt = find_checkpoint_in_dir(d)
+        if ckpt is not None:
+            return ckpt
+
+    return None
+
+
+def detect_num_classes_from_state_dict(state_dict):
+    """Detect identity classification classes if present in checkpoint."""
+    classifier_patterns = [
+        "heads.classifier.weight",
+        "heads.weight",
+        "head.classifier.weight",
+        "head.weight",
+        "classifier.weight",
+        "b1_head.classifier.weight",
+    ]
     for k, v in state_dict.items():
-        name = k[7:] if k.startswith('module.') else k
-        if BASE_MODEL_NAME == "dinov2" and name.startswith("temporal_pool."):
-            name = name.replace("temporal_pool.", "temporal_attn.")
-        new_state_dict[name] = v
+        if any(p in k for p in classifier_patterns) and hasattr(v, "shape") and len(v.shape) == 2:
+            return v.shape[0]
+    return 0
 
-    missing, unexpected = model.load_state_dict(new_state_dict, strict=False)
-    if missing:
-        print(f"-> [INFO] Missing keys in state_dict: {len(missing)}")
-    if unexpected:
-        print(f"-> [INFO] Unexpected keys in state_dict: {len(unexpected)}")
-else:
-    print(f"-> [WARNING] Checkpoint not found at {MODEL_PATH}. Proceeding with initialized weights.")
 
-model.to(cfg.device)
-model.eval()
+def main():
+    args = parse_args()
 
-# -------------------------------------------------------------
-# --- Build Query / Gallery Dataloaders ---
-# -------------------------------------------------------------
-print(f"-> Preparing {cfg.world.upper()} test dataloaders ({MODALITY_TAG.upper()})...")
-print(f"-> Background Masking Baseline: {'ON' if MASK_DOG else 'OFF'}")
+    # --- 1. Checkpoint Resolution ---
+    checkpoint_path = None
+    checkpoint_dir = None
 
-query_loader, gallery_loader = build_test_loaders(
-    cfg, 
-    query_images=QUERY_IMAGES, 
-    gallery_images=GALLERY_IMAGES
-)
+    if args.checkpoint:
+        user_p = Path(args.checkpoint).resolve()
+        if user_p.is_file():
+            checkpoint_path = user_p
+            checkpoint_dir = user_p.parent
+        elif user_p.is_dir():
+            checkpoint_dir = user_p
+            checkpoint_path = find_checkpoint_in_dir(user_p)
+        else:
+            raise FileNotFoundError(f"Specified checkpoint path does not exist: {user_p}")
+    else:
+        print(f"-> Auto-discovering checkpoint for model '{args.model_name}'...")
+        checkpoint_path = auto_discover_checkpoint(args.model_name, args.run_name)
+        if checkpoint_path is not None:
+            checkpoint_dir = checkpoint_path.parent
 
-# -------------------------------------------------------------
-# --- Run Inference and Generate Distance Matrix ---
-# -------------------------------------------------------------
-print(f"-> Running Inference ({q_type.upper()} Query -> {g_type.upper()} Gallery)...")
+    # --- 2. Load Config from JSON if Available ---
+    saved_cfg = {}
+    if checkpoint_dir and (checkpoint_dir / "config.json").exists():
+        try:
+            with open(checkpoint_dir / "config.json", "r") as f:
+                saved_cfg = json.load(f)
+            print(f"-> Loaded training metadata from {checkpoint_dir / 'config.json'}")
+        except Exception as e:
+            print(f"-> [INFO] Could not parse config.json: {e}")
 
-csv_path = generate_distance_csv(
-    model,
-    query_loader,
-    gallery_loader,
-    cfg,
-    filename=CSV_NAME
-)
+    # Determine Model Name
+    model_name = args.model_name
+    if args.checkpoint and "model" in saved_cfg and args.model_name == "dinov2":
+        model_name = saved_cfg["model"]
 
-# -------------------------------------------------------------
-# --- Run Bootstrap Evaluation ---
-# -------------------------------------------------------------
-from evaluation_utils import bootstrap_from_csv
-print(f"\n==========================================")
-print(f"Running Bootstrap Evaluation on {csv_path} (mode={WORLD_TYPE})...")
-print(f"==========================================")
-boot_res = bootstrap_from_csv(str(csv_path), m=100, mode=WORLD_TYPE)
-if WORLD_TYPE == "closed":
-    cmc = boot_res.get("cmc_boot_mean")
-    map_val = boot_res.get("mAP_boot_mean")
-    if cmc is not None:
-        print(f"Rank-1:  {cmc[0]*100:.2f}%")
-        print(f"Rank-5:  {cmc[4]*100:.2f}%")
-        print(f"Rank-10: {cmc[9]*100:.2f}%")
-    if map_val is not None:
-        print(f"mAP:     {map_val*100:.2f}%")
-print("Evaluation Complete!")
+    # Determine Pooling Type
+    pooling_type = args.pooling_type or saved_cfg.get("pooling_type") or "attention"
+    if pooling_type == "attn":
+        pooling_type = "attention"
+
+    # Determine World Type
+    world_type = args.world_type or saved_cfg.get("world") or "closed"
+
+    # Derive Run Name for Folders
+    if args.run_name:
+        run_name = args.run_name
+    elif checkpoint_dir and checkpoint_dir.name != model_name:
+        run_name = f"{checkpoint_dir.parent.name}_{checkpoint_dir.name}" if checkpoint_dir.parent.name != ROOT_DIR.name else checkpoint_dir.name
+    else:
+        run_name = f"{model_name}_{world_type}_{pooling_type}"
+
+    print("==========================================================")
+    print("DogReID Distance Matrix Generation & Evaluation")
+    print(f"  Model Architecture : {model_name}")
+    print(f"  World Mode         : {world_type.upper()}")
+    print(f"  Pooling Type       : {pooling_type}")
+    print(f"  Checkpoint         : {checkpoint_path if checkpoint_path else 'None (random weights)'}")
+    print("==========================================================")
+
+    # --- 3. Configuration Setup ---
+    cfg = Config()
+    cfg.model = model_name
+    cfg.backbone = model_name
+    cfg.pooling_type = pooling_type
+    cfg.world = world_type
+    cfg.test_batch_size = args.batch_size
+    if args.clip_len:
+        cfg.clip_len = args.clip_len
+    elif "clip_len" in saved_cfg:
+        cfg.clip_len = saved_cfg["clip_len"]
+
+    # Auto-adjust model settings (sets correct resolution: 384x384 for arbase/mgn, 256x128 for bot/agw, etc.)
+    cfg.update_model_settings()
+
+    # If config.json had a specific img_size, respect it
+    if "img_size" in saved_cfg:
+        cfg.img_size = tuple(saved_cfg["img_size"])
+
+    # Modality Resolution
+    query_images = args.query_images or args.use_images
+    gallery_images = args.gallery_images or args.use_images
+    cfg.query_images = query_images
+    cfg.gallery_images = gallery_images
+    cfg.mask_dog = args.mask_dog
+    cfg.use_gt_for_query_mask = args.use_gt_boxes or args.use_gt_for_query_mask
+    cfg.use_gt_for_gallery_mask = args.use_gt_boxes or args.use_gt_for_gallery_mask
+    cfg.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # --- 4. Read State Dict & Auto-Detect num_classes ---
+    state_dict = None
+    if checkpoint_path and checkpoint_path.exists():
+        print(f"-> Reading checkpoint: {checkpoint_path}")
+        raw_checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        state_dict = raw_checkpoint.get('model', raw_checkpoint.get('state_dict', raw_checkpoint))
+
+        # Check for num_classes in state_dict
+        detected_classes = detect_num_classes_from_state_dict(state_dict)
+        if args.num_classes > 0:
+            cfg.num_classes = args.num_classes
+        elif detected_classes > 0:
+            cfg.num_classes = detected_classes
+            print(f"-> Auto-detected {cfg.num_classes} identity classes from checkpoint.")
+        else:
+            cfg.num_classes = 0
+
+        # Auto-detect representation_type for DINOv2 / baseline
+        if model_name.lower() in ("dinov2", "baseline", "dinov2_baseline"):
+            if args.representation_type:
+                cfg.representation_type = args.representation_type
+            elif "representation_type" in saved_cfg:
+                cfg.representation_type = saved_cfg["representation_type"]
+            else:
+                # Check BN neck dimension in state_dict
+                bn_dim = None
+                has_bn = False
+                for k in ("bn.weight", "module.bn.weight"):
+                    if k in state_dict and hasattr(state_dict[k], "shape"):
+                        bn_dim = state_dict[k].shape[0]
+                        has_bn = True
+                        break
+                if bn_dim == 768:
+                    cfg.representation_type = "cls"
+                elif bn_dim == 1536:
+                    cfg.representation_type = "cls_gem"
+                
+                if "use_bnneck" in saved_cfg:
+                    cfg.use_bnneck = saved_cfg["use_bnneck"]
+                elif not has_bn and "classifier.weight" in state_dict:
+                    cfg.use_bnneck = False
+
+            cfg.embedding_dim = 1536 if cfg.representation_type in ("cls_mean", "gem", "cls_gem") else 768
+            print(f"-> DINOv2 representation_type: '{cfg.representation_type}' (embedding_dim={cfg.embedding_dim}, use_bnneck={getattr(cfg, 'use_bnneck', True)})")
+
+    # --- 5. Instantiate Architecture via Model Factory ---
+    print(f"-> Building model architecture '{model_name}' (resolution={cfg.img_size}, num_classes={cfg.num_classes})...")
+    model = build_model(cfg)
+
+    # --- 6. Load Weights ---
+    if state_dict is not None:
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            name = k[7:] if k.startswith('module.') else k
+            if model_name == "dinov2" and name.startswith("temporal_pool."):
+                name = name.replace("temporal_pool.", "temporal_attn.")
+            new_state_dict[name] = v
+
+        missing, unexpected = model.load_state_dict(new_state_dict, strict=False)
+        if missing:
+            print(f"-> [INFO] Missing keys in state_dict: {len(missing)}")
+        if unexpected:
+            print(f"-> [INFO] Unexpected keys in state_dict: {len(unexpected)}")
+        print("-> Weights successfully loaded.")
+    else:
+        print("-> [WARNING] No checkpoint loaded! Proceeding with initialized weights.")
+
+    model.to(cfg.device)
+    model.eval()
+
+    # --- 7. Setup Output Paths ---
+    q_type = "img" if query_images else "vid"
+    g_type = "img" if gallery_images else "vid"
+    modality_tag = f"{q_type}2{g_type}"
+
+    suffix = ""
+    if args.mask_dog:
+        suffix += "_masked"
+    if cfg.use_gt_for_query_mask and cfg.use_gt_for_gallery_mask:
+        suffix += "_gtboth"
+    elif cfg.use_gt_for_query_mask:
+        suffix += "_gtq"
+    elif cfg.use_gt_for_gallery_mask:
+        suffix += "_gtg"
+
+    base_folder_name = f"{run_name}_{modality_tag}{suffix}"
+    if args.output_dir:
+        output_folder = Path(args.output_dir)
+    else:
+        output_folder = ROOT_DIR / "evaluation" / "csvs" / base_folder_name
+
+    output_folder.mkdir(parents=True, exist_ok=True)
+    cfg.output_dir = output_folder
+    csv_filename = f"{world_type}_dist_matrix.csv"
+
+    # --- 8. Build Query / Gallery Dataloaders ---
+    print(f"-> Preparing {world_type.upper()} dataloaders ({modality_tag.upper()}, batch_size={args.batch_size})...")
+    query_loader, gallery_loader = build_test_loaders(
+        cfg,
+        query_images=query_images,
+        gallery_images=gallery_images
+    )
+
+    # --- 9. Run Inference & Save Distance Matrix ---
+    print(f"-> Running inference...")
+    csv_path = generate_distance_csv(
+        model,
+        query_loader,
+        gallery_loader,
+        cfg,
+        filename=csv_filename
+    )
+
+    # --- 10. Bootstrap Evaluation ---
+    if not args.skip_bootstrap:
+        print(f"\n==========================================")
+        print(f"Running Bootstrap Evaluation on {csv_path.name} (mode={world_type})...")
+        print(f"==========================================")
+        boot_res = bootstrap_from_csv(str(csv_path), m=100, mode=world_type)
+        if world_type == "closed":
+            cmc = boot_res.get("cmc_boot_mean")
+            map_val = boot_res.get("mAP_boot_mean")
+            if cmc is not None:
+                print(f"Rank-1:  {cmc[0]*100:.2f}%")
+                print(f"Rank-5:  {cmc[4]*100:.2f}%")
+                print(f"Rank-10: {cmc[9]*100:.2f}%")
+            if map_val is not None:
+                print(f"mAP:     {map_val*100:.2f}%")
+        else:
+            print("Open-world metrics:")
+            for k, v in boot_res.items():
+                if isinstance(v, (int, float)):
+                    print(f"  {k}: {v:.4f}")
+    print("\nEvaluation Complete!")
+
+
+if __name__ == "__main__":
+    main()

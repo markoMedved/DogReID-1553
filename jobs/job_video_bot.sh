@@ -18,9 +18,9 @@ cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings (OpenAnimals Video BoT - ResNet-50) ---
+# --- Experiment Settings (OpenAnimals Video BoT - ResNet-50, 256x256) ---
 MODEL="bot"
-RUN_NAME="lr1.2e-4_ep35_ms15-25_bb1x"
+RUN_NAME="lr1.2e-4_ep35_ms15-25_bb1x_256x256"
 POOLING="attention"
 WORLD="closed"
 BATCH_SIZE=64   # P×K = 64 (P=16, K=4)
@@ -43,7 +43,7 @@ echo "  Batch / K         : ${BATCH_SIZE} / ${K} (P = $((BATCH_SIZE / K)) identi
 echo "  Clip Length       : ${CLIP_LEN} frames"
 echo "  Learning Rate     : Head ${LR}, Backbone ${LR} (factor: ${BACKBONE_LR_FACTOR})"
 echo "  Epochs            : ${EPOCHS} (5-epoch warmup)"
-echo "  Resolution        : 256x128"
+echo "  Resolution        : 256x256"
 echo "  Scheduler         : MultiStepLR (milestones 15, 25)"
 echo "  Fine-tuning       : Full fine-tuning (backbone LR factor ${BACKBONE_LR_FACTOR}x)"
 echo "=========================================================="

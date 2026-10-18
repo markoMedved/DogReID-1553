@@ -1,10 +1,5 @@
 # --- Import Available Model Architectures ---
-from .vit_builder import VideoViT
-from .swin_builder import VideoSwin
 from .dinov2_builder import DINOv2ReID
-from .convnetxt_builder import VideoConvNeXt
-from .miewid_builder import MiewIDReID
-from .megadescriptor_builder import MegaDescriptor
 from .reid_model import VideoReID
 
 
@@ -17,19 +12,6 @@ def build_model(cfg):
     model_type = getattr(cfg, "backbone", getattr(cfg, "model", None))
     model_type_str = str(model_type).lower() if model_type else ""
 
-    # Explicit native implementations
-    if model_type_str == "native_arbase":
-        from .native_baselines import NativeARBase
-        return NativeARBase(cfg)
-    elif model_type_str == "native_mgn":
-        from .native_baselines import NativeMGN
-        return NativeMGN(cfg)
-    elif model_type_str == "native_agw":
-        from .native_baselines import NativeAGW
-        return NativeAGW(cfg)
-    elif model_type_str == "native_sbs":
-        from .native_baselines import NativeSBS
-        return NativeSBS(cfg)
 
     # OpenAnimals architectures (default for bot, agw, sbs, mgn, arbase, and dinov2 variants)
     oa_names = {
@@ -54,45 +36,14 @@ def build_model(cfg):
             unfreeze_blocks=getattr(cfg, "unfreeze_blocks", 2),
         )
 
-    # --- Re-ID Method Routing (BoT / TransReID) ---
-    if getattr(cfg, "reid_method", None) in ("bot", "transreid"):
-        return VideoReID(cfg)
-
     # TF-CLIP (Text-Free CLIP Video Re-ID)
     if model_type_str in ("tfclip", "tf_clip", "tf-clip", "clip"):
         from .tfclip import TFCLIPVideoModel
         return TFCLIPVideoModel(cfg)
 
-    # MiewID is a fixed pretrained baseline; it bypasses the BoT/TransReID
-    if model_type == "miewid":
-        return MiewIDReID(chunk_size=getattr(cfg, "chunk_size", 16))
-
-    if model_type == "dinov2":
-        # Initializes DINOv2 with registers (vitb14_reg)
-        return DINOv2ReID(
-            variant=getattr(cfg, "dinov2_variant", "vitb14_reg"), 
-            num_classes=getattr(cfg, "num_classes", 0), 
-            chunk_size=getattr(cfg, "chunk_size", 32),
-            pooling_type=getattr(cfg, "pooling_type", "attention")
-        )
-
-    elif model_type == "vit":
-        # Initializes a standard Vision Transformer adapted for video processing
-        return VideoViT()
-
-    elif model_type == "swin":
-        # Initializes a Swin Transformer backbone for hierarchical video feature extraction
-        return VideoSwin()
-
-    elif model_type == "megadescriptor":
-        # Wildlife-re-ID-pretrained Swin used as a standalone extractor (no BoT).
-        return MegaDescriptor(
-            variant=getattr(cfg, "megadescriptor_variant", "hf-hub:BVRA/MegaDescriptor-L-224"),
-            chunk_size=getattr(cfg, "chunk_size", 8),
-        )
-
-    elif model_type in ("convnetxt", "convnext"):
-        return VideoConvNeXt()
+    # --- DINOv2 BoT Video Re-ID Baseline (from clip-reid) ---
+    if getattr(cfg, "reid_method", None) == "bot" or model_type_str in ("dinov2", "baseline", "dinov2_baseline"):
+        return VideoReID(cfg)
 
     else:
         # Fallback for unsupported or misspelled model configurations

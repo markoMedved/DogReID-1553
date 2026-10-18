@@ -33,7 +33,8 @@ class Trainer:
 
         # --- Identity Loss ---
         # Used only when the model exposes a classifier (cfg.num_classes > 0)
-        self.id_loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
+        label_smooth = getattr(cfg, 'label_smoothing', 0.1)
+        self.id_loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=label_smooth)
         self.id_loss_weight = getattr(cfg, 'id_loss_weight', 1.0)
 
         # --- Mixed Precision ---
@@ -276,7 +277,10 @@ class Trainer:
             with torch.autocast(device_type=self.device.type,
                                 dtype=self.amp_dtype,
                                 enabled=self.amp_enabled):
-                outputs = self.model(videos, targets=labels)
+                try:
+                    outputs = self.model(videos, targets=labels)
+                except TypeError:
+                    outputs = self.model(videos)
 
             if hasattr(self.model, "compute_loss"):
                 total_loss, loss_triplet, loss_id = self.model.compute_loss(outputs, labels)
@@ -578,8 +582,7 @@ class Trainer:
                         "accum_steps", "num_workers", "chunk_size",
                         # Re-ID method and architecture
                         "backbone", "reid_method", "pooling_type", "img_size",
-                        "num_classes", "dinov2_variant", "megadescriptor_variant",
-                        "jpm_parts", "jpm_shift", "jpm_shuffle_groups",
+                        "num_classes", "dinov2_variant",
                         # Optimization
                         "full_finetune", "unfreeze_blocks", "id_loss_weight",
                         "warmup_epochs", "warmup_factor", "lr_milestones",

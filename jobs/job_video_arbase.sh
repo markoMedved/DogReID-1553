@@ -18,23 +18,24 @@ cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings (Native ARBase - ResNet-50-IBN-a, 384x384, 1.0x LR, MultiStepLR) ---
+# --- Experiment Settings (Native ARBase - ResNet-50-IBN-a, 384x384, 1.0x LR, CosineAnnealingLR) ---
 MODEL="arbase"
-RUN_NAME="lr1.2e-4_ep35_ms15-25_bb1x"
+RUN_NAME="lr3e-5_ep35_cos_d5_bb1x"
 POOLING="attention"
 WORLD="closed"
 BATCH_SIZE=64   # P×K = 64 (P=16, K=4)
 K=4
 CLIP_LEN=8
 EPOCHS=35
-LR=1.2e-04
+LR=3.0e-05
+DELAY_EPOCHS=5
 BACKBONE_LR_FACTOR=1.0
 VAL_SPLIT=0          # train on full train split, evaluate on test split
 EVAL_PERIOD=5
 ACCUM_STEPS=1
 
 echo "=========================================================="
-echo "Starting Video-to-Video Training: Native ARBase (1.0x LR)"
+echo "Starting Video-to-Video Training: Native ARBase (CosineAnnealingLR)"
 echo "  Model             : ${MODEL}"
 echo "  Run Name (params) : ${RUN_NAME}"
 echo "  Pooling           : ${POOLING}"
@@ -45,7 +46,7 @@ echo "  Learning Rate     : Head ${LR}, Backbone ${LR} (factor: ${BACKBONE_LR_FA
 echo "  Epochs            : ${EPOCHS} (5-epoch warmup)"
 echo "  Resolution        : 384x384"
 echo "  REA               : Disabled (re_prob=0.0)"
-echo "  Scheduler         : MultiStepLR (milestones 15, 25)"
+echo "  Scheduler         : CosineAnnealingLR (${DELAY_EPOCHS}-epoch delay, eta_min 7e-7)"
 echo "  Fine-tuning       : Full fine-tuning (backbone LR factor ${BACKBONE_LR_FACTOR}x)"
 echo "=========================================================="
 
@@ -59,6 +60,8 @@ python train.py \
     --pooling_type ${POOLING} \
     --epochs ${EPOCHS} \
     --lr ${LR} \
+    --lr_sched cosine \
+    --lr_delay_epochs ${DELAY_EPOCHS} \
     --val_split ${VAL_SPLIT} \
     --eval_period ${EVAL_PERIOD} \
     --accum_steps ${ACCUM_STEPS} \

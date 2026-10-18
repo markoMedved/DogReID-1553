@@ -28,10 +28,8 @@ def _core_network(model):
     if backbone is None:
         return None
 
-    # Adapters expose the real network under `.net`/`.visual`; MiewID's HF
-    # wrapper (MiewIdNet) nests its timm EfficientNet under `.backbone`, so
-    # descend one more level to reach a layout _unfreeze_last_blocks knows.
-    for attr in ("net", "visual", "backbone"):
+    # Adapters expose the real network under `.net`/`.visual`
+    for attr in ("net", "visual"):
         inner = getattr(backbone, attr, None)
         if isinstance(inner, nn.Module):
             return inner
@@ -51,66 +49,17 @@ def _last_n(modules, n):
 def _unfreeze_last_blocks(net, n=2):
     """Unfreeze the final n blocks and the final normalization layer.
 
-    Swin and ConvNeXt are unfrozen one stage at a time rather than one block at
-    a time, so n is not used for those backbones.
-
     Returns False if the backbone layout is not recognized.
     """
     if net is None:
         return False
 
-    # --- timm EfficientNet / EfficientNetV2 (MiewID's backbone) ---
-    # Layout: conv_stem -> bn1 -> blocks (stages) -> conv_head -> bn2 -> pool.
-    # EfficientNet also exposes `.blocks`, so this must precede the ViT branch;
-    # `.conv_head` is the distinguishing attribute. Unfreeze the last stage plus
-    # the final conv projection, one stage at a time like the other CNNs, so n
-    # is not used here beyond the "unfreeze nothing" case.
-    if hasattr(net, "blocks") and hasattr(net, "conv_head"):
-        if n > 0:
-            _unfreeze(net.blocks[-1])
-            _unfreeze(getattr(net, "conv_head", None))
-            _unfreeze(getattr(net, "bn2", None))
-        return True
-
-    # --- DINOv2 / timm ViT ---
+    # --- DINOv2 / ViT ---
     if hasattr(net, "blocks"):
         for block in _last_n(net.blocks, n):
             _unfreeze(block)
         if n > 0:
             _unfreeze(getattr(net, "norm", None))
-        return True
-
-    # --- Torchvision ViT ---
-    encoder = getattr(net, "encoder", None)
-    if encoder is not None and hasattr(encoder, "layers"):
-        for layer in _last_n(encoder.layers, n):
-            _unfreeze(layer)
-        if n > 0:
-            _unfreeze(getattr(encoder, "ln", None))
-        return True
-
-    # --- Swin Transformer (hierarchical stages) ---
-    if hasattr(net, "layers"):
-        if n > 0:
-            _unfreeze(net.layers[-1])
-            _unfreeze(getattr(net, "norm", None))
-        return True
-
-    # --- OSNet (Torchreid) ---
-    # Convolutional stages conv1..conv5 plus an fc bottleneck; unfrozen one
-    # stage at a time, so n is not used
-    if hasattr(net, "conv5") and hasattr(net, "global_avgpool"):
-        if n > 0:
-            _unfreeze(net.conv5)
-            _unfreeze(getattr(net, "fc", None))
-        return True
-
-    # --- ConvNeXt ---
-    if hasattr(net, "stages"):
-        if n > 0:
-            _unfreeze(net.stages[-1])
-            _unfreeze(getattr(net, "norm_pre", None))
-            _unfreeze(getattr(net, "head", None))
         return True
 
     # --- Sequential backbone (e.g. MGN backbone) ---
@@ -167,7 +116,7 @@ def apply_freezing(model, cfg):
         _unfreeze(getattr(model, attr, None))
 
     if hasattr(model, "backbone"):
-        for nl in ("NL_1", "NL_2", "NL_3", "NL_4"):
+        for nl in ("NL_1", "NL_2", "NL_3", "NL_4", "gem_p"):
             _unfreeze(getattr(model.backbone, nl, None))
 
     if hasattr(model, "oa_model"):

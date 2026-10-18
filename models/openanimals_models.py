@@ -81,7 +81,6 @@ class OpenAnimalsVideoModel(nn.Module):
         "openanimals_dinov2_bot": "OpenAnimals/configs/DogReID/bot.yml",
 
         "agw": "OpenAnimals/configs/DogReID/agw.yml",
-        "native_agw": "OpenAnimals/configs/DogReID/agw.yml",
         "oa_agw": "OpenAnimals/configs/DogReID/agw.yml",
         "openanimals_agw": "OpenAnimals/configs/DogReID/agw.yml",
 
@@ -90,7 +89,6 @@ class OpenAnimalsVideoModel(nn.Module):
         "openanimals_dinov2_agw": "OpenAnimals/configs/DogReID/agw.yml",
 
         "sbs": "OpenAnimals/configs/DogReID/sbs.yml",
-        "native_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
         "oa_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
         "openanimals_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
 
@@ -193,14 +191,19 @@ class OpenAnimalsVideoModel(nn.Module):
             oa_cfg.SOLVER.WARMUP_FACTOR = 0.1
         else:
             oa_cfg.SOLVER.OPT = "Adam"
-            oa_cfg.SOLVER.BASE_LR = 1.2e-04
+            oa_cfg.SOLVER.BASE_LR = 3.0e-05 if "arbase" in clean_name else 1.2e-04
             oa_cfg.SOLVER.WEIGHT_DECAY = 5e-04
             oa_cfg.SOLVER.MAX_EPOCH = 35
             oa_cfg.SOLVER.WARMUP_FACTOR = 0.1
-            oa_cfg.SOLVER.SCHED = "MultiStepLR"
-            oa_cfg.SOLVER.STEPS = [15, 25]
-            oa_cfg.SOLVER.GAMMA = 0.1
-            oa_cfg.SOLVER.DELAY_EPOCHS = 0
+            if any(k in clean_name for k in ("arbase", "sbs", "mgn")):
+                oa_cfg.SOLVER.SCHED = "CosineAnnealingLR"
+                oa_cfg.SOLVER.DELAY_EPOCHS = 5 if "arbase" in clean_name else 15
+                oa_cfg.SOLVER.ETA_MIN_LR = 7e-07
+            else:
+                oa_cfg.SOLVER.SCHED = "MultiStepLR"
+                oa_cfg.SOLVER.STEPS = [15, 25]
+                oa_cfg.SOLVER.GAMMA = 0.1
+                oa_cfg.SOLVER.DELAY_EPOCHS = 0
 
         self.oa_cfg = oa_cfg
         self.is_openanimals = True

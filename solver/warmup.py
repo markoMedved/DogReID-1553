@@ -116,14 +116,14 @@ def build_scheduler(optimizer, cfg):
     drop_factor = getattr(cfg, "backbone_drop_factor", 0.1)
 
     if sched_type == "cosine" or (sched_type is None and model_name in ("arbase", "sbs", "mgn")):
-        delay = getattr(cfg, "lr_delay_epochs", 30 if "sbs" in model_name else 60)
+        delay = getattr(cfg, "lr_delay_epochs", 25 if ("dinov2" in model_name or model_name == "baseline") else (15 if "sbs" in model_name else 25))
         return WarmupCosineAnnealingLR(
             optimizer,
-            max_epochs=getattr(cfg, "epochs", 120),
+            max_epochs=getattr(cfg, "epochs", 51),
             delay_epochs=delay,
-            eta_min=getattr(cfg, "eta_min", 7e-7),
-            warmup_factor=getattr(cfg, "warmup_factor", 0.1),
-            warmup_epochs=getattr(cfg, "warmup_epochs", 10),
+            eta_min=getattr(cfg, "lr_eta_min", getattr(cfg, "eta_min", 7e-8)),
+            warmup_factor=getattr(cfg, "warmup_factor", 0.01),
+            warmup_epochs=getattr(cfg, "warmup_epochs", 5),
             backbone_drop_epoch=drop_epoch,
             backbone_drop_factor=drop_factor,
         )

@@ -95,6 +95,7 @@ def build_dataloaders(cfg):
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
         "clip_len": cfg.clip_len,
+        "use_videos": getattr(cfg, "use_videos", True),
         "world": cfg.world,
         "mask_dog": getattr(cfg, "mask_dog", False),
         "force_yolo": getattr(cfg, "force_yolo", False),
