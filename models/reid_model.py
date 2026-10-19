@@ -24,7 +24,7 @@ class DINOv2Adapter(nn.Module):
         "vitl14_reg":1024,
     }
 
-    def __init__(self, variant: str = "vitb14_reg", representation_type: str = "cls", gem_p: float = 3.0):
+    def __init__(self, variant: str = "vitb14_reg", representation_type: str = "cls", gem_p: float = 3.0, fuse_layers: int = 1):
         super().__init__()
         hub_name = variant if variant.startswith("dinov2_") else f"dinov2_{variant}"
         self.net = torch.hub.load("facebookresearch/dinov2", hub_name)
@@ -40,6 +40,10 @@ class DINOv2Adapter(nn.Module):
         if self.representation_type in ("patch_gem", "gem", "cls_gem"):
             self.gem_p = nn.Parameter(torch.ones(1) * float(gem_p))
 
+        self.fuse_layers = max(1, int(fuse_layers))
+        if self.fuse_layers > 1:
+            self.layer_weights = nn.Parameter(torch.zeros(self.fuse_layers))
+
     @property
     def last_block(self):
         return self.net.blocks[-1]
@@ -52,20 +56,29 @@ class DINOv2Adapter(nn.Module):
     def depth(self):
         return len(self.net.blocks)
 
-    def _run_blocks(self, tokens, blocks, n_grad):
+    def _run_blocks(self, tokens, blocks, n_grad, return_intermediate=None):
         """Run blocks, keeping the autograd graph only for the last n_grad.
 
         Frozen leading blocks do not need stored activations, so running them
         under no_grad cuts activation memory without changing the result.
         """
         split = max(len(blocks) - n_grad, 0) if n_grad is not None else 0
+        intermediate = []
+        take_indices = set(return_intermediate) if return_intermediate is not None else set()
 
         if split:
             with torch.no_grad():
-                for block in blocks[:split]:
+                for i, block in enumerate(blocks[:split]):
                     tokens = block(tokens)
-        for block in blocks[split:]:
+                    if i in take_indices:
+                        intermediate.append(tokens)
+        for i, block in enumerate(blocks[split:], start=split):
             tokens = block(tokens)
+            if i in take_indices:
+                intermediate.append(tokens)
+
+        if return_intermediate is not None:
+            return tokens, intermediate
         return tokens
 
     def _aggregate_tokens(self, normed_tokens):
@@ -90,6 +103,25 @@ class DINOv2Adapter(nn.Module):
         raise ValueError(f"Unknown representation_type: {self.representation_type!r}")
 
     def pooled(self, x, n_grad=None):
+        if self.fuse_layers > 1:
+            total_blocks = len(self.net.blocks)
+            take_indices = list(range(total_blocks - self.fuse_layers, total_blocks))
+            if n_grad is None:
+                tokens = self.net.prepare_tokens_with_masks(x, None)
+                _, intermediate = self._run_blocks(tokens, self.net.blocks, None, return_intermediate=take_indices)
+            else:
+                with torch.no_grad():
+                    tokens = self.net.prepare_tokens_with_masks(x, None)
+                _, intermediate = self._run_blocks(tokens, self.net.blocks, n_grad, return_intermediate=take_indices)
+
+            layer_feats = []
+            for tok in intermediate:
+                normed = self.net.norm(tok)
+                layer_feats.append(self._aggregate_tokens(normed))
+
+            weights = F.softmax(self.layer_weights, dim=0)
+            return sum(w * f for w, f in zip(weights, layer_feats))
+
         if n_grad is None and self.representation_type == "cls":
             return self.net(x)
 
@@ -113,6 +145,7 @@ def build_backbone(cfg):
             variant=getattr(cfg, "dinov2_variant", "vitb14_reg"),
             representation_type=getattr(cfg, "representation_type", "cls"),
             gem_p=getattr(cfg, "gem_p", 3.0),
+            fuse_layers=getattr(cfg, "fuse_layers", 1),
         )
 
     raise ValueError(f"Unknown backbone requested: {name!r}")

@@ -321,6 +321,19 @@ class Trainer:
                             hard_mining=tri_cfg.HARD_MINING
                         ) for f in feats
                     ) / len(feats) * tri_cfg.SCALE
+                elif getattr(self.cfg, "triplet_type", "hard") in ("soft", "weighted"):
+                    import sys
+                    oa_dir = str(Path(__file__).resolve().parent.parent / "OpenAnimals")
+                    if oa_dir not in sys.path:
+                        sys.path.insert(0, oa_dir)
+                    from openanimals.modeling.losses.triplet_loss import triplet_loss as oa_triplet_loss
+                    is_hard = (getattr(self.cfg, "triplet_type", "hard") == "soft")
+                    loss_triplet = oa_triplet_loss(
+                        embeddings, labels,
+                        margin=0.0,
+                        norm_feat=False,
+                        hard_mining=is_hard,
+                    )
                 else:
                     hard_pairs = self.miner(embeddings, labels)
                     loss_triplet = self.loss_fn(embeddings, labels, hard_pairs)
@@ -476,6 +489,13 @@ class Trainer:
             r1, r5, mAP = self.calculate_cmc_map(dist_np, q_np, g_np)
             
             print(f"Eval (Closed) -> Val Loss: {val_loss:.4f} | Rank-1: {r1:.2%}, Rank-5: {r5:.2%}, mAP: {mAP:.2%} | PosDist: {val_pos_dist:.4f}, NegDist: {val_neg_dist:.4f}")
+            raw_model = getattr(self.model, "module", self.model)
+            if hasattr(raw_model, "backbone") and hasattr(raw_model.backbone, "layer_weights"):
+                w_probs = torch.softmax(raw_model.backbone.layer_weights, dim=0).detach().cpu().tolist()
+                print(f"--> [Layer Fusion Weights (layers -{len(w_probs)}..-1)]: {[round(p, 4) for p in w_probs]}")
+                if "layer_weights" not in self.history:
+                    self.history["layer_weights"] = []
+                self.history["layer_weights"].append(w_probs)
             return r1, r5, mAP, val_loss, val_pos_dist
 
         return 0.0, 0.0, 0.0, 0.0, 0.0

@@ -241,6 +241,19 @@ def main():
         help='Run name for organizing multiple experiment configurations under the model checkpoint folder (e.g. v1_cls_lr2e-5)'
     )
     parser.add_argument(
+        '--fuse_layers',
+        type=int,
+        default=None,
+        help='Number of trailing DINOv2 layers to fuse with learnable weights (default: 1)'
+    )
+    parser.add_argument(
+        '--triplet_type',
+        type=str,
+        default=None,
+        choices=['hard', 'soft', 'weighted'],
+        help='Triplet loss variant: hard (hinge margin), soft (softplus batch-hard), or weighted (AGW WRT)'
+    )
+    parser.add_argument(
         '--output_dir',
         type=str,
         default=None,
@@ -315,6 +328,8 @@ def main():
     if args.label_smoothing is not None: cfg.label_smoothing = args.label_smoothing
     if args.re_prob is not None: cfg.re_prob = args.re_prob
     if getattr(args, "autoaug_prob", None) is not None: cfg.autoaug_prob = args.autoaug_prob
+    if getattr(args, "fuse_layers", None) is not None: cfg.fuse_layers = args.fuse_layers
+    if getattr(args, "triplet_type", None) is not None: cfg.triplet_type = args.triplet_type
     if getattr(args, "run_name", None) is not None:
         cfg.custom_run_name = args.run_name
     cfg.refresh_run_name(make_dir=True)
@@ -365,7 +380,7 @@ def main():
     oa_sched_dict = None
 
     def is_pretrained(name):
-        if 'NL_' in name or 'nonlocal' in name.lower() or 'gem' in name.lower():
+        if 'NL_' in name or 'nonlocal' in name.lower() or 'gem' in name.lower() or 'layer_weight' in name.lower() or 'fusion' in name.lower():
             return False
         return (
             name.startswith('backbone')

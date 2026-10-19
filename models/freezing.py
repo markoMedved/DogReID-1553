@@ -116,7 +116,7 @@ def apply_freezing(model, cfg):
         _unfreeze(getattr(model, attr, None))
 
     if hasattr(model, "backbone"):
-        for nl in ("NL_1", "NL_2", "NL_3", "NL_4", "gem_p"):
+        for nl in ("NL_1", "NL_2", "NL_3", "NL_4", "gem_p", "layer_weights"):
             _unfreeze(getattr(model.backbone, nl, None))
 
     if hasattr(model, "oa_model"):

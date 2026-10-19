@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=val_base
-#SBATCH --output=log_baseline/val_baseline_%j.out
-#SBATCH --error=log_baseline/val_baseline_%j.err
+#SBATCH --job-name=val_ms35
+#SBATCH --output=log_baseline/val_ms35_45_%j.out
+#SBATCH --error=log_baseline/val_ms35_45_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
@@ -20,10 +20,10 @@ mkdir -p log_baseline checkpoints_baseline
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings: Validation Baseline ---
+# --- Experiment Settings: Validation Baseline (Milestones 35, 45) ---
 MODEL="baseline"
 REID_METHOD="bot"
-RUN_NAME="val_lr2e-5_ep51_ms25-35_bb0.1x"
+RUN_NAME="val_lr2e-5_ep51_ms35-45_bb0.1x"
 POOLING="attention"
 WORLD="closed"
 BATCH_SIZE=32
@@ -37,7 +37,7 @@ OPTIMIZER="adamw"
 BACKBONE_LR_FACTOR=0.1
 UNFREEZE_BLOCKS=2
 LR_SCHED="multistep"
-LR_MILESTONES="25,35"
+LR_MILESTONES="35,45"
 WARMUP_EPOCHS=5
 WARMUP_FACTOR=0.01
 VAL_SPLIT=0.2

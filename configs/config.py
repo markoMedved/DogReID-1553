@@ -25,6 +25,7 @@ class Config:
     embedding_dim   = 768
     num_classes     = 0            # Populated dynamically in train.py from dataset
     dinov2_variant  = "vitb14_reg"
+    fuse_layers     = 1            # Number of trailing transformer layers to fuse (default: 1 = final layer only)
     use_bnneck      = True         # BN-Neck in ReID feature head
     label_smoothing = 0.1          # Label smoothing for identity classification loss
 
@@ -55,6 +56,7 @@ class Config:
     optimizer      = "adamw"       # 'adam', 'adamw', or 'sgd'
     weight_decay   = 1e-05
     margin         = 0.3           # Triplet loss margin α
+    triplet_type   = "hard"        # 'hard' (hinge margin), 'soft' (softplus batch-hard), 'weighted' (AGW WRT)
     id_loss_weight = 1.0
     center_loss_weight = 5e-04     # optional center loss β
     lr             = 2e-05         # base LR (2e-5 for head, 2e-6 for backbone)
