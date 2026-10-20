@@ -43,21 +43,11 @@ WARMUP_FACTOR=0.01
 VAL_SPLIT=0.2
 EVAL_PERIOD=5
 ACCUM_STEPS=2
-NUM_WORKERS=12
+NUM_WORKERS=8
 
-echo "=========================================================="
-echo "Starting Video-to-Video Validation Ablation: Unfreeze 4 Blocks"
-echo "  Model           : ${MODEL} (VideoReID / reid_method=${REID_METHOD})"
-echo "  Run Name        : ${RUN_NAME}"
-echo "  Backbone        : DINOv2 ViT-B/14 (top 4 blocks 8..11 unfrozen)"
-echo "  Unfreeze Blocks : ${UNFREEZE_BLOCKS}"
-echo "  Val Split       : ${VAL_SPLIT} (held-out validation identities)"
-echo "  Optimizer       : ${OPTIMIZER} (weight_decay=${WEIGHT_DECAY})"
-echo "  Learning Rate   : Head ${LR}, Backbone $(python -c "print(${LR} * ${BACKBONE_LR_FACTOR})")"
-echo "  Epochs          : ${EPOCHS} (WarmupMultiStepLR milestones=${LR_MILESTONES})"
-echo "=========================================================="
+PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
 
-python train.py \
+${PYTHON_BIN} train.py \
     --model ${MODEL} \
     --reid_method ${REID_METHOD} \
     --run_name ${RUN_NAME} \

@@ -244,9 +244,11 @@ class TFCLIPVideoModel(nn.Module):
     def forward(self, x: torch.Tensor, targets: torch.Tensor = None):
         """
         Args:
-            x: Video tensor of shape [B, T, C, H, W]
+            x: Video tensor of shape [B, T, C, H, W] or Image tensor [B, C, H, W]
             targets: Optional ground-truth identity labels of shape [B]
         """
+        if x.dim() == 4:
+            x = x.unsqueeze(1)
         B, T, C, H, W = x.shape
         x_flat = x.view(-1, C, H, W)
 

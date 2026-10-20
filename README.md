@@ -46,7 +46,7 @@ In this repository, we provide the **benchmark baseline methods** used to evalua
 ## 🔗 Links
 * **📄 Paper:** (Under review) — Read the full research paper detailing the creation of DogReID-1553, the methodology, and our baseline findings.
 * **📊 Leaderboard:** https://project-puppies.com/leaderboard — View the current state-of-the-art models, compare metrics, and find instructions on how to submit your own model's results.
-* **💾 Dataset:** https://doi.org/10.7910/DVN/LVTRLG — Access and download the dataset
+* **💾 Dataset:** Link currently removed for anonymity reasons, since our paper is under review — Access and download the dataset
 
 ------------------------------------------------------------------------
 ------------------------------------------------------------------------
@@ -55,7 +55,7 @@ In this repository, we provide the **benchmark baseline methods** used to evalua
 ## 1️⃣ Clone the Repository
 
 ``` bash
-git clone https://github.com/markoMedved/DogReID-1553.git
+git clone [repository_name]
 cd DogReID-1553
 ```
 
@@ -108,7 +108,7 @@ pip install pytorch-metric-learning timm ultralytics
 
 Download the dataset from:
 
-https://doi.org/10.7910/DVN/LVTRLG
+Link currently removed since paper is under review for anonymity.
 
 After downloading, unzip Videos.zip and Images.zip into:
 
@@ -240,6 +240,15 @@ The `results` dictionary provides different data depending on the `mode` you sel
 * **`{target}_boot_stats`** *(e.g., `r1_0.01_boot_stats`, `r5_0.1_boot_stats`)*: Dynamically generated dictionaries for the targeted FAR points. Each dictionary contains:
     * **`mean`**: The bootstrap mean DIR score at that specific FAR.
     * **`ci`**: A tuple `(lower, upper)` for the 95% confidence interval at that specific point.
+
+------------------------------------------------------------------------
+
+## 🙏 Acknowledgments
+
+We express our sincere appreciation to the authors and open-source contributors of the following projects, whose models and codebases were adapted and used as part of our benchmark evaluation:
+
+- **[OpenAnimals](https://github.com/hshustc/OpenAnimals)** ([Hou et al.](https://arxiv.org/abs/2404.09241)): A versatile benchmark and framework investigating person re-identification methods for animal re-ID.
+- **[TF-CLIP](https://github.com/AsuradaYuci/TF-CLIP)** ([Yu et al., AAAI 2024](https://arxiv.org/abs/2404.14811)): A state-of-the-art text-free CLIP framework designed for video-based person re-identification.
 
 ------------------------------------------------------------------------
 

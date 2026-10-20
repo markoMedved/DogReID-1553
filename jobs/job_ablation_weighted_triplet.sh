@@ -57,7 +57,9 @@ echo "  Learning Rate   : Head ${LR}, Backbone $(python -c "print(${LR} * ${BACK
 echo "  Epochs          : ${EPOCHS} (WarmupMultiStepLR milestones=${LR_MILESTONES})"
 echo "=========================================================="
 
-python train.py \
+PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
+
+${PYTHON_BIN} train.py \
     --model ${MODEL} \
     --reid_method ${REID_METHOD} \
     --run_name ${RUN_NAME} \

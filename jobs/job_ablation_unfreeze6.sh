@@ -43,7 +43,7 @@ WARMUP_FACTOR=0.01
 VAL_SPLIT=0.2
 EVAL_PERIOD=5
 ACCUM_STEPS=2
-NUM_WORKERS=12
+NUM_WORKERS=8
 
 echo "=========================================================="
 echo "Starting Video-to-Video Validation Ablation: Unfreeze 6 Blocks"
@@ -57,7 +57,9 @@ echo "  Learning Rate   : Head ${LR}, Backbone $(python -c "print(${LR} * ${BACK
 echo "  Epochs          : ${EPOCHS} (WarmupMultiStepLR milestones=${LR_MILESTONES})"
 echo "=========================================================="
 
-python train.py \
+PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
+
+${PYTHON_BIN} train.py \
     --model ${MODEL} \
     --reid_method ${REID_METHOD} \
     --run_name ${RUN_NAME} \

@@ -1,3 +1,4 @@
+# Evaluation-specific distance matrix CSVs and scratch analysis
+csvs*/
 results_analysis.ipynb
 dog_performance_closed_world_mAP_splits_metadata.csv
-csvs_neurips

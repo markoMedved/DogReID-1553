@@ -1,65 +1,51 @@
-Images
-Videos
-Images.zip
-Videos.zip
-trained_models
-checkpoints
-trained_models_neurips
-trained_models_vit
+# =====================================================================
+# DogReID-1553 .gitignore
+# =====================================================================
+
+# --- Datasets & Media ---
+Images/
+Videos/
+*.zip
+*.tar
+*.tar.gz
+sampled_dataset/
+yolo_dataset/
+Random_50_Identities_Videos/
+
+# --- Model Checkpoints & Weights ---
+checkpoints*/
+trained_models*/
+final_models/
 *.pth
-logs
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-test_job.sh
-logs_test
-job.sh
-logs_dl
-logs_val_data_leakage
-trained_models_vit
-trained_models_swin
-trained_models_dinov2
-experiments
-test_logs
-logs_vit
-logs_dinov2
-logs_swin
 *.pt
-dog_data.yaml
-yolo_dataset
-runs
-logs_final
-final_models
-find_params.py
-param_description.md
-get_supplement.py
-sampled_dataset
-dataset_description.md
-csv_construct.md
-test_logs_OLD
-det_job.sh
-logs_det
-logs_final_old
-logs_final_o
-test_logs_o
-params.md
-tests.ipynb
-test.csv
-correct_breeds.py
+
+# --- Cluster & Training Logs ---
+log*/
+logs*/
+logs_baseline
+test_logs*/
+runs/
+
+# --- Evaluation Matrices & Results Data ---
+evaluation/csvs*/
+evaluation/results_data/
+
+# --- Python & Jupyter Cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.ipynb_checkpoints/
+
+# --- IDEs, Environments & OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+*~
+*.tmp
+
+# --- Scratch & Notes ---
 notes.txt
-get_50.py
 renaming_mapping.csv
-Random_50_Identities_Videos
-test_logs2/
-test_logs3/
-test_logs4/
-logs_final_exp/
-logs_final_exp2/
-logs_final_exp3/
-mega_logs/
-logs_jobs/
-logs_old
-log*
-checkpoints*
