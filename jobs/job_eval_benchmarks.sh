@@ -2,7 +2,7 @@
 #SBATCH --job-name=eval_bench
 #SBATCH --output=log_baseline/eval_benchmarks_%j.out
 #SBATCH --error=log_baseline/eval_benchmarks_%j.err
-#SBATCH --time=12:00:00
+#SBATCH --time=1:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
@@ -116,7 +116,7 @@ import os, glob
 from evaluation.evaluation_utils import bootstrap_from_csv
 
 print('\n' + '='*75)
-print(f'CLOSED-WORLD BENCHMARK RESULTS ({OUTPUT_BASE})')
+print(f'CLOSED-WORLD BENCHMARK RESULTS (${OUTPUT_BASE})')
 print('='*75)
 print(f'{\"Model\":<12} | {\"Modality\":<10} | {\"Rank-1 (%)\":<12} | {\"Rank-5 (%)\":<12} | {\"mAP (%)\":<10}')
 print('-'*75)

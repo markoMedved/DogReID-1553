@@ -282,10 +282,14 @@ def detect_num_classes_from_state_dict(state_dict):
         "head.classifier.weight",
         "head.weight",
         "classifier.weight",
+        "classifier2.weight",
+        "classifier_proj.weight",
+        "classifier_proj_temp.weight",
         "b1_head.classifier.weight",
+        "clip_memory",
     ]
     for k, v in state_dict.items():
-        if any(p in k for p in classifier_patterns) and hasattr(v, "shape") and len(v.shape) == 2:
+        if (any(p in k for p in classifier_patterns) or ("classifier" in k and k.endswith(".weight"))) and hasattr(v, "shape") and len(v.shape) == 2:
             return v.shape[0]
     return 0
 
@@ -439,7 +443,16 @@ def main():
                 name = name.replace("temporal_pool.", "temporal_attn.")
             new_state_dict[name] = v
 
-        missing, unexpected = model.load_state_dict(new_state_dict, strict=False)
+        model_state = model.state_dict()
+        filtered_state_dict = OrderedDict()
+        for k, v in new_state_dict.items():
+            if k in model_state and hasattr(v, "shape") and hasattr(model_state[k], "shape"):
+                if v.shape != model_state[k].shape:
+                    print(f"-> [WARNING] Skipping key '{k}' due to shape mismatch: checkpoint {tuple(v.shape)} vs model {tuple(model_state[k].shape)}")
+                    continue
+            filtered_state_dict[k] = v
+
+        missing, unexpected = model.load_state_dict(filtered_state_dict, strict=False)
         if missing:
             print(f"-> [INFO] Missing keys in state_dict: {len(missing)}")
         if unexpected:

@@ -2,7 +2,7 @@
 #SBATCH --job-name=val_unf12
 #SBATCH --output=log_baseline/val_unfreeze12_%j.out
 #SBATCH --error=log_baseline/val_unfreeze12_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --time=16:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
@@ -26,10 +26,10 @@ REID_METHOD="bot"
 RUN_NAME="val_lr2e-5_ep51_ms25-35_unfreeze12"
 POOLING="attention"
 WORLD="closed"
-BATCH_SIZE=32
+BATCH_SIZE=16
 K=4
 CLIP_LEN=8
-CHUNK_SIZE=16
+CHUNK_SIZE=8
 EPOCHS=51
 LR=2e-05
 WEIGHT_DECAY=1e-05
@@ -42,7 +42,7 @@ WARMUP_EPOCHS=5
 WARMUP_FACTOR=0.01
 VAL_SPLIT=0.2
 EVAL_PERIOD=5
-ACCUM_STEPS=2
+ACCUM_STEPS=4
 NUM_WORKERS=8
 
 echo "=========================================================="
