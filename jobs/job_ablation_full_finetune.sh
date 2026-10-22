@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=val_full
-#SBATCH --output=log_baseline/val_full_finetune_%j.out
-#SBATCH --error=log_baseline/val_full_finetune_%j.err
-#SBATCH --time=16:00:00
+#SBATCH --job-name=fin_full
+#SBATCH --output=log_baseline_results/final_full_finetune_%j.out
+#SBATCH --error=log_baseline_results/final_full_finetune_%j.err
+#SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
@@ -16,15 +16,17 @@ export PYTHONUNBUFFERED=1
 
 cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
-mkdir -p log_baseline checkpoints_baseline
+mkdir -p log_baseline_results checkpoints_baseline_results evaluation/csvs_ablations
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings: Full Fine-Tuning (100% of Parameters Trainable) ---
+# --- Ablation from Final Baseline: Full Fine-Tune 100% (Memory-Safe Batch=16, Accum=4) ---
 MODEL="baseline"
 REID_METHOD="bot"
-RUN_NAME="val_lr2e-5_ep51_ms25-35_full_finetune"
+RUN_NAME="final_ablation_full_finetune"
+OUTPUT_DIR="checkpoints_baseline_results/baseline/${RUN_NAME}"
 POOLING="attention"
+REPRESENTATION="cls"
 WORLD="closed"
 BATCH_SIZE=16
 K=4
@@ -35,32 +37,30 @@ LR=2e-05
 WEIGHT_DECAY=1e-05
 OPTIMIZER="adamw"
 BACKBONE_LR_FACTOR=0.1
-LR_SCHED="multistep"
-LR_MILESTONES="25,35"
+LR_SCHED="cosine"
+LR_DELAY_EPOCHS=25
 WARMUP_EPOCHS=5
 WARMUP_FACTOR=0.01
-VAL_SPLIT=0.2
-EVAL_PERIOD=5
+VAL_SPLIT=0.0
+EVAL_PERIOD=51
 ACCUM_STEPS=4
-NUM_WORKERS=8
-
-echo "=========================================================="
-echo "Starting Video-to-Video Validation Ablation: Full Fine-Tuning"
-echo "  Model           : ${MODEL} (VideoReID / reid_method=${REID_METHOD})"
-echo "  Run Name        : ${RUN_NAME}"
-echo "  Backbone        : DINOv2 ViT-B/14 (100% trainable, full fine-tune)"
-echo "  Val Split       : ${VAL_SPLIT} (held-out validation identities)"
-echo "  Optimizer       : ${OPTIMIZER} (weight_decay=${WEIGHT_DECAY})"
-echo "  Learning Rate   : Head ${LR}, Backbone $(python -c "print(${LR} * ${BACKBONE_LR_FACTOR})")"
-echo "  Epochs          : ${EPOCHS} (WarmupMultiStepLR milestones=${LR_MILESTONES})"
-echo "=========================================================="
+NUM_WORKERS=12
 
 PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
+
+echo "=========================================================="
+echo "Starting Final Ablation: Full Fine-Tuning (100% Trainable)"
+echo "  Run Name        : ${RUN_NAME}"
+echo "  Output Dir      : ${OUTPUT_DIR}"
+echo "  Val Split       : ${VAL_SPLIT}"
+echo "=========================================================="
 
 ${PYTHON_BIN} train.py \
     --model ${MODEL} \
     --reid_method ${REID_METHOD} \
     --run_name ${RUN_NAME} \
+    --output_dir ${OUTPUT_DIR} \
+    --representation_type ${REPRESENTATION} \
     --world ${WORLD} \
     --batch_size ${BATCH_SIZE} \
     --k ${K} \
@@ -72,7 +72,7 @@ ${PYTHON_BIN} train.py \
     --weight_decay ${WEIGHT_DECAY} \
     --optimizer ${OPTIMIZER} \
     --lr_sched ${LR_SCHED} \
-    --lr_milestones ${LR_MILESTONES} \
+    --lr_delay_epochs ${LR_DELAY_EPOCHS} \
     --warmup_epochs ${WARMUP_EPOCHS} \
     --warmup_factor ${WARMUP_FACTOR} \
     --val_split ${VAL_SPLIT} \
@@ -83,4 +83,14 @@ ${PYTHON_BIN} train.py \
     --backbone_lr_factor ${BACKBONE_LR_FACTOR} \
     --force_yolo
 
-echo "Full Fine-Tuning Validation job complete!"
+CKPT="${OUTPUT_DIR}/latest_model.pth"
+if [ -f "${CKPT}" ]; then
+    ${PYTHON_BIN} evaluation/make_csv.py \
+        --model baseline \
+        --checkpoint "${CKPT}" \
+        --world closed \
+        --output_dir "evaluation/csvs_ablations/full_finetune_vid2vid" \
+        --batch_size 32
+fi
+
+echo "Final Ablation (Full Fine-Tuning) complete!"

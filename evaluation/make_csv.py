@@ -206,6 +206,7 @@ def auto_discover_checkpoint(model_name: str, run_name: str = None):
         search_names.append(f"oa_{clean_name}")
 
     candidate_root_dirs = [
+        ROOT_DIR / "checkpoints_baseline_results",
         ROOT_DIR / "checkpoints_baseline",
         ROOT_DIR / "checkpoints_resnet",
         ROOT_DIR / "checkpoints_dinov2",
@@ -402,33 +403,38 @@ def main():
         else:
             cfg.num_classes = 0
 
-        # Auto-detect representation_type for DINOv2 / baseline
+        # Auto-detect representation_type, use_bnneck, and fuse_layers for DINOv2 / baseline
         if model_name.lower() in ("dinov2", "baseline", "dinov2_baseline"):
+            bn_dim = None
+            has_bn = False
+            for k in ("bn.weight", "module.bn.weight", "heads.0.bn.weight", "module.heads.0.bn.weight"):
+                if k in state_dict and hasattr(state_dict[k], "shape"):
+                    bn_dim = state_dict[k].shape[0]
+                    has_bn = True
+                    break
+
             if args.representation_type:
                 cfg.representation_type = args.representation_type
             elif "representation_type" in saved_cfg:
                 cfg.representation_type = saved_cfg["representation_type"]
             else:
-                # Check BN neck dimension in state_dict
-                bn_dim = None
-                has_bn = False
-                for k in ("bn.weight", "module.bn.weight"):
-                    if k in state_dict and hasattr(state_dict[k], "shape"):
-                        bn_dim = state_dict[k].shape[0]
-                        has_bn = True
-                        break
                 if bn_dim == 768:
                     cfg.representation_type = "cls"
                 elif bn_dim == 1536:
                     cfg.representation_type = "cls_gem"
-                
-                if "use_bnneck" in saved_cfg:
-                    cfg.use_bnneck = saved_cfg["use_bnneck"]
-                elif not has_bn and "classifier.weight" in state_dict:
-                    cfg.use_bnneck = False
 
-            cfg.embedding_dim = 1536 if cfg.representation_type in ("cls_mean", "gem", "cls_gem") else 768
-            print(f"-> DINOv2 representation_type: '{cfg.representation_type}' (embedding_dim={cfg.embedding_dim}, use_bnneck={getattr(cfg, 'use_bnneck', True)})")
+            if "use_bnneck" in saved_cfg:
+                cfg.use_bnneck = saved_cfg["use_bnneck"]
+            elif not has_bn and any(k in state_dict for k in ("classifier.weight", "heads.0.classifier.weight")):
+                cfg.use_bnneck = False
+
+            if "fuse_layers" in saved_cfg:
+                cfg.fuse_layers = int(saved_cfg["fuse_layers"])
+            elif "backbone.layer_weights" in state_dict:
+                cfg.fuse_layers = int(state_dict["backbone.layer_weights"].shape[0])
+
+            cfg.embedding_dim = 1536 if cfg.representation_type in ("cls_mean", "cls_gem") else 768
+            print(f"-> DINOv2 representation_type: '{cfg.representation_type}' (embedding_dim={cfg.embedding_dim}, use_bnneck={getattr(cfg, 'use_bnneck', True)}, fuse_layers={getattr(cfg, 'fuse_layers', 1)})")
 
     # --- 5. Instantiate Architecture via Model Factory ---
     print(f"-> Building model architecture '{model_name}' (resolution={cfg.img_size}, num_classes={cfg.num_classes})...")

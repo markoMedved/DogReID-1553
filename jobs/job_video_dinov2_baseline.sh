@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=val_ms35
-#SBATCH --output=log_baseline/val_ms35_45_%j.out
-#SBATCH --error=log_baseline/val_ms35_45_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --job-name=fin_base
+#SBATCH --output=log_baseline_results/final_baseline_%j.out
+#SBATCH --error=log_baseline_results/final_baseline_%j.err
+#SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
@@ -16,15 +16,18 @@ export PYTHONUNBUFFERED=1
 
 cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
-mkdir -p log_baseline checkpoints_baseline
+mkdir -p log_baseline_results checkpoints_baseline_results evaluation/csvs_closed_results evaluation/csvs_open_results evaluation/csvs_ablations
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings: Validation Baseline (Milestones 35, 45) ---
+# --- Experiment Settings: Final Chosen Baseline ---
+# Unfreeze 6 blocks | Pure [CLS] token | BNNeck | Random Erasing | Label Smoothing | Batch-Hard Triplet | Cosine Annealing
 MODEL="baseline"
 REID_METHOD="bot"
-RUN_NAME="val_lr2e-5_ep51_ms35-45_bb0.1x"
+RUN_NAME="final_baseline_cos_d25_unfreeze6"
+OUTPUT_DIR="checkpoints_baseline_results/baseline/${RUN_NAME}"
 POOLING="attention"
+REPRESENTATION="cls"
 WORLD="closed"
 BATCH_SIZE=32
 K=4
@@ -35,39 +38,37 @@ LR=2e-05
 WEIGHT_DECAY=1e-05
 OPTIMIZER="adamw"
 BACKBONE_LR_FACTOR=0.1
-UNFREEZE_BLOCKS=2
-LR_SCHED="multistep"
-LR_MILESTONES="35,45"
+UNFREEZE_BLOCKS=6
+LR_SCHED="cosine"
+LR_DELAY_EPOCHS=25
 WARMUP_EPOCHS=5
 WARMUP_FACTOR=0.01
-VAL_SPLIT=0.2
-EVAL_PERIOD=5
+VAL_SPLIT=0.0
+EVAL_PERIOD=51
 ACCUM_STEPS=2
 NUM_WORKERS=12
 
+PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
+
 echo "=========================================================="
-echo "Starting Video-to-Video Validation Experiment: Baseline"
-echo "  Model        : ${MODEL} (VideoReID / reid_method=${REID_METHOD})"
-echo "  Run Name     : ${RUN_NAME}"
-echo "  Backbone     : DINOv2 ViT-B/14 (with registers, D=768 [CLS])"
-echo "  Val Split    : ${VAL_SPLIT} (held-out validation identities)"
-echo "  Pooling      : Temporal Attention (${POOLING})"
-echo "  World        : ${WORLD}"
-echo "  Batch / K    : ${BATCH_SIZE} / ${K} (accum_steps=${ACCUM_STEPS})"
-echo "  Clip Length  : ${CLIP_LEN} frames (chunk_size=${CHUNK_SIZE})"
-echo "  Resolution   : 224x224 (DINOv2 patch size 14x14)"
-echo "  Optimizer    : ${OPTIMIZER} (weight_decay=${WEIGHT_DECAY})"
-echo "  Learning Rate: Head ${LR}, Backbone $(python -c "print(${LR} * ${BACKBONE_LR_FACTOR})")"
-echo "  Epochs       : ${EPOCHS} (${WARMUP_EPOCHS}-epoch warmup, factor=${WARMUP_FACTOR})"
-echo "  Scheduler    : WarmupMultiStepLR (milestones=${LR_MILESTONES}, gamma=0.1)"
-echo "  Unfrozen Blk : top ${UNFREEZE_BLOCKS} blocks (blocks 0..9 frozen)"
-echo "  Workers      : ${NUM_WORKERS}"
+echo "Starting Final Chosen Baseline Training (Full Train Split)"
+echo "  Model           : ${MODEL} (VideoReID / reid_method=${REID_METHOD})"
+echo "  Run Name        : ${RUN_NAME}"
+echo "  Output Dir      : ${OUTPUT_DIR}"
+echo "  Backbone        : DINOv2 ViT-B/14 (with registers, pure [CLS])"
+echo "  Unfreeze Blocks : ${UNFREEZE_BLOCKS} (top 6 blocks 6..11)"
+echo "  Val Split       : ${VAL_SPLIT} (100% train split, test eval at Ep ${EPOCHS})"
+echo "  LR Scheduler    : CosineAnnealingLR (delay=${LR_DELAY_EPOCHS})"
+echo "  Optimizer       : ${OPTIMIZER} (weight_decay=${WEIGHT_DECAY})"
+echo "  Learning Rate   : Head ${LR}, Backbone $(python -c "print(${LR} * ${BACKBONE_LR_FACTOR})")"
 echo "=========================================================="
 
-python train.py \
+${PYTHON_BIN} train.py \
     --model ${MODEL} \
     --reid_method ${REID_METHOD} \
     --run_name ${RUN_NAME} \
+    --output_dir ${OUTPUT_DIR} \
+    --representation_type ${REPRESENTATION} \
     --world ${WORLD} \
     --batch_size ${BATCH_SIZE} \
     --k ${K} \
@@ -79,7 +80,7 @@ python train.py \
     --weight_decay ${WEIGHT_DECAY} \
     --optimizer ${OPTIMIZER} \
     --lr_sched ${LR_SCHED} \
-    --lr_milestones ${LR_MILESTONES} \
+    --lr_delay_epochs ${LR_DELAY_EPOCHS} \
     --warmup_epochs ${WARMUP_EPOCHS} \
     --warmup_factor ${WARMUP_FACTOR} \
     --val_split ${VAL_SPLIT} \
@@ -90,4 +91,46 @@ python train.py \
     --backbone_lr_factor ${BACKBONE_LR_FACTOR} \
     --force_yolo
 
-echo "Validation Baseline job complete!"
+CKPT="${OUTPUT_DIR}/latest_model.pth"
+if [ -f "${CKPT}" ]; then
+    echo "=========================================================="
+    echo "Running Final Test-Set Evaluations for Chosen Baseline..."
+    echo "=========================================================="
+    # 1. Closed-World Video-to-Video
+    ${PYTHON_BIN} evaluation/make_csv.py \
+        --model baseline \
+        --checkpoint "${CKPT}" \
+        --world closed \
+        --output_dir "evaluation/csvs_closed_results/baseline_vid2vid" \
+        --batch_size 32
+    mkdir -p "evaluation/csvs_ablations/baseline_vid2vid"
+    cp "evaluation/csvs_closed_results/baseline_vid2vid/closed_dist_matrix.csv" "evaluation/csvs_ablations/baseline_vid2vid/closed_dist_matrix.csv"
+
+    # 2. Closed-World Image-to-Video
+    ${PYTHON_BIN} evaluation/make_csv.py \
+        --model baseline \
+        --checkpoint "${CKPT}" \
+        --world closed \
+        --query_images \
+        --output_dir "evaluation/csvs_closed_results/baseline_img2vid" \
+        --batch_size 32
+
+    # 3. Open-World Video-to-Video
+    ${PYTHON_BIN} evaluation/make_csv.py \
+        --model baseline \
+        --checkpoint "${CKPT}" \
+        --world open \
+        --output_dir "evaluation/csvs_open_results/baseline_vid2vid" \
+        --batch_size 32
+
+    # 4. Open-World Image-to-Video
+    ${PYTHON_BIN} evaluation/make_csv.py \
+        --model baseline \
+        --checkpoint "${CKPT}" \
+        --world open \
+        --query_images \
+        --output_dir "evaluation/csvs_open_results/baseline_img2vid" \
+        --batch_size 32
+fi
+
+echo "Final Chosen Baseline job complete!"

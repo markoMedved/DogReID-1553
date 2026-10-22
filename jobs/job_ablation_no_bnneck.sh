@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=val_nobn
-#SBATCH --output=log_baseline/val_no_bnneck_%j.out
-#SBATCH --error=log_baseline/val_no_bnneck_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --job-name=fin_nobn
+#SBATCH --output=log_baseline_results/final_no_bnneck_%j.out
+#SBATCH --error=log_baseline_results/final_no_bnneck_%j.err
+#SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
@@ -16,15 +16,17 @@ export PYTHONUNBUFFERED=1
 
 cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
-mkdir -p log_baseline checkpoints_baseline
+mkdir -p log_baseline_results checkpoints_baseline_results evaluation/csvs_ablations
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings: Validation Ablation 1 (No BN-Neck) ---
+# --- Ablation from Final Baseline: No BNNeck ---
 MODEL="baseline"
 REID_METHOD="bot"
-RUN_NAME="val_lr2e-5_ep51_ms25-35_no_bnneck"
+RUN_NAME="final_ablation_no_bnneck"
+OUTPUT_DIR="checkpoints_baseline_results/baseline/${RUN_NAME}"
 POOLING="attention"
+REPRESENTATION="cls"
 WORLD="closed"
 BATCH_SIZE=32
 K=4
@@ -35,32 +37,32 @@ LR=2e-05
 WEIGHT_DECAY=1e-05
 OPTIMIZER="adamw"
 BACKBONE_LR_FACTOR=0.1
-UNFREEZE_BLOCKS=2
-LR_SCHED="multistep"
-LR_MILESTONES="25,35"
+UNFREEZE_BLOCKS=6
+LR_SCHED="cosine"
+LR_DELAY_EPOCHS=25
 WARMUP_EPOCHS=5
 WARMUP_FACTOR=0.01
-VAL_SPLIT=0.2
-EVAL_PERIOD=5
+VAL_SPLIT=0.0
+EVAL_PERIOD=51
 ACCUM_STEPS=2
 NUM_WORKERS=12
 
+PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
+
 echo "=========================================================="
-echo "Starting Video-to-Video Validation Ablation 1: NO BN-Neck"
-echo "  Model        : ${MODEL} (VideoReID / reid_method=${REID_METHOD})"
-echo "  Run Name     : ${RUN_NAME}"
-echo "  Backbone     : DINOv2 ViT-B/14 (with registers, D=768 [CLS])"
-echo "  BN-Neck      : DISABLED (--no_bnneck)"
-echo "  Val Split    : ${VAL_SPLIT} (held-out validation identities)"
-echo "  Optimizer    : ${OPTIMIZER} (weight_decay=${WEIGHT_DECAY})"
-echo "  Learning Rate: Head ${LR}, Backbone $(python -c "print(${LR} * ${BACKBONE_LR_FACTOR})")"
-echo "  Epochs       : ${EPOCHS} (WarmupMultiStepLR milestones=${LR_MILESTONES})"
+echo "Starting Final Ablation: No BNNeck"
+echo "  Run Name        : ${RUN_NAME}"
+echo "  Output Dir      : ${OUTPUT_DIR}"
+echo "  BN-Neck         : DISABLED (--no_bnneck)"
+echo "  Unfreeze Blocks : ${UNFREEZE_BLOCKS}"
 echo "=========================================================="
 
-python train.py \
+${PYTHON_BIN} train.py \
     --model ${MODEL} \
     --reid_method ${REID_METHOD} \
     --run_name ${RUN_NAME} \
+    --output_dir ${OUTPUT_DIR} \
+    --representation_type ${REPRESENTATION} \
     --no_bnneck \
     --world ${WORLD} \
     --batch_size ${BATCH_SIZE} \
@@ -73,7 +75,7 @@ python train.py \
     --weight_decay ${WEIGHT_DECAY} \
     --optimizer ${OPTIMIZER} \
     --lr_sched ${LR_SCHED} \
-    --lr_milestones ${LR_MILESTONES} \
+    --lr_delay_epochs ${LR_DELAY_EPOCHS} \
     --warmup_epochs ${WARMUP_EPOCHS} \
     --warmup_factor ${WARMUP_FACTOR} \
     --val_split ${VAL_SPLIT} \
@@ -84,4 +86,14 @@ python train.py \
     --backbone_lr_factor ${BACKBONE_LR_FACTOR} \
     --force_yolo
 
-echo "Validation Ablation 1 (No BN-Neck) complete!"
+CKPT="${OUTPUT_DIR}/latest_model.pth"
+if [ -f "${CKPT}" ]; then
+    ${PYTHON_BIN} evaluation/make_csv.py \
+        --model baseline \
+        --checkpoint "${CKPT}" \
+        --world closed \
+        --output_dir "evaluation/csvs_ablations/no_bnneck_vid2vid" \
+        --batch_size 32
+fi
+
+echo "Final Ablation (No BNNeck) complete!"

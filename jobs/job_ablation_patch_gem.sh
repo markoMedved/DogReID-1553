@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=val_pgem
-#SBATCH --output=log_baseline/val_patch_gem_%j.out
-#SBATCH --error=log_baseline/val_patch_gem_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --job-name=fin_pgem
+#SBATCH --output=log_baseline_results/final_patch_gem_%j.out
+#SBATCH --error=log_baseline_results/final_patch_gem_%j.err
+#SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
@@ -16,16 +16,17 @@ export PYTHONUNBUFFERED=1
 
 cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
 
-mkdir -p log_baseline checkpoints_baseline
+mkdir -p log_baseline_results checkpoints_baseline_results evaluation/csvs_ablations
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings: Representation Ablation (Patch GeM, D=768, learnable p=3.0) ---
+# --- Ablation from Final Baseline: Patch GeM Token Representation ---
 MODEL="baseline"
 REID_METHOD="bot"
-REPRESENTATION="patch_gem"
-RUN_NAME="val_lr2e-5_ep51_ms25-35_patch_gem"
+RUN_NAME="final_ablation_patch_gem"
+OUTPUT_DIR="checkpoints_baseline_results/baseline/${RUN_NAME}"
 POOLING="attention"
+REPRESENTATION="gem"
 WORLD="closed"
 BATCH_SIZE=32
 K=4
@@ -36,32 +37,32 @@ LR=2e-05
 WEIGHT_DECAY=1e-05
 OPTIMIZER="adamw"
 BACKBONE_LR_FACTOR=0.1
-UNFREEZE_BLOCKS=2
-LR_SCHED="multistep"
-LR_MILESTONES="25,35"
+UNFREEZE_BLOCKS=6
+LR_SCHED="cosine"
+LR_DELAY_EPOCHS=25
 WARMUP_EPOCHS=5
 WARMUP_FACTOR=0.01
-VAL_SPLIT=0.2
-EVAL_PERIOD=5
+VAL_SPLIT=0.0
+EVAL_PERIOD=51
 ACCUM_STEPS=2
 NUM_WORKERS=12
 
+PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
+
 echo "=========================================================="
-echo "Starting Video-to-Video Validation Ablation: Patch GeM (D=768)"
-echo "  Model           : ${MODEL} (VideoReID / reid_method=${REID_METHOD})"
+echo "Starting Final Ablation: Patch GeM Token Representation"
 echo "  Run Name        : ${RUN_NAME}"
-echo "  Representation  : ${REPRESENTATION} (Learnable GeM p=3.0 over 256 patch tokens, D=768)"
-echo "  Val Split       : ${VAL_SPLIT} (held-out validation identities)"
-echo "  Optimizer       : ${OPTIMIZER} (weight_decay=${WEIGHT_DECAY})"
-echo "  Learning Rate   : Head ${LR}, Backbone $(python -c "print(${LR} * ${BACKBONE_LR_FACTOR})")"
-echo "  Epochs          : ${EPOCHS} (WarmupMultiStepLR milestones=${LR_MILESTONES})"
+echo "  Output Dir      : ${OUTPUT_DIR}"
+echo "  Representation  : ${REPRESENTATION}"
+echo "  Unfreeze Blocks : ${UNFREEZE_BLOCKS}"
 echo "=========================================================="
 
-python train.py \
+${PYTHON_BIN} train.py \
     --model ${MODEL} \
     --reid_method ${REID_METHOD} \
-    --representation_type ${REPRESENTATION} \
     --run_name ${RUN_NAME} \
+    --output_dir ${OUTPUT_DIR} \
+    --representation_type ${REPRESENTATION} \
     --world ${WORLD} \
     --batch_size ${BATCH_SIZE} \
     --k ${K} \
@@ -73,7 +74,7 @@ python train.py \
     --weight_decay ${WEIGHT_DECAY} \
     --optimizer ${OPTIMIZER} \
     --lr_sched ${LR_SCHED} \
-    --lr_milestones ${LR_MILESTONES} \
+    --lr_delay_epochs ${LR_DELAY_EPOCHS} \
     --warmup_epochs ${WARMUP_EPOCHS} \
     --warmup_factor ${WARMUP_FACTOR} \
     --val_split ${VAL_SPLIT} \
@@ -84,4 +85,14 @@ python train.py \
     --backbone_lr_factor ${BACKBONE_LR_FACTOR} \
     --force_yolo
 
-echo "Validation Ablation (Patch GeM) complete!"
+CKPT="${OUTPUT_DIR}/latest_model.pth"
+if [ -f "${CKPT}" ]; then
+    ${PYTHON_BIN} evaluation/make_csv.py \
+        --model baseline \
+        --checkpoint "${CKPT}" \
+        --world closed \
+        --output_dir "evaluation/csvs_ablations/patch_gem_vid2vid" \
+        --batch_size 32
+fi
+
+echo "Final Ablation (Patch GeM) complete!"

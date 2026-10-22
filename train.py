@@ -332,7 +332,7 @@ def main():
     if getattr(args, "triplet_type", None) is not None: cfg.triplet_type = args.triplet_type
     if getattr(args, "run_name", None) is not None:
         cfg.custom_run_name = args.run_name
-    cfg.refresh_run_name(make_dir=True)
+    cfg.refresh_run_name(make_dir=(getattr(args, "output_dir", None) is None))
     if hasattr(args, "output_dir") and args.output_dir is not None:
         from pathlib import Path
         cfg.output_dir = Path(args.output_dir)
