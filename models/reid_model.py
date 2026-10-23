@@ -136,6 +136,137 @@ class DINOv2Adapter(nn.Module):
         return self._aggregate_tokens(normed)
 
 
+class CLIPAdapter(nn.Module):
+    """OpenAI CLIP ViT-B/16 visual backbone (same backbone as TF-CLIP) adapted for VideoReID."""
+
+    def __init__(self, img_size=(224, 224), representation_type: str = "cls", gem_p: float = 3.0, fuse_layers: int = 1):
+        super().__init__()
+        from .tfclip.clip_model import load_clip_vitb16
+
+        img_h, img_w = img_size if isinstance(img_size, (tuple, list)) else (224, 224)
+        stride = 16
+        h_resolution = (img_h - 16) // stride + 1
+        w_resolution = (img_w - 16) // stride + 1
+
+        self.net = load_clip_vitb16(
+            h_resolution=h_resolution,
+            w_resolution=w_resolution,
+            patch_size=16,
+            stride_size=stride,
+        )
+        # Remove unused 768->512 CLIP text-space projection so we use full 768-d features like DINOv2
+        self.net.proj = None
+
+        base_dim = 768
+        self.representation_type = (representation_type or "cls").lower()
+        if self.representation_type in ("cls_mean", "cls_gem"):
+            self.dim = base_dim * 2
+        elif self.representation_type in ("cls", "patch_mean", "mean", "patch_gem", "gem"):
+            self.dim = base_dim
+        else:
+            raise ValueError(f"Unknown representation_type: {representation_type!r}")
+
+        if self.representation_type in ("patch_gem", "gem", "cls_gem"):
+            self.gem_p = nn.Parameter(torch.ones(1) * float(gem_p))
+
+        self.fuse_layers = max(1, int(fuse_layers))
+        if self.fuse_layers > 1:
+            self.layer_weights = nn.Parameter(torch.zeros(self.fuse_layers))
+
+    @property
+    def last_block(self):
+        return self.net.transformer.resblocks[-1]
+
+    @property
+    def final_norm(self):
+        return self.net.ln_post
+
+    @property
+    def depth(self):
+        return len(self.net.transformer.resblocks)
+
+    def _prepare_tokens(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.net.conv1(x)
+        x = x.reshape(x.shape[0], x.shape[1], -1).permute(0, 2, 1)
+        cls_token = self.net.class_embedding.to(x.dtype) + torch.zeros(
+            x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device
+        )
+        x = torch.cat([cls_token, x], dim=1)
+        x = x + self.net.positional_embedding.to(x.dtype)
+        x = self.net.ln_pre(x)
+        return x.permute(1, 0, 2)  # [L, B, D] expected by CLIP MultiheadAttention
+
+    def _run_blocks(self, tokens, blocks, n_grad, return_intermediate=None):
+        split = max(len(blocks) - n_grad, 0) if n_grad is not None else 0
+        intermediate = []
+        take_indices = set(return_intermediate) if return_intermediate is not None else set()
+
+        if split:
+            with torch.no_grad():
+                for i, block in enumerate(blocks[:split]):
+                    tokens = block(tokens)
+                    if i in take_indices:
+                        intermediate.append(tokens)
+        for i, block in enumerate(blocks[split:], start=split):
+            tokens = block(tokens)
+            if i in take_indices:
+                intermediate.append(tokens)
+
+        if return_intermediate is not None:
+            return tokens, intermediate
+        return tokens
+
+    def _aggregate_tokens(self, normed_tokens):
+        cls_tok = normed_tokens[:, 0]
+        if self.representation_type == "cls":
+            return cls_tok
+
+        patch_toks = normed_tokens[:, 1:]
+        if self.representation_type in ("patch_mean", "mean"):
+            return patch_toks.mean(dim=1)
+        if self.representation_type in ("patch_gem", "gem"):
+            p = self.gem_p.clamp(min=1.0)
+            return (patch_toks.clamp(min=1e-6).pow(p).mean(dim=1)).pow(1.0 / p)
+        if self.representation_type == "cls_mean":
+            return torch.cat([cls_tok, patch_toks.mean(dim=1)], dim=-1)
+        if self.representation_type == "cls_gem":
+            p = self.gem_p.clamp(min=1.0)
+            patch_gem = (patch_toks.clamp(min=1e-6).pow(p).mean(dim=1)).pow(1.0 / p)
+            return torch.cat([cls_tok, patch_gem], dim=-1)
+        raise ValueError(f"Unknown representation_type: {self.representation_type!r}")
+
+    def pooled(self, x, n_grad=None):
+        blocks = self.net.transformer.resblocks
+        if self.fuse_layers > 1:
+            total_blocks = len(blocks)
+            take_indices = list(range(total_blocks - self.fuse_layers, total_blocks))
+            if n_grad is None:
+                tokens = self._prepare_tokens(x)
+                _, intermediate = self._run_blocks(tokens, blocks, None, return_intermediate=take_indices)
+            else:
+                with torch.no_grad():
+                    tokens = self._prepare_tokens(x)
+                _, intermediate = self._run_blocks(tokens, blocks, n_grad, return_intermediate=take_indices)
+
+            layer_feats = []
+            for tok in intermediate:
+                normed = self.net.ln_post(tok.permute(1, 0, 2))
+                layer_feats.append(self._aggregate_tokens(normed))
+
+            weights = F.softmax(self.layer_weights, dim=0)
+            return sum(w * f for w, f in zip(weights, layer_feats))
+
+        if n_grad is None:
+            tokens = self._prepare_tokens(x)
+            tokens = self._run_blocks(tokens, blocks, None)
+        else:
+            with torch.no_grad():
+                tokens = self._prepare_tokens(x)
+            tokens = self._run_blocks(tokens, blocks, n_grad)
+        normed = self.net.ln_post(tokens.permute(1, 0, 2))
+        return self._aggregate_tokens(normed)
+
+
 def build_backbone(cfg):
     """Instantiate the backbone adapter named by cfg.backbone."""
     name = str(getattr(cfg, "backbone", getattr(cfg, "model", "dinov2"))).lower()
@@ -143,6 +274,14 @@ def build_backbone(cfg):
     if name in ("dinov2", "baseline", "dinov2_baseline"):
         return DINOv2Adapter(
             variant=getattr(cfg, "dinov2_variant", "vitb14_reg"),
+            representation_type=getattr(cfg, "representation_type", "cls"),
+            gem_p=getattr(cfg, "gem_p", 3.0),
+            fuse_layers=getattr(cfg, "fuse_layers", 1),
+        )
+
+    if name in ("clip_baseline", "baseline_clip"):
+        return CLIPAdapter(
+            img_size=getattr(cfg, "img_size", (224, 224)),
             representation_type=getattr(cfg, "representation_type", "cls"),
             gem_p=getattr(cfg, "gem_p", 3.0),
             fuse_layers=getattr(cfg, "fuse_layers", 1),

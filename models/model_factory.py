@@ -41,8 +41,8 @@ def build_model(cfg):
         from .tfclip import TFCLIPVideoModel
         return TFCLIPVideoModel(cfg)
 
-    # --- DINOv2 BoT Video Re-ID Baseline (from clip-reid) ---
-    if getattr(cfg, "reid_method", None) == "bot" or model_type_str in ("dinov2", "baseline", "dinov2_baseline"):
+    # --- DINOv2 / CLIP BoT Video Re-ID Baseline ---
+    if getattr(cfg, "reid_method", None) == "bot" or model_type_str in ("dinov2", "baseline", "dinov2_baseline", "clip_baseline", "baseline_clip"):
         return VideoReID(cfg)
 
     else:

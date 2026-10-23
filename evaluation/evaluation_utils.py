@@ -1,6 +1,7 @@
 import pandas as pd
 import torch
 import numpy as np
+import pickle
 from tqdm import tqdm
 from torch.nn import functional as F
 from pathlib import Path
@@ -57,9 +58,19 @@ def generate_distance_csv(
 ) -> Path:
     """Generate a distance csv from features gotten with model inference"""
 
-    # --- Get teh features for gallery and query samples ---
+    # --- Get the features for gallery and query samples ---
     q_feat, q_ids = extract_features_with_ids(model, query_loader, cfg.device)
+    del query_loader
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     g_feat, g_ids = extract_features_with_ids(model, gallery_loader, cfg.device)
+    del gallery_loader
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     # --- Compute the distance matrix ---
     print("-> Computing Distance Matrix...")
@@ -85,13 +96,33 @@ def bootstrap_from_csv(
     m: int = 100,
     mode: str = "closed",
     random_state: int = 42,
+    use_cache: bool = True,
+    force_recompute: bool = False,
 ) -> dict:
-    """Use boostrap for uncertainty quantification + Full Set evaluation"""
+    """Use bootstrap for uncertainty quantification + Full Set evaluation.
+    
+    Automatically caches computed metrics alongside the CSV so subsequent notebook
+    runs load instantly without recomputing bootstrap iterations.
+    """
     
     if mode not in ("closed", "open"):
         raise ValueError(f"mode must be 'closed' or 'open', got '{mode}'")
 
-    # --- Load ---
+    p = Path(csv_path)
+    cache_file = p.parent / f"bootstrap_cache_{mode}_m{m}_seed{random_state}.pkl"
+
+    # --- Cache Lookup ---
+    if use_cache and not force_recompute and cache_file.exists():
+        try:
+            if cache_file.stat().st_mtime >= p.stat().st_mtime:
+                with open(cache_file, "rb") as f:
+                    cached_data = pickle.load(f)
+                print(f"-> [CACHE HIT] Loaded precomputed {mode} metrics for {p.name} (from {cache_file.name})")
+                return cached_data
+        except Exception as e:
+            print(f"-> [CACHE WARNING] Could not read cache ({e}), recomputing...")
+
+    # --- Load CSV ---
     df_full = pd.read_csv(csv_path)
     get_id = lambda x: str(x).rsplit('_', 1)[0]
 
@@ -138,7 +169,18 @@ def bootstrap_from_csv(
             )
         boot_results.append(res)
 
-    return _aggregate_bootstrap_results(boot_results, mode, full_set_res)
+    final_output = _aggregate_bootstrap_results(boot_results, mode, full_set_res)
+
+    # --- Save Cache ---
+    if use_cache:
+        try:
+            with open(cache_file, "wb") as f:
+                pickle.dump(final_output, f)
+            print(f"-> [CACHE SAVED] Saved bootstrap metrics to {cache_file.name}")
+        except Exception as e:
+            print(f"-> [CACHE WARNING] Could not write cache ({e})")
+
+    return final_output
 
 
 

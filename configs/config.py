@@ -272,7 +272,7 @@ class Config:
             self.lr_sched = "multistep"
             self.lr_milestones = (15, 30)
             self.backbone_drop_epoch = 5
-        elif "dinov2" in self.backbone or self.backbone == "baseline":
+        elif "dinov2" in self.backbone or self.backbone in ("baseline", "clip_baseline", "baseline_clip"):
             # Exact settings from trained_models_neurips/dinov2_bot_closed_attention_finetune_False/model_params.json
             self.reid_method = "bot"
             rep_type = str(getattr(self, "representation_type", "cls")).lower()

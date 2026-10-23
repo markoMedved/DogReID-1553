@@ -62,6 +62,14 @@ def _unfreeze_last_blocks(net, n=2):
             _unfreeze(getattr(net, "norm", None))
         return True
 
+    # --- CLIP ViT (transformer.resblocks + ln_post) ---
+    if hasattr(net, "transformer") and hasattr(net.transformer, "resblocks"):
+        for block in _last_n(net.transformer.resblocks, n):
+            _unfreeze(block)
+        if n > 0:
+            _unfreeze(getattr(net, "ln_post", None))
+        return True
+
     # --- Sequential backbone (e.g. MGN backbone) ---
     if isinstance(net, nn.Sequential):
         if n > 0:

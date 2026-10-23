@@ -364,13 +364,19 @@ def main():
     cfg.pooling_type = pooling_type
     cfg.world = world_type
     cfg.test_batch_size = args.batch_size
+    target_clip_len = None
     if args.clip_len:
-        cfg.clip_len = args.clip_len
+        target_clip_len = args.clip_len
     elif "clip_len" in saved_cfg:
-        cfg.clip_len = saved_cfg["clip_len"]
+        target_clip_len = saved_cfg["clip_len"]
 
     # Auto-adjust model settings (sets correct resolution: 384x384 for arbase/mgn, 256x128 for bot/agw, etc.)
     cfg.update_model_settings()
+
+    # Apply clip_len AFTER update_model_settings so it is not overwritten
+    if target_clip_len is not None:
+        cfg.clip_len = target_clip_len
+    print(f"-> Active Clip Length: {cfg.clip_len} frames")
 
     # If config.json had a specific img_size, respect it
     if "img_size" in saved_cfg:
@@ -404,10 +410,15 @@ def main():
             cfg.num_classes = 0
 
         # Auto-detect representation_type, use_bnneck, and fuse_layers for DINOv2 / baseline
-        if model_name.lower() in ("dinov2", "baseline", "dinov2_baseline"):
+        if model_name.lower() in ("dinov2", "baseline", "dinov2_baseline", "clip_baseline", "baseline_clip"):
             bn_dim = None
             has_bn = False
-            for k in ("bn.weight", "module.bn.weight", "heads.0.bn.weight", "module.heads.0.bn.weight"):
+            for k in (
+                "bn.weight", "module.bn.weight",
+                "heads.0.bn.weight", "module.heads.0.bn.weight",
+                "heads.0.bottleneck.weight", "module.heads.0.bottleneck.weight",
+                "bottleneck.weight", "module.bottleneck.weight",
+            ):
                 if k in state_dict and hasattr(state_dict[k], "shape"):
                     bn_dim = state_dict[k].shape[0]
                     has_bn = True

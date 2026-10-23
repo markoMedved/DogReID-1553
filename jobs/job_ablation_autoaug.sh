@@ -85,16 +85,21 @@ ${PYTHON_BIN} train.py \
     --num_workers ${NUM_WORKERS} \
     --unfreeze_blocks ${UNFREEZE_BLOCKS} \
     --backbone_lr_factor ${BACKBONE_LR_FACTOR} \
-    --force_yolo
+    --force_yolo \
+    --resume
 
-CKPT="${OUTPUT_DIR}/latest_model.pth"
-if [ -f "${CKPT}" ]; then
-    ${PYTHON_BIN} evaluation/make_csv.py \
-        --model baseline \
-        --checkpoint "${CKPT}" \
-        --world closed \
-        --output_dir "evaluation/csvs_ablations/autoaug_vid2vid" \
-        --batch_size 32
+if [ $? -eq 0 ]; then
+    CKPT="${OUTPUT_DIR}/latest_model.pth"
+    if [ -f "${CKPT}" ]; then
+        ${PYTHON_BIN} evaluation/make_csv.py \
+            --model baseline \
+            --checkpoint "${CKPT}" \
+            --world closed \
+            --output_dir "evaluation/csvs_ablations/autoaug_vid2vid" \
+            --batch_size 32
+    fi
+    echo "Final Ablation (AutoAugment) complete!"
+else
+    echo "[ERROR] Training failed! Skipping evaluation."
+    exit 1
 fi
-
-echo "Final Ablation (AutoAugment) complete!"

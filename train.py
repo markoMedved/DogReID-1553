@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--val_split', type=float, default=None, help='Validation split ratio (e.g., 0.2 for 20%% validation)')
     parser.add_argument('--eval_period', type=int, default=None, help='Evaluation frequency in epochs (default from config: 1)')
     parser.add_argument('--num_workers', type=int, default=None, help='Number of dataloader workers')
+    parser.add_argument('--img_size', type=int, nargs='+', default=None, help='Image resolution as H W, e.g. 256 128 or 384 384')
 
     # Re-ID methodology flags
     parser.add_argument(
@@ -293,6 +294,8 @@ def main():
     if hasattr(args, "force_yolo") and args.force_yolo is not None:
         cfg.force_yolo = args.force_yolo
     if args.world is not None: cfg.world = args.world
+    if getattr(args, "img_size", None) is not None:
+        cfg.img_size = tuple(args.img_size) if len(args.img_size) == 2 else (args.img_size[0], args.img_size[0])
     if args.clip_len is not None: cfg.clip_len = args.clip_len
     if args.use_images:
         cfg.use_videos = False

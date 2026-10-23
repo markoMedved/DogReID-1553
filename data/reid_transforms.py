@@ -23,6 +23,8 @@ from torchvision import transforms
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
+CLIP_MEAN = [0.48145466, 0.4578275, 0.40821073]
+CLIP_STD = [0.26862954, 0.26130258, 0.27577711]
 
 
 class RandomErasing:
@@ -62,13 +64,17 @@ class RandomErasing:
 def build_transforms(cfg, is_train: bool):
     """Build the per-frame transform pipeline."""
     size = tuple(getattr(cfg, "img_size", (256, 192)))
+    bb = str(getattr(cfg, "backbone", getattr(cfg, "model", ""))).lower()
+    is_clip_bb = bb in ("clip_baseline", "baseline_clip")
+    norm_mean = CLIP_MEAN if is_clip_bb else IMAGENET_MEAN
+    norm_std = CLIP_STD if is_clip_bb else IMAGENET_STD
 
     if not is_train:
         # --- Deterministic Evaluation Transforms ---
         return transforms.Compose([
             transforms.Resize(size, interpolation=transforms.InterpolationMode.BICUBIC),
             transforms.ToTensor(),
-            transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+            transforms.Normalize(norm_mean, norm_std),
         ])
 
     # --- Training Augmentations ---
@@ -90,7 +96,7 @@ def build_transforms(cfg, is_train: bool):
         transforms.Pad(pad),
         transforms.RandomCrop(size),
         transforms.ToTensor(),
-        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+        transforms.Normalize(norm_mean, norm_std),
         RandomErasing(probability=getattr(cfg, "re_prob", 0.5)),
     ]
     return transforms.Compose(tfs)
