@@ -117,8 +117,11 @@ def bootstrap_from_csv(
             if cache_file.stat().st_mtime >= p.stat().st_mtime:
                 with open(cache_file, "rb") as f:
                     cached_data = pickle.load(f)
-                print(f"-> [CACHE HIT] Loaded precomputed {mode} metrics for {p.name} (from {cache_file.name})")
-                return cached_data
+                if (mode == "closed" and "cmc_std" in cached_data) or (mode == "open" and "dirs_r1_std" in cached_data):
+                    print(f"-> [CACHE HIT] Loaded precomputed {mode} metrics for {p.name} (from {cache_file.name})")
+                    return cached_data
+                else:
+                    print(f"-> [CACHE REFRESH] Cache missing SD metrics for {p.name}, recomputing...")
         except Exception as e:
             print(f"-> [CACHE WARNING] Could not read cache ({e}), recomputing...")
 
@@ -307,6 +310,7 @@ def _aggregate_bootstrap_results(results: list[dict], mode: str, full_set_res: d
             "mAP_std":       float(np.std(maps)),
             "mAP_ci":        (float(np.percentile(maps, 2.5)), float(np.percentile(maps, 97.5))),
             "cmc_boot_mean": np.mean(cmcs, axis=0),
+            "cmc_std":       np.std(cmcs, axis=0),
             "cmc_ci_lower":  np.percentile(cmcs, 2.5, axis=0),
             "cmc_ci_upper":  np.percentile(cmcs, 97.5, axis=0),
         })
@@ -314,13 +318,15 @@ def _aggregate_bootstrap_results(results: list[dict], mode: str, full_set_res: d
     else:
         # --- Open world aggregation ---
         all_dirs_r1 = np.array([r["dirs_r1"] for r in results])
-        all_dirs_r5 = np.array([r["dirs_r5"] for r in results]) # Added this
+        all_dirs_r5 = np.array([r["dirs_r5"] for r in results])
         all_fars    = np.array([r["fars"] for r in results])
 
         final_output.update({
             "fars_boot_mean":    np.mean(all_fars, axis=0),
             "dirs_r1_boot_mean": np.mean(all_dirs_r1, axis=0),
-            "dirs_r5_boot_mean": np.mean(all_dirs_r5, axis=0), # Added this
+            "dirs_r1_std":       np.std(all_dirs_r1, axis=0),
+            "dirs_r5_boot_mean": np.mean(all_dirs_r5, axis=0),
+            "dirs_r5_std":       np.std(all_dirs_r5, axis=0),
             # These keys match the tuple-based access used in the updated plot/print code
             "dirs_r1_ci": (np.percentile(all_dirs_r1, 2.5, axis=0), np.percentile(all_dirs_r1, 97.5, axis=0)),
             "dirs_r5_ci": (np.percentile(all_dirs_r5, 2.5, axis=0), np.percentile(all_dirs_r5, 97.5, axis=0)),

@@ -363,6 +363,7 @@ def main():
     cfg.backbone = model_name
     cfg.pooling_type = pooling_type
     cfg.world = world_type
+    cfg.batch_size = args.batch_size
     cfg.test_batch_size = args.batch_size
     target_clip_len = None
     if args.clip_len:

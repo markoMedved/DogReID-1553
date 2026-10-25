@@ -268,8 +268,8 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
     if test_workers > 0:
         loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
 
-    # Capped at 32 clips: 128 clips x 8 frames x 384^2 per batch exhausts host RAM
-    test_batch_size = min(cfg.batch_size, 32)
+    # Respect test_batch_size if specified (e.g. for long clips to prevent host RAM OOM)
+    test_batch_size = min(getattr(cfg, "test_batch_size", cfg.batch_size), 32)
     query_loader = DataLoader(
         query_dataset, batch_size=test_batch_size,
         shuffle=False, **loader_kwargs

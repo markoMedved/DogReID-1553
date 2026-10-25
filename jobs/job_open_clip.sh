@@ -1,0 +1,121 @@
+#!/bin/bash
+#SBATCH --job-name=open_clip
+#SBATCH --output=log_open_results/open_clip_%j.out
+#SBATCH --error=log_open_results/open_clip_%j.err
+#SBATCH --time=24:00:00
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=96G
+
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate project
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export PYTHONUNBUFFERED=1
+
+cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
+
+mkdir -p log_open_results checkpoints_open_results evaluation/csvs_open_results
+
+echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
+
+# --- Experiment Settings: Open-World CLIP ViT-B/16 Visual Backbone (Baseline Recipe) ---
+MODEL="clip_baseline"
+REID_METHOD="bot"
+RUN_NAME="open_clip_cos_d25_unfreeze6"
+OUTPUT_DIR="checkpoints_open_results/clip_baseline/${RUN_NAME}"
+POOLING="attention"
+REPRESENTATION="cls"
+WORLD="open"
+BATCH_SIZE=32
+K=4
+CLIP_LEN=8
+CHUNK_SIZE=16
+EPOCHS=51
+LR=2e-05
+WEIGHT_DECAY=1e-05
+OPTIMIZER="adamw"
+BACKBONE_LR_FACTOR=0.1
+UNFREEZE_BLOCKS=6
+LR_SCHED="cosine"
+LR_DELAY_EPOCHS=25
+WARMUP_EPOCHS=5
+WARMUP_FACTOR=0.01
+VAL_SPLIT=0.0
+EVAL_PERIOD=51
+ACCUM_STEPS=2
+NUM_WORKERS=12
+
+PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
+
+echo "=========================================================="
+echo "Starting Open-World Training: CLIP ViT-B/16 (Baseline Recipe)"
+echo "  Model           : ${MODEL} (VideoReID / reid_method=${REID_METHOD})"
+echo "  Run Name        : ${RUN_NAME}"
+echo "  Output Dir      : ${OUTPUT_DIR}"
+echo "  World           : ${WORLD}"
+echo "  Backbone        : OpenAI CLIP ViT-B/16 (pure [CLS] token)"
+echo "  Unfreeze Blocks : ${UNFREEZE_BLOCKS} (top 6 blocks 6..11)"
+echo "  Epochs          : ${EPOCHS} (5-epoch warmup, cosine delay=${LR_DELAY_EPOCHS})"
+echo "=========================================================="
+
+${PYTHON_BIN} train.py \
+    --model ${MODEL} \
+    --reid_method ${REID_METHOD} \
+    --run_name ${RUN_NAME} \
+    --output_dir ${OUTPUT_DIR} \
+    --representation_type ${REPRESENTATION} \
+    --world ${WORLD} \
+    --batch_size ${BATCH_SIZE} \
+    --k ${K} \
+    --clip_len ${CLIP_LEN} \
+    --chunk_size ${CHUNK_SIZE} \
+    --pooling_type ${POOLING} \
+    --epochs ${EPOCHS} \
+    --lr ${LR} \
+    --weight_decay ${WEIGHT_DECAY} \
+    --optimizer ${OPTIMIZER} \
+    --lr_sched ${LR_SCHED} \
+    --lr_delay_epochs ${LR_DELAY_EPOCHS} \
+    --warmup_epochs ${WARMUP_EPOCHS} \
+    --warmup_factor ${WARMUP_FACTOR} \
+    --val_split ${VAL_SPLIT} \
+    --eval_period ${EVAL_PERIOD} \
+    --accum_steps ${ACCUM_STEPS} \
+    --num_workers ${NUM_WORKERS} \
+    --unfreeze_blocks ${UNFREEZE_BLOCKS} \
+    --backbone_lr_factor ${BACKBONE_LR_FACTOR} \
+    --force_yolo \
+    --resume
+
+if [ $? -eq 0 ]; then
+    CKPT="${OUTPUT_DIR}/latest_model.pth"
+    if [ -f "${CKPT}" ]; then
+        echo "=========================================================="
+        echo "Running Open-World Test-Set Evaluations for CLIP..."
+        echo "=========================================================="
+        # 1. Open-World Video-to-Video
+        ${PYTHON_BIN} evaluation/make_csv.py \
+            --model clip_baseline \
+            --checkpoint "${CKPT}" \
+            --world open \
+            --output_dir "evaluation/csvs_open_results/clip_baseline_vid2vid" \
+            --batch_size 32
+        ln -sfn clip_baseline_vid2vid evaluation/csvs_open_results/clip_vid2vid
+
+        # 2. Open-World Image-to-Video
+        ${PYTHON_BIN} evaluation/make_csv.py \
+            --model clip_baseline \
+            --checkpoint "${CKPT}" \
+            --world open \
+            --query_images \
+            --output_dir "evaluation/csvs_open_results/clip_baseline_img2vid" \
+            --batch_size 32
+        ln -sfn clip_baseline_img2vid evaluation/csvs_open_results/clip_img2vid
+    fi
+    echo "Open-World CLIP job complete!"
+else
+    echo "[ERROR] Training failed! Skipping evaluation."
+    exit 1
+fi
