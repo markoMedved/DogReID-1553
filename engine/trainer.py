@@ -422,8 +422,10 @@ class Trainer:
         oa_cfg = getattr(self.model, "oa_cfg", None)
         if oa_cfg is None:
             return []
-        layers = list(oa_cfg.MODEL.FREEZE_LAYERS)
         freeze_epochs = getattr(self.cfg, "freeze_epochs", None)
+        if freeze_epochs is not None and freeze_epochs == 0:
+            return []
+        layers = list(oa_cfg.MODEL.FREEZE_LAYERS)
         if freeze_epochs is not None and freeze_epochs > 0:
             freeze_iters = freeze_epochs * len(self.train_loader)
         else:

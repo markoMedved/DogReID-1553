@@ -34,6 +34,7 @@ def build_model(cfg):
             num_classes=getattr(cfg, "num_classes", 0),
             chunk_size=getattr(cfg, "chunk_size", 32),
             unfreeze_blocks=getattr(cfg, "unfreeze_blocks", 2),
+            freeze_epochs=getattr(cfg, "freeze_epochs", None),
         )
 
     # TF-CLIP (Text-Free CLIP Video Re-ID)

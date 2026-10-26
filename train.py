@@ -255,6 +255,12 @@ def main():
         help='Triplet loss variant: hard (hinge margin), soft (softplus batch-hard), or weighted (AGW WRT)'
     )
     parser.add_argument(
+        '--freeze_epochs',
+        type=int,
+        default=None,
+        help='Number of initial epochs to freeze backbone (set 0 to disable initial freezing)'
+    )
+    parser.add_argument(
         '--output_dir',
         type=str,
         default=None,
@@ -333,6 +339,7 @@ def main():
     if getattr(args, "autoaug_prob", None) is not None: cfg.autoaug_prob = args.autoaug_prob
     if getattr(args, "fuse_layers", None) is not None: cfg.fuse_layers = args.fuse_layers
     if getattr(args, "triplet_type", None) is not None: cfg.triplet_type = args.triplet_type
+    if getattr(args, "freeze_epochs", None) is not None: cfg.freeze_epochs = args.freeze_epochs
     if getattr(args, "run_name", None) is not None:
         cfg.custom_run_name = args.run_name
     cfg.refresh_run_name(make_dir=(getattr(args, "output_dir", None) is None))

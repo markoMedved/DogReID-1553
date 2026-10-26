@@ -113,7 +113,7 @@ class OpenAnimalsVideoModel(nn.Module):
         "arbase_mgn": "OpenAnimals/configs/DogReID/mgn.yml",
     }
 
-    def __init__(self, model_name: str, pooling_type: str = "attention", num_classes: int = 0, chunk_size: int = 32, unfreeze_blocks: int = 2):
+    def __init__(self, model_name: str, pooling_type: str = "attention", num_classes: int = 0, chunk_size: int = 32, unfreeze_blocks: int = 2, freeze_epochs: int = None):
         super().__init__()
         clean_name = model_name.lower().replace("-", "_")
         if clean_name not in self.MODEL_CONFIGS:
@@ -130,6 +130,10 @@ class OpenAnimalsVideoModel(nn.Module):
         oa_cfg.MODEL.DEVICE = "cpu"  # Initialized on CPU; moved to GPU via .to(device)
         oa_cfg.MODEL.BACKBONE.PRETRAIN = True
         oa_cfg.MODEL.HEADS.NUM_CLASSES = num_classes if num_classes > 0 else 1553
+
+        if freeze_epochs is not None and freeze_epochs == 0:
+            oa_cfg.MODEL.FREEZE_LAYERS = []
+            oa_cfg.SOLVER.FREEZE_ITERS = 0
 
         is_dinov2 = "dinov2" in clean_name
         if is_dinov2:

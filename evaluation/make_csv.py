@@ -542,9 +542,12 @@ def main():
                 print(f"mAP:     {map_val*100:.2f}%")
         else:
             print("Open-world metrics:")
-            for k, v in boot_res.items():
-                if isinstance(v, (int, float)):
-                    print(f"  {k}: {v:.4f}")
+            full_fars = boot_res["full_set"]["fars"]
+            for target, label in [(0.01, "FAR=1%"), (0.05, "FAR=5%"), (0.10, "FAR=10%")]:
+                idx = int(np.argmin(np.abs(full_fars - target)))
+                r1_m = boot_res["dirs_r1_boot_mean"][idx] * 100
+                r5_m = boot_res["dirs_r5_boot_mean"][idx] * 100
+                print(f"  DIR @ {label:<7} -> R1: {r1_m:.1f}% | R5: {r5_m:.1f}%")
     print("\nEvaluation Complete!")
 
 
