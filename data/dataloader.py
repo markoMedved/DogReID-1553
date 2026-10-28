@@ -70,7 +70,7 @@ class TFCLIPRandomIdentitySampler(Sampler):
 
 def _build_pk_sampler(cfg, labels, dataset_len):
     bb = str(getattr(cfg, "backbone", getattr(cfg, "model", ""))).lower()
-    if "tfclip" in bb or "tf_clip" in bb or bb == "clip":
+    if "tfclip" in bb or "tf_clip" in bb or bb in ("clip", "scl", "metan", "eccv_scl"):
         return TFCLIPRandomIdentitySampler(
             labels=labels,
             batch_size=cfg.batch_size,

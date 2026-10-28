@@ -1,0 +1,568 @@
+import pickle
+import numpy as np
+import pandas as pd
+import os
+from collections import Counter
+
+def open_pickle(file_path):
+    # Open the file in binary read mode
+    with open(file_path, 'rb') as file:
+        # Load the object from the file
+        data = pickle.load(file)
+        data = {os.path.basename(key): value for key, value in data.items()}
+    return data
+
+def indices_of_smallest(distances, banned_idx):
+    # Sort indices and distances, ignoring the query
+    sorted_indices = np.argsort(distances)
+    sorted_indices = sorted_indices[sorted_indices != banned_idx]
+    sorted_distances = distances[sorted_indices]
+    
+    # Find the lowest 3 distinct values
+    unique_values = []
+    unique_indices = []
+    
+    for i in range(len(sorted_distances) - 1):
+        if sorted_distances[i] != sorted_distances[i + 1]:
+            unique_values.append(sorted_distances[i])
+            unique_indices.append(sorted_indices[i])
+        if len(unique_values) == 3:
+            break
+    
+    # Check if the next value after the last unique one is the same (indicating a tie)
+    if len(unique_values) == 3 and i+1 < len(sorted_distances):
+        if sorted_distances[i+1] == sorted_distances[i]:
+            # There's a tie for the last included value, so we remove any tied values
+            last_val = unique_values[-1]
+            return [idx for idx, val in zip(unique_indices, unique_values) if val != last_val]
+    
+    return unique_indices
+
+def compute_distances(embeddings):
+    """Compute Euclidean distances between embeddings."""
+    return np.sqrt(((embeddings[:, np.newaxis, :] - embeddings[np.newaxis, :, :]) ** 2).sum(axis=2))
+
+def majority_vote(ranks_list):
+    """Compute the majority vote from a list of ranks."""
+    vote_counts = Counter(ranks_list)
+    majority_rank = vote_counts.most_common(1)[0][0]
+    return majority_rank
+
+def compute_aggregated_top3_accuracy(ranks_per_frame, ground_truth):
+    """
+    Aggregate voting approach:
+    1. Collect all top-3 votes from all frames
+    2. Count votes for each candidate
+    3. Take the 3 most-voted candidates as final top-3
+    4. Check if ground truth is in that final top-3
+    """
+    # Collect all top-3 candidates from all frames
+    all_votes = []
+    for ranks in ranks_per_frame:
+        if ranks and len(ranks) >= 3:
+            all_votes.extend(ranks[:3])  # Add each frame's top-3 candidates
+    assert all_votes, "No votes collected for top-3 aggregation"
+    # Count votes for each candidate
+    from collections import Counter
+    vote_counts = Counter(all_votes)
+    # Get the 3 most voted candidates (our final top-3)
+    final_top3_candidates = [candidate for candidate, count in vote_counts.most_common(3)]
+    # Check if ground truth is in our final top-3
+    return 1 if ground_truth in final_top3_candidates else 0
+
+def get_metrics(models, df, img_maj_vote=False):
+    """
+    Compute top-1, top-3 accuracy and the number of unique elements for each model.
+
+    Parameters:
+    - models: List of embedding file paths.
+    - df: DataFrame with test examples.
+    - img_maj_vote: Boolean indicating if majority vote should be used.
+
+    Returns:
+    - A list of metric results for each model: top-1 accuracy, top-3 accuracy, and unique top-3 counts.
+    """
+    
+    # Load all model embeddings
+    data = []
+    for m in models:
+        dict_ = open_pickle(m)
+        for key in dict_:
+            if isinstance(dict_[key], list):
+                for i in range(len(dict_[key])):
+                    dict_[key][i] = dict_[key][i].to("cpu")
+            else:
+                dict_[key] = dict_[key].to("cpu")
+        data.append(dict_)
+
+    print(f"len(data[0]): {len(data[0].keys())}")
+
+    # Initialize results array: [models x rows x metrics]
+    results = np.zeros((len(models), len(df)*2, 3))
+    
+    idx = 0
+
+    # Loop through each row in the dataframe
+    for index, row in df.iterrows():
+        for k, m in enumerate(data):
+            
+            if img_maj_vote:
+                row_embeddings = []
+                for i in row:
+                    row_embeddings.append([m[i][j].cpu().numpy() for j in range(len(m[i]))])
+                # Handle the case where embeddings are lists of tensors
+                #print(f"len(row_embeddings): {len(row_embeddings)}")
+                #print(f"len(row_embeddings[0]): {len(row_embeddings[0])}")
+                #print(f"row_embeddings[0].shape: {row_embeddings[0].shape}")
+                frame_embeddings = [np.stack([frame for frame in frames]) for frames in row_embeddings]
+                #print(f"len(frame_embeddings): {len(frame_embeddings)}") 11
+                #print(f"frame_embeddings[0].shape: {frame_embeddings[0].shape}") 512
+                embeddings = np.transpose(np.stack(frame_embeddings), (1, 0, 2))
+                #print(f"embeddings.shape: {embeddings.shape}") 
+                # examples, frames, embedding_dim without change of dimensions; frames, examples, embedding_dim with permute
+            else:
+                row_embeddings = []
+                for i in row:
+                    row_embeddings.append(m[i].cpu().numpy())
+                embeddings = np.stack(row_embeddings)
+
+            if img_maj_vote:
+                # Compute distances for each frame separately
+                frame_distances = []
+                for frame_idx in range(embeddings.shape[0]):
+                    frame_distances.append(compute_distances(embeddings[frame_idx]))
+
+                # get top-1 and top-3 and unique in top-3 for majority vote over each frame
+                for img_idx in range(2):
+                    top1_votes = []
+                    ranks_per_frame = []
+                    unique_candidates = set()
+                    
+                    # Collect per-frame ranks and candidates
+                    for frame_dists in frame_distances:
+                        ranks = indices_of_smallest(frame_dists[img_idx], img_idx)
+                        ranks_per_frame.append(ranks)
+                        if ranks:
+                            top1_votes.append(ranks[0])
+                            unique_candidates.update(ranks)
+                        else:
+                            top1_votes.append(None)
+                    
+                    # Majority vote for top-1
+                    valid_votes = [vote for vote in top1_votes if vote is not None]
+                    if valid_votes:
+                        majority_top1 = majority_vote(valid_votes)
+                        results[k, idx + img_idx, 0] = 1 if majority_top1 in [0, 1] else 0
+                        
+                        # Use aggregated voting for top-3 accuracy
+                        ground_truth = 1 if img_idx == 0 else 0  # Ground truth is the other image
+                        results[k, idx + img_idx, 1] = compute_aggregated_top3_accuracy(ranks_per_frame, ground_truth)
+                    else:
+                        results[k, idx + img_idx, 0] = 0
+                        results[k, idx + img_idx, 1] = 0
+                    
+                    # Unique candidates in top-3 across frames
+                    results[k, idx + img_idx, 2] = len(unique_candidates)
+
+            else:
+                # Compute distances for the entire embeddings array
+                distances = compute_distances(embeddings)
+
+                # Get indices of closest embeddings (excluding the query)
+                closest_indices_ranked_0 = indices_of_smallest(distances[0], 0)
+                closest_indices_ranked_1 = indices_of_smallest(distances[1], 1)
+
+                for inc, ranks in enumerate([closest_indices_ranked_0, closest_indices_ranked_1]):
+                    if ranks:
+                        # Top-1 accuracy
+                        if ranks[0] in [0, 1]:
+                            results[k, idx + inc, 0] = 1
+                        # Top-3 accuracy
+                        if 0 in ranks[:3] or 1 in ranks[:3]:
+                            results[k, idx + inc, 1] = 1
+                    # Number of unique elements in top-3
+                    results[k, idx + inc, 2] = len(ranks)
+
+        idx += 2
+
+    #print(f"results: {results}")
+
+    # Collect and return average metrics for each model
+    metrics = []
+    for m in range(len(data)):
+        top1 = np.mean(results[m, :, 0])  # Average top-1 accuracy
+        top3 = np.mean(results[m, :, 1])  # Average top-3 accuracy
+        unique_top3 = np.mean(results[m, :, 2])  # Average number of unique elements in top-3
+        # print out the results
+        print(f"Model {m}: Top-1 Accuracy: {top1}, Top-3 Accuracy: {top3}, Unique in Top-3: {unique_top3}")
+        metrics.append((top1, top3, unique_top3))
+
+    return metrics
+
+def get_dino_pretrained_results_meerkat():
+    models = [
+        "../results/pre_trained_model/dinov2-base/dino_b_avg_5f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_avg_5f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_avg_10f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_avg_10f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_max_5f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_max_5f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_max_10f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_max_10f_mk_nm.pkl",
+        
+        "../results/pre_trained_model/dinov2-small/dino_s_avg_5f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_avg_5f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_avg_10f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_avg_10f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_max_5f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_max_5f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_max_10f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_max_10f_mk_nm.pkl",
+        
+        "../results/pre_trained_model/dinov2-large/dino_l_avg_5f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_avg_5f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_avg_10f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_avg_10f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_max_5f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_max_5f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_max_10f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_max_10f_mk_nm.pkl",
+        
+        "../results/pre_trained_model/dinov2-giant/dino_g_avg_5f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_avg_5f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_avg_10f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_avg_10f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_max_5f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_max_5f_mk_nm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_max_10f_mk_wm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_max_10f_mk_nm.pkl"
+    ]
+
+    # Load dataframe of test examples
+    df = pd.read_csv("../Dataset/meerkat_h5files/Precomputed_test_examples_meerkat.csv")
+    
+    # Get metrics for all models
+    metrics = get_metrics(models, df)
+    
+    # Save the results to a text file
+    with open("../results/pre_trained_model/meerkat_results.txt", "w") as file:
+        # Write the results for each model
+        for i, (top1, top3, unique_top3) in enumerate(metrics):
+            file.write(f"Model {i}: Top-1 Accuracy: {top1}, Top-3 Accuracy: {top3}, Unique in Top-3: {unique_top3} - {models[i]}\n")
+
+def get_dino_pretrained_results_polarbears():
+    models = [
+        "../results/pre_trained_model/dinov2-base/dino_b_avg_5f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_avg_5f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_avg_10f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_avg_10f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_max_5f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_max_5f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_max_10f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-base/dino_b_max_10f_pb_nm.pkl",
+        
+        "../results/pre_trained_model/dinov2-small/dino_s_avg_5f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_avg_5f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_avg_10f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_avg_10f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_max_5f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_max_5f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_max_10f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-small/dino_s_max_10f_pb_nm.pkl",
+        
+        "../results/pre_trained_model/dinov2-large/dino_l_avg_5f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_avg_5f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_avg_10f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_avg_10f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_max_5f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_max_5f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_max_10f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-large/dino_l_max_10f_pb_nm.pkl",
+        
+        "../results/pre_trained_model/dinov2-giant/dino_g_avg_5f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_avg_5f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_avg_10f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_avg_10f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_max_5f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_max_5f_pb_nm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_max_10f_pb_wm.pkl",
+        "../results/pre_trained_model/dinov2-giant/dino_g_max_10f_pb_nm.pkl"
+    ]
+
+    # Load dataframe of test examples
+    df = pd.read_csv("../Dataset/polarbears_h5files/Precomputed_test_examples_polarbear.csv")
+    
+    # Get metrics for all models
+    metrics = get_metrics(models, df)
+    
+    # Save the results to a text file
+    with open("../results/pre_trained_model/polarbears_results.txt", "w") as file:
+        # Write the results for each model
+        for i, (top1, top3, unique_top3) in enumerate(metrics):
+            file.write(f"Model {i}: Top-1 Accuracy: {top1}, Top-3 Accuracy: {top3}, Unique in Top-3: {unique_top3} - {models[i]}\n")
+
+def get_bioclip_video_results_meerkat():
+    models = [
+        "../results/pre_trained_model/bioclip/bioclip_average_5frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_average_5frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_average_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_average_10frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_max_5frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_max_5frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_max_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_max_10frames_meerkat_without_mask.pkl"
+    ]
+
+    # Load dataframe of test examples
+    df = pd.read_csv("../Dataset/meerkat_h5files/Precomputed_test_examples_meerkat.csv")
+    
+    # Get metrics for all models
+    metrics = get_metrics(models, df)
+    
+    # Save the results to a text file
+    with open("../results/pre_trained_model/bioclip_meerkat_results.txt", "w") as file:
+        # Write the results for each model
+        for i, (top1, top3, unique_top3) in enumerate(metrics):
+            file.write(f"Model {i}: Top-1 Accuracy: {top1}, Top-3 Accuracy: {top3}, Unique in Top-3: {unique_top3} - {models[i]}\n")
+
+def get_bioclip_video_results_polarbears():
+    models = [
+        "../results/pre_trained_model/bioclip/bioclip_average_5frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_average_5frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_average_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_average_10frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_max_5frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_max_5frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_max_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/bioclip/bioclip_max_10frames_polarbears_without_mask.pkl"
+    ]
+
+    # Load dataframe of test examples
+    df = pd.read_csv("../Dataset/polarbears_h5files/Precomputed_test_examples_polarbear.csv")
+    
+    # Get metrics for all models
+    metrics = get_metrics(models, df)
+    
+    # Save the results to a text file
+    with open("../results/pre_trained_model/bioclip_polarbears_results.txt", "w") as file:
+        # Write the results for each model
+        for i, (top1, top3, unique_top3) in enumerate(metrics):
+            file.write(f"Model {i}: Top-1 Accuracy: {top1}, Top-3 Accuracy: {top3}, Unique in Top-3: {unique_top3} - {models[i]}\n")
+
+def get_megadescriptor_results_meerkat():
+    models = [
+        # MegaDescriptor-L (Large)
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_average_5frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_average_5frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_average_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_average_10frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_max_5frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_max_5frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_max_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_max_10frames_meerkat_without_mask.pkl",
+        
+        # MegaDescriptor-B (Base)
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_average_5frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_average_5frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_average_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_average_10frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_max_5frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_max_5frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_max_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_max_10frames_meerkat_without_mask.pkl",
+        
+        # MegaDescriptor-S (Small)
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_average_5frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_average_5frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_average_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_average_10frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_max_5frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_max_5frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_max_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_max_10frames_meerkat_without_mask.pkl",
+        
+        # MegaDescriptor-T (Tiny)
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_average_5frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_average_5frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_average_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_average_10frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_max_5frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_max_5frames_meerkat_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_max_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_max_10frames_meerkat_without_mask.pkl"
+    ]
+
+    # Load dataframe of test examples
+    df = pd.read_csv("../Dataset/meerkat_h5files/Precomputed_test_examples_meerkat.csv")
+    
+    # Get metrics for all models
+    metrics = get_metrics(models, df)
+    
+    # Save the results to a text file
+    with open("../results/pre_trained_model/megadescriptor_meerkat_results.txt", "w") as file:
+        # Write the results for each model
+        for i, (top1, top3, unique_top3) in enumerate(metrics):
+            file.write(f"Model {i}: Top-1 Accuracy: {top1}, Top-3 Accuracy: {top3}, Unique in Top-3: {unique_top3} - {models[i]}\n")
+
+def get_megadescriptor_results_polarbears():
+    models = [
+        # MegaDescriptor-L (Large)
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_average_5frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_average_5frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_average_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_average_10frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_max_5frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_max_5frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_max_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_L_max_10frames_polarbears_without_mask.pkl",
+        
+        # MegaDescriptor-B (Base)
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_average_5frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_average_5frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_average_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_average_10frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_max_5frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_max_5frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_max_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_B_max_10frames_polarbears_without_mask.pkl",
+        
+        # MegaDescriptor-S (Small)
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_average_5frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_average_5frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_average_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_average_10frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_max_5frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_max_5frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_max_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_S_max_10frames_polarbears_without_mask.pkl",
+        
+        # MegaDescriptor-T (Tiny)
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_average_5frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_average_5frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_average_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_average_10frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_max_5frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_max_5frames_polarbears_without_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_max_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor/megadescriptor_T_max_10frames_polarbears_without_mask.pkl"
+    ]
+
+    # Load dataframe of test examples
+    df = pd.read_csv("../Dataset/polarbears_h5files/Precomputed_test_examples_polarbear.csv")
+    
+    # Get metrics for all models
+    metrics = get_metrics(models, df)
+    
+    # Save the results to a text file
+    with open("../results/pre_trained_model/megadescriptor_polarbears_results.txt", "w") as file:
+        # Write the results for each model
+        for i, (top1, top3, unique_top3) in enumerate(metrics):
+            file.write(f"Model {i}: Top-1 Accuracy: {top1}, Top-3 Accuracy: {top3}, Unique in Top-3: {unique_top3} - {models[i]}\n")
+
+def get_image_model_results_meerkat():
+    models = [
+        "../results/pre_trained_model/bioclip_hf_hub_imageomics_bioclip_/bioclip_cls_10frames_meerkat_with_mask.pkl", #0
+        "../results/pre_trained_model/dino_facebook_dinov2_base_/dinov2-base_cls_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/dino_facebook_dinov2_giant_/dinov2-giant_cls_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/dino_facebook_dinov2_large_/dinov2-large_cls_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/dino_facebook_dinov2_small_/dinov2-small_cls_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor_hf_hub_BVRA_MegaDescriptor_B_224_/MegaDescriptor-B-224_cls_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor_hf_hub_BVRA_MegaDescriptor_L_224_/MegaDescriptor-L-224_cls_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor_hf_hub_BVRA_MegaDescriptor_S_224_/MegaDescriptor-S-224_cls_10frames_meerkat_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor_hf_hub_BVRA_MegaDescriptor_T_224_/MegaDescriptor-T-224_cls_10frames_meerkat_with_mask.pkl",
+        # Full model training results
+        "../results/full_model_training/bioclip_meerkat/checkpoint_epoch_5_embeddings_mask.pkl", #9
+        "../results/full_model_training/imagedino_b_meerkat/checkpoint_epoch_7_embeddings_mask.pkl",
+        "../results/full_model_training/imagedino_s_meerkat/checkpoint_epoch_2_embeddings_mask.pkl",
+        "../results/full_model_training/megadescriptor_b_meerkat/checkpoint_epoch_19_embeddings_mask.pkl", #12
+        "../results/full_model_training/megadescriptor_l_meerkat/checkpoint_epoch_20_embeddings_mask.pkl",
+        "../results/full_model_training/megadescriptor_s_meerkat/checkpoint_epoch_1_embeddings_mask.pkl",
+        "../results/full_model_training/megadescriptor_t_meerkat/checkpoint_epoch_3_embeddings_mask.pkl",
+        "../results/full_model_training/resnet18_meerkat/checkpoint_epoch_2_embeddings_mask.pkl",
+        #"../results/full_model_training/resnet18_meerkat/checkpoint_epoch_43_embeddings_mask.pkl",
+        "../results/full_model_training/resnet50_meerkat/checkpoint_epoch_2_embeddings_mask.pkl",
+        "../results/full_model_training/resnet152_meerkat/checkpoint_epoch_19_embeddings_mask.pkl",
+        #"../results/full_model_training/resnet152_meerkat/checkpoint_epoch_50_embeddings_mask.pkl",
+        "../results/full_model_training/vgg-16_meerkat/checkpoint_epoch_11_embeddings_mask.pkl"
+    ]
+
+    # Load dataframe of test examples
+    df = pd.read_csv("../Dataset/meerkat_h5files/Precomputed_test_examples_meerkat.csv")
+    
+    # Get metrics for all models
+    metrics = get_metrics(models, df, img_maj_vote=True)
+    
+    # Save the results to a text file
+    with open("../results/pre_trained_model/meerkat_results.txt", "w") as file:
+        # Write the results for each model
+        for i, (top1, top3, unique_top3) in enumerate(metrics):
+            file.write(f"Model {i}: Top-1 Accuracy: {top1}, Top-3 Accuracy: {top3}, Unique in Top-3: {unique_top3} - {models[i]}\n")
+
+def get_image_model_results_polarbears():
+    models = [
+        "../results/pre_trained_model/bioclip_hf_hub_imageomics_bioclip_/bioclip_cls_10frames_polarbears_with_mask.pkl", #0
+        "../results/pre_trained_model/dino_facebook_dinov2_base_/dinov2-base_cls_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/dino_facebook_dinov2_giant_/dinov2-giant_cls_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/dino_facebook_dinov2_large_/dinov2-large_cls_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/dino_facebook_dinov2_small_/dinov2-small_cls_10frames_polarbears_with_mask.pkl", #4
+        "../results/pre_trained_model/megadescriptor_hf_hub_BVRA_MegaDescriptor_B_224_/MegaDescriptor-B-224_cls_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor_hf_hub_BVRA_MegaDescriptor_L_224_/MegaDescriptor-L-224_cls_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor_hf_hub_BVRA_MegaDescriptor_S_224_/MegaDescriptor-S-224_cls_10frames_polarbears_with_mask.pkl",
+        "../results/pre_trained_model/megadescriptor_hf_hub_BVRA_MegaDescriptor_T_224_/MegaDescriptor-T-224_cls_10frames_polarbears_with_mask.pkl",
+        # Full model training results
+        "../results/full_model_training/bioclip_polarbear/checkpoint_epoch_2_embeddings_mask.pkl", #9
+        "../results/full_model_training/imagedino_b_polarbear/checkpoint_epoch_10_embeddings_mask.pkl",
+        "../results/full_model_training/imagedino_s_polarbear/checkpoint_epoch_12_embeddings_mask.pkl",
+        "../results/full_model_training/megadescriptor_b_polarbear/checkpoint_epoch_4_embeddings_mask.pkl", # 12
+        "../results/full_model_training/megadescriptor_l_polarbear/checkpoint_epoch_16_embeddings_mask.pkl",
+        "../results/full_model_training/megadescriptor_s_polarbear/checkpoint_epoch_13_embeddings_mask.pkl",
+        "../results/full_model_training/megadescriptor_t_polarbear/checkpoint_epoch_7_embeddings_mask.pkl",
+        "../results/full_model_training/resnet18_polarbear/checkpoint_epoch_1_embeddings_mask.pkl",
+        #"../results/full_model_training/resnet18_polarbear/checkpoint_epoch_41_embeddings_mask.pkl",
+        "../results/full_model_training/resnet50_polarbear/checkpoint_epoch_1_embeddings_mask.pkl",
+        "../results/full_model_training/resnet152_polarbear/checkpoint_epoch_8_embeddings_mask.pkl",
+        #"../results/full_model_training/resnet152_polarbear/checkpoint_epoch_50_embeddings_mask.pkl",
+        "../results/full_model_training/vgg-16_polarbear/checkpoint_epoch_16_embeddings_mask.pkl"
+    ]
+
+    # Load dataframe of test examples
+    df = pd.read_csv("../Dataset/polarbears_h5files/Precomputed_test_examples_polarbear.csv")
+    
+    # Get metrics for all models
+    metrics = get_metrics(models, df, img_maj_vote=True)
+
+    # Save the results to a text file
+    with open("../results/pre_trained_model/polarbears_results.txt", "w") as file:
+        # Write the results for each model
+        for i, (top1, top3, unique_top3) in enumerate(metrics):
+            file.write(f"Model {i}: Top-1 Accuracy: {top1}, Top-3 Accuracy: {top3}, Unique in Top-3: {unique_top3} - {models[i]}\n")
+
+def main():
+    # List of model embedding paths
+    models = [
+        "../results/full_model_training/bioclip_meerkat/checkpoint_epoch_2_embeddings_mask.pkl"
+    ]
+    
+    # Load dataframe of test examples
+    df = pd.read_csv("../Dataset/meerkat_h5files/Precomputed_test_examples_meerkat.csv")
+    
+    # Get metrics for all models
+    metrics = get_metrics(models, df, img_maj_vote=True)
+    
+    # Print the results
+    for i, (top1, top3, unique_top3) in enumerate(metrics):
+        print(f"Model {i}: Top-1 Accuracy: {top1}, Top-3 Accuracy: {top3}, Unique in Top-3: {unique_top3}")
+
+if __name__ == "__main__":
+    #main()
+    #get_dino_pretrained_results_meerkat()
+    #get_dino_pretrained_results_polarbears()
+    #get_image_model_results_meerkat()
+    #get_image_model_results_polarbears()
+
+    #get_megadescriptor_results_meerkat()
+    get_megadescriptor_results_polarbears()
+
+    #get_bioclip_video_results_meerkat()
+    #get_bioclip_video_results_polarbears()
+

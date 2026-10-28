@@ -42,8 +42,23 @@ def build_model(cfg):
         from .tfclip import TFCLIPVideoModel
         return TFCLIPVideoModel(cfg)
 
-    # --- DINOv2 / CLIP BoT Video Re-ID Baseline ---
-    if getattr(cfg, "reid_method", None) == "bot" or model_type_str in ("dinov2", "baseline", "dinov2_baseline", "clip_baseline", "baseline_clip"):
+    # RoVF (Recurrent Operations on Video Frames)
+    if model_type_str.startswith("rovf"):
+        from .rovf import RoVFVideoModel
+        return RoVFVideoModel(cfg)
+
+    # ECCV-26-SCL (MetaN: TransReID + SCFG + NFC)
+    if model_type_str in ("scl", "metan", "eccv_scl"):
+        from .scl import SCLVideoModel
+        return SCLVideoModel(cfg)
+
+    # ECCV-24 AdaFreq (Adaptive High-Frequency Transformer for Wildlife Re-ID)
+    if model_type_str in ("adafreq", "ada_freq", "eccv_adafreq"):
+        from .adafreq import AdaFreqVideoModel
+        return AdaFreqVideoModel(cfg)
+
+    # --- DINOv2 / CLIP / MegaDescriptor BoT Video Re-ID Baseline ---
+    if getattr(cfg, "reid_method", None) == "bot" or model_type_str in ("dinov2", "baseline", "dinov2_baseline", "clip_baseline", "baseline_clip", "megadescriptor", "megadescriptor_b", "megadescriptor_base"):
         return VideoReID(cfg)
 
     else:

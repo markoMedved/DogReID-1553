@@ -267,6 +267,25 @@ class CLIPAdapter(nn.Module):
         return self._aggregate_tokens(normed)
 
 
+class MegaDescriptorAdapter(nn.Module):
+    """MegaDescriptor backbone (Swin-B pre-trained by BVRA for animal re-ID) loaded via timm."""
+
+    def __init__(self, model_name: str = "hf-hub:BVRA/MegaDescriptor-B-224"):
+        super().__init__()
+        import timm
+        self.net = timm.create_model(model_name, pretrained=True)
+        self.dim = getattr(self.net, "num_features", 1024)
+        self.model_name = model_name
+
+    def pooled(self, x, n_grad=None):
+        if n_grad == 0:
+            with torch.no_grad():
+                feats = self.net.forward_features(x)
+                return self.net.forward_head(feats, pre_logits=True)
+        feats = self.net.forward_features(x)
+        return self.net.forward_head(feats, pre_logits=True)
+
+
 def build_backbone(cfg):
     """Instantiate the backbone adapter named by cfg.backbone."""
     name = str(getattr(cfg, "backbone", getattr(cfg, "model", "dinov2"))).lower()
@@ -277,6 +296,11 @@ def build_backbone(cfg):
             representation_type=getattr(cfg, "representation_type", "cls"),
             gem_p=getattr(cfg, "gem_p", 3.0),
             fuse_layers=getattr(cfg, "fuse_layers", 1),
+        )
+
+    if name in ("megadescriptor", "megadescriptor_b", "megadescriptor_base"):
+        return MegaDescriptorAdapter(
+            model_name=getattr(cfg, "megadescriptor_variant", "hf-hub:BVRA/MegaDescriptor-B-224"),
         )
 
     if name in ("clip_baseline", "baseline_clip"):

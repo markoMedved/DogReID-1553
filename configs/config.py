@@ -303,6 +303,34 @@ class Config:
             self.aug_pad = 10
             self.re_prob = 0.5
             self.amp = "bf16"
+        elif "megadescriptor" in self.backbone:
+            self.reid_method = "bot"
+            self.embedding_dim = 1024
+            self.img_size = (224, 224)
+            self.batch_size = 32
+            self.k = 4
+            self.num_ids = 8
+            self.clip_len = 8
+            self.accum_steps = 2
+            self.chunk_size = 16
+            self.num_workers = 6
+            self.full_finetune = getattr(self, "full_finetune", True)
+            self.unfreeze_blocks = getattr(self, "unfreeze_blocks", 2)
+            self.optimizer = "adamw"
+            self.lr = 2e-05
+            self.backbone_lr_factor = 0.1
+            self.weight_decay = 1e-05
+            self.margin = 0.3
+            self.id_loss_weight = 1.0
+            self.epochs = 51
+            self.warmup_epochs = 5
+            self.warmup_factor = 0.01
+            self.lr_sched = "cosine"
+            self.lr_delay_epochs = 25
+            self.lr_eta_min = 7e-08
+            self.aug_pad = 10
+            self.re_prob = 0.5
+            self.amp = "bf16"
         elif "tfclip" in self.backbone or "tf_clip" in self.backbone or self.backbone == "clip":
             self.embedding_dim = 2048
             self.img_size = (224, 224)
@@ -323,6 +351,84 @@ class Config:
             self.lr_sched = "multistep"
             self.lr_milestones = (30, 50)
             self.lr_gamma = 0.1
+        elif self.backbone.startswith("rovf"):
+            is_base = "base" in self.backbone
+            dim = 768 if is_base else 384
+            heads = 12 if is_base else 8
+            self.reid_method = None
+            self.use_id_loss = False
+            self.embedding_dim = dim
+            self.img_size = (224, 224)
+            self.clip_len = 5
+            self.batch_size = 30
+            self.k = 3
+            self.num_ids = 10
+            self.full_finetune = False
+            self.optimizer = "adamw"
+            self.lr = 1e-04
+            self.weight_decay = 0.01
+            self.margin = 1.0
+            self.epochs = 10
+            self.re_prob = 0.0
+            self.rovf_dino_model_name = "facebook/dinov2-base" if is_base else "facebook/dinov2-small"
+            self.rovf_dropout_rate = 0.1
+            self.rovf_freeze_image_model = True
+            self.rovf_is_append_avg_emb = True
+            self.rovf_perceiver_type = "v2"
+            self.rovf_embedding_dim = dim
+            self.rovf_latent_dim = dim
+            self.rovf_output_dim = dim
+            self.rovf_num_heads = heads
+            self.rovf_num_latents = 257
+            self.rovf_num_tf_layers = 2
+            self.rovf_K = 20
+            self.rovf_episodes_per_epoch = 5000
+            self.rovf_warmup_steps = 250
+            self.rovf_decay_steps = 4750
+            self.rovf_start_lr = 0.001
+            self.rovf_max_lr = 0.005
+            self.rovf_end_lr = 0.0001
+        elif self.backbone in ("scl", "metan", "eccv_scl"):
+            self.reid_method = None
+            self.use_id_loss = True
+            self.embedding_dim = 768
+            self.img_size = (256, 256)
+            self.clip_len = 8
+            self.batch_size = 32
+            self.k = 4
+            self.num_ids = 8
+            self.chunk_size = 64
+            self.full_finetune = True
+            self.optimizer = "sgd"
+            self.lr = 0.004
+            self.weight_decay = 1e-04
+            self.margin = 0.7
+            self.epochs = 60
+            self.warmup_epochs = 5
+            self.aug_pad = 10
+            self.re_prob = 0.0
+        elif self.backbone in ("adafreq", "ada_freq", "eccv_adafreq"):
+            self.reid_method = None
+            self.use_id_loss = True
+            self.embedding_dim = 768
+            self.img_size = (256, 256)
+            self.clip_len = 8
+            self.batch_size = 32
+            self.k = 4
+            self.num_ids = 8
+            self.chunk_size = 8
+            self.full_finetune = True
+            self.optimizer = "sgd"
+            self.lr = 0.001
+            self.weight_decay = 1e-04
+            self.epochs = 150
+            self.warmup_epochs = 5
+            self.aug_pad = 10
+            self.re_prob = 0.0
+            self.adafreq_mu = 0.5
+            self.adafreq_lambda = 0.1
+            self.adafreq_stride_size = (12, 12)
+            self.adafreq_ro_degree = 15
         else:
             self.embedding_dim = 768
             self.img_size = (224, 224)
@@ -357,6 +463,14 @@ class Config:
                 name = base
         elif "tfclip" in bb or "tf_clip" in bb or bb == "clip":
             name = "tfclip"
+        elif bb.startswith("rovf"):
+            name = "rovf"
+        elif bb in ("scl", "metan", "eccv_scl"):
+            name = "scl"
+        elif bb in ("adafreq", "ada_freq", "eccv_adafreq"):
+            name = "adafreq"
+        elif "megadescriptor" in bb:
+            name = "megadescriptor"
         elif "dinov2" in bb or bb == "baseline":
             if bb in ("baseline", "dinov2_baseline"):
                 name = "baseline"
@@ -469,6 +583,8 @@ class Config:
                     default_sub = f"lr{self.lr:g}_ep{self.epochs}_ms{ms_str}_bb{bb_factor:g}x"
             elif is_tfclip_model:
                 default_sub = "v1_tfclip_vitb16"
+            elif bb.startswith("rovf"):
+                default_sub = "rovf_s_st"
             else:
                 default_sub = "default"
             self.run_subfolder = default_sub

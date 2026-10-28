@@ -38,8 +38,12 @@ def extract_features_with_ids(
                     for d, v in zip(dog_ids, video_ids)
                 ]
 
-                # Normalize on device, then move to CPU the features that the model produced
-                embeddings = F.normalize(model(videos.to(device)), p=2, dim=1).cpu()
+                # Normalize on device unless model specifies raw Euclidean distance (e.g. RoVF)
+                raw_out = model(videos.to(device))
+                if getattr(model, "use_raw_euclidean", False):
+                    embeddings = raw_out.cpu()
+                else:
+                    embeddings = F.normalize(raw_out, p=2, dim=1).cpu()
 
                 all_embeddings.append(embeddings)
                 all_ids.extend(item_ids)

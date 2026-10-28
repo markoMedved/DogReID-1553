@@ -1,0 +1,1 @@
+from .vit_pytorch import vit_base_patch16_224_TransReID

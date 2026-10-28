@@ -65,9 +65,21 @@ def build_transforms(cfg, is_train: bool):
     """Build the per-frame transform pipeline."""
     size = tuple(getattr(cfg, "img_size", (256, 192)))
     bb = str(getattr(cfg, "backbone", getattr(cfg, "model", ""))).lower()
+    if bb.startswith("rovf"):
+        # RoVF (rovf_s_st_mask_no_aug_0p5_fps_meerkat.yml) uses 224x224 frames scaled to [0, 1]
+        return transforms.Compose([
+            transforms.Resize(size, interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.ToTensor(),
+        ])
     is_clip_bb = bb in ("clip_baseline", "baseline_clip")
-    norm_mean = CLIP_MEAN if is_clip_bb else IMAGENET_MEAN
-    norm_std = CLIP_STD if is_clip_bb else IMAGENET_STD
+    is_scl_bb = bb in ("scl", "metan", "eccv_scl")
+    is_adafreq_bb = bb in ("adafreq", "ada_freq", "eccv_adafreq")
+    if is_scl_bb or is_adafreq_bb:
+        norm_mean = [0.5, 0.5, 0.5]
+        norm_std = [0.5, 0.5, 0.5]
+    else:
+        norm_mean = CLIP_MEAN if is_clip_bb else IMAGENET_MEAN
+        norm_std = CLIP_STD if is_clip_bb else IMAGENET_STD
 
     if not is_train:
         # --- Deterministic Evaluation Transforms ---
@@ -79,6 +91,20 @@ def build_transforms(cfg, is_train: bool):
 
     # --- Training Augmentations ---
     pad = getattr(cfg, "aug_pad", 10)
+    if is_adafreq_bb:
+        # Exact AdaFreq paper training augmentations:
+        # Resize 256x256, RandomRotation(15 deg), Brightness(50% prob), Contrast(50% prob), Pad(10) + RandomCrop(256x256)
+        ro_deg = float(getattr(cfg, "adafreq_ro_degree", 15))
+        return transforms.Compose([
+            transforms.Resize(size, interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.RandomRotation(degrees=ro_deg),
+            transforms.RandomApply([transforms.ColorJitter(brightness=0.2)], p=0.5),
+            transforms.RandomApply([transforms.ColorJitter(contrast=0.2)], p=0.5),
+            transforms.Pad(pad),
+            transforms.RandomCrop(size),
+            transforms.ToTensor(),
+            transforms.Normalize(norm_mean, norm_std),
+        ])
     tfs = []
     autoaug_prob = getattr(cfg, "autoaug_prob", 0.0)
     if autoaug_prob > 0:

@@ -76,6 +76,21 @@ def _unfreeze_last_blocks(net, n=2):
             _unfreeze(net[-1])
         return True
 
+    # --- Swin Transformer (e.g. MegaDescriptor: layers[i].blocks) ---
+    if hasattr(net, "layers") and isinstance(net.layers, (nn.Sequential, nn.ModuleList)):
+        if n > 0:
+            unfrozen = 0
+            for stage in reversed(net.layers):
+                if hasattr(stage, "blocks"):
+                    for block in reversed(stage.blocks):
+                        if unfrozen < n:
+                            _unfreeze(block)
+                            unfrozen += 1
+            _unfreeze(getattr(net, "norm", None))
+            if hasattr(net, "head"):
+                _unfreeze(getattr(net.head, "norm", None))
+        return True
+
     # --- ResNet (layer1..layer4) ---
     if hasattr(net, "layer4"):
         if n > 0:

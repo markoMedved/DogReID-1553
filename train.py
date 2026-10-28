@@ -380,6 +380,27 @@ def main():
     # ------------------------------------------------
     model = build_model(cfg).to(cfg.device)
 
+    # RoVF uses its own recurrent Perceiver training loop with online anchor_fn_hard mining
+    if str(getattr(cfg, "backbone", "")).lower().startswith("rovf"):
+        print(trainable_report(model))
+        from engine.rovf_trainer import train_rovf
+        train_rovf(cfg, model, train_loader, query_loader, gallery_loader)
+        return
+
+    # ECCV-26-SCL (MetaN: TransReID + SCFG + NFC + EMA Teacher)
+    if getattr(model, "is_scl", False):
+        print(trainable_report(model))
+        from engine.scl_trainer import train_scl
+        train_scl(cfg, model, train_loader, query_loader, gallery_loader)
+        return
+
+    # ECCV-24 AdaFreq (Adaptive High-Frequency Transformer)
+    if getattr(model, "is_adafreq", False):
+        print(trainable_report(model))
+        from engine.adafreq_trainer import train_adafreq
+        train_adafreq(cfg, model, train_loader, query_loader, gallery_loader)
+        return
+
     # Apply freezing
     model = apply_freezing(model, cfg)
     print(trainable_report(model))

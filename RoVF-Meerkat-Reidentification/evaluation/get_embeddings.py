@@ -1,0 +1,271 @@
+import sys
+sys.path.append("..")
+
+import os
+import json
+import random
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+
+import torchvision.io as io
+import matplotlib.pyplot as plt
+
+from collections import defaultdict
+from PIL import Image
+
+from dataloaders.ReID import AnimalClipDataset
+from models.dinov2_wrapper import DINOv2VideoWrapper
+from models.bioCLIP_wrapper import BioCLIPVideoWrapper
+from models.MegaDescriptor_wrapper import MegaDescriptorVideoWrapper
+from models.perceiver_wrapper import CrossAttention, TransformerEncoder, Perceiver
+from models.recurrent_wrapper import RecurrentWrapper
+from models.recurrent_decoder import RecurrentDecoder
+from training_functions.load_model_helper import dino_model_load, recurrent_model_perceiver_load, bioclip_model_load, megadescriptors_model_load
+from training_functions.dataloader_helper import dataloader_creation
+
+import pickle
+
+import transformers
+from transformers import AutoModel 
+
+from training_functions.load_model_helper import load_model_from_checkpoint
+
+import yaml
+
+import argparse
+
+def resolve_device(device):
+    resolved = torch.device(device)
+    if resolved.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA was requested but is not available.")
+    return resolved
+
+
+def get_embeddings(
+    model_ckpt, transformations, cooccurrences_filepath, clips_directory, 
+    num_frames, mode, K, total_frames, zfill_num, is_override, override_value, 
+    masks, apply_mask_percentage, device, img_maj_vote=False
+):
+    device = resolve_device(device)
+    
+     # load ckpt here  
+    mdata = torch.load(model_ckpt, map_location="cpu")["metadata"] # this is a string of a dictionary, how to load it?
+    # Load the string into a dictionary using YAML (use safe_load for security)
+    mdata = yaml.safe_load(mdata)
+    
+    if img_maj_vote:
+        num_frames = num_frames
+    else:
+        num_frames = mdata['dataloader_details']["num_frames"] if "num_frames" in mdata['dataloader_details'].keys() else num_frames
+    print(f"num_frames: {num_frames}")
+    print(f"img_maj_vote: {img_maj_vote}")
+
+    dataloader = dataloader_creation(
+        transformations=transformations, cooccurrences_filepath=cooccurrences_filepath, 
+        clips_directory=clips_directory, num_frames=num_frames, mode=mode,
+        K=K, total_frames=total_frames, zfill_num=zfill_num, is_override=is_override, 
+        override_value=override_value, masks=masks, apply_mask_percentage=apply_mask_percentage
+    )
+
+    model = load_model_from_checkpoint(model_ckpt).to(device) # model_ckpt_is the path to the model checkpoint
+    model.eval()
+    
+    if hasattr(model, 'set_eval_mode'):
+        model.set_eval_mode(True)
+
+    embeddings = {}
+    for i, (path, data) in enumerate(dataloader):
+        with torch.no_grad():
+            if img_maj_vote:
+                output = []
+                for frame_idx in range(data.size(1)):  # assuming data is of shape (batch_size, num_frames, channels, height, width)
+                    
+                    frame_data = data[:, frame_idx, :, :, :].to(device)
+                    frame_output = model(frame_data)
+                    output.append(frame_output)
+                # [frames][batch_size, output_dim] or [frames][output_dim]
+            else:
+                output = model(data.to(device))
+
+            if (isinstance(output, tuple) or isinstance(output, list)) and not img_maj_vote:
+                output = output[-1]
+            # if img_maj_vote, output is already in the correct format and we don't need to do anything
+            
+            if not img_maj_vote:
+                if len(output.size()) == 1:
+                    embeddings[path[0]] = output
+                elif len(output.size()) == 2: # batch processing
+                    assert len(path) == output.size(0)
+                    for j in range(output.size(0)):
+                        embeddings[path[j]] = output[j]
+                else:
+                    raise Exception(f"output size not recognized: {output.size()}")
+            else:  # img_maj_vote
+                # Only tested for batch size of 1. 
+                if len(output[0].size()) == 1:  # Non-batch processing for img_maj_vote
+                    embeddings[path[0]] = output
+                elif len(output[0].size()) == 2:  # Batch processing for img_maj_vote
+                    for j in range(output[0].size(0)):
+                        embeddings[path[j]] = [output[k][j] for k in range(len(output))] # k is the # of frames. # j is batch size.
+                else:
+                    raise Exception(f"output size not recognized: {output[0].size()}")
+
+                        
+            
+    print(f"len(embeddings): {len(embeddings)}")
+    return embeddings
+
+def main(args):
+    load_masks = args.load_masks
+
+    print(f"args.image_maj_vote: {args.image_maj_vote}")
+
+    masks = None
+    if load_masks:
+        mask_path = args.mask_path
+        with open(mask_path, "rb") as f:
+            masks = pickle.load(f)
+
+    device = resolve_device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Backwards compatibility: if dino_model_name is provided but pre_trained_model is None,
+    # use dino_model_name and set model_type to dino
+    if args.dino_model_name and args.pre_trained_model is None:
+        args.pre_trained_model = args.dino_model_name
+        args.model_type = "dino"
+
+    if args.model_type == "dino":
+        model = dino_model_load(
+            dino_model_name=args.pre_trained_model, 
+            output_dim=args.output_dim, 
+            forward_strat=args.forward_strat, 
+            sequence_length=args.sequence_length, 
+            num_frames=args.model_num_frames, 
+            dropout_rate=args.dropout_rate
+        )
+    elif args.model_type == "bioclip":
+        model = bioclip_model_load(
+            model_name=args.pre_trained_model, 
+            output_dim=args.output_dim, 
+            forward_strat=args.forward_strat, 
+            sequence_length=args.sequence_length,
+            num_frames=args.model_num_frames, # now configurable via command line
+            dropout_rate=args.dropout_rate,
+            checkpoint_path=None
+        )
+    elif args.model_type == "megadescriptor":
+        model = megadescriptors_model_load(
+            model_name=args.pre_trained_model, 
+            output_dim=args.output_dim, 
+            forward_strat=args.forward_strat, 
+            sequence_length=args.sequence_length, 
+            num_frames=args.model_num_frames, # now configurable via command line
+            dropout_rate=args.dropout_rate,
+            checkpoint_path=None
+        )
+    else:
+        raise Exception(f"Model type {args.model_type} not recognized")
+
+    if args.checkpoint:
+        checkpoint = torch.load(args.checkpoint, map_location="cpu")
+        model.load_state_dict(checkpoint["model_state_dict"])
+
+    model.to(device)
+    model.eval()
+
+    dataloader = dataloader_creation(
+        transformations=None, 
+        cooccurrences_filepath=args.cooccurrences_filepath,
+        clips_directory=args.clips_directory, 
+        num_frames=args.num_frames, 
+        mode=args.mode,
+        K=args.K, 
+        total_frames=args.total_frames, 
+        zfill_num=args.zfill_num, 
+        is_override=args.is_override, 
+        override_value=args.override_value, 
+        masks=masks, 
+        apply_mask_percentage=args.apply_mask_percentage
+    )
+
+    print(f"len(dataloader): {len(dataloader)}")
+
+    embeddings = {}
+    for i, (path, data) in enumerate(dataloader):
+        with torch.no_grad():
+            if args.image_maj_vote:
+                output = []
+                for frame_idx in range(data.size(1)):  # assuming data is of shape (batch_size, num_frames, channels, height, width)
+                    frame_data = data[:, frame_idx, :, :, :].to(device)
+                    frame_output = model(frame_data)
+                    #print(f"frame_output.size(): {frame_output.size()}")
+                    output.append(frame_output)
+                # [frames][batch_size, output_dim] or [frames][output_dim]
+            else:
+                output = model(data.to(device))
+
+            if (isinstance(output, tuple) or isinstance(output, list)) and not args.image_maj_vote:
+                output = output[-1]
+            # if image_maj_vote, output is already in the correct format and we don't need to do anything
+
+            if not args.image_maj_vote:
+                if len(output.size()) == 1:
+                    embeddings[path[0]] = output
+                elif len(output.size()) == 2: # batch processing
+                    assert len(path) == output.size(0)
+                    for j in range(output.size(0)):
+                        embeddings[path[j]] = output[j]
+                else:
+                    raise Exception(f"output size not recognized: {output.size()}")
+            else:  # image_maj_vote
+                # Only tested for batch size of 1. 
+                if len(output[0].size()) == 1:  # Non-batch processing for image_maj_vote
+                    embeddings[path[0]] = output
+                elif len(output[0].size()) == 2:  # Batch processing for image_maj_vote
+                    for j in range(output[0].size(0)):
+                        embeddings[path[j]] = [output[k][j] for k in range(len(output))] # k is the # of frames. # j is batch size.
+                else:
+                    raise Exception(f"output size not recognized: {output[0].size()}")
+
+    print(f"len(embeddings): {len(embeddings)}")
+
+    # Save the embeddings
+    with open(args.output_file, "wb") as f:
+        pickle.dump(embeddings, f)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate and save DINO embeddings")
+    
+    parser.add_argument("--load_masks", action="store_true", help="Whether to load masks")
+    parser.add_argument("--mask_path", type=str, default="/path/to/mask.pkl", help="Path to mask file")
+    parser.add_argument("--cooccurrences_filepath", type=str, required=True, help="Path to cooccurrences file")
+    parser.add_argument("--clips_directory", type=str, required=True, help="Directory containing clips")
+    parser.add_argument("--num_frames", type=int, default=10, help="Number of frames")
+    parser.add_argument("--mode", type=str, default="Test", help="Mode (Train/Test/Val)")
+    parser.add_argument("--K", type=int, default=20, help="K value")
+    parser.add_argument("--total_frames", type=int, default=20, help="Total frames")
+    parser.add_argument("--zfill_num", type=int, default=4, help="Zero fill number")
+    parser.add_argument("--is_override", action="store_true", help="Whether to override")
+    parser.add_argument("--override_value", type=float, default=None, help="Override value")
+    parser.add_argument("--apply_mask_percentage", type=float, default=1.0, help="Mask application percentage")
+    
+    parser.add_argument("--dino_model_name", type=str, default="facebook/dinov2-small", help="DINO model name")
+    parser.add_argument("--output_dim", type=int, default=None, help="Output dimension")
+    parser.add_argument("--forward_strat", type=str, default="cls", help="Forward strategy")
+    parser.add_argument("--sequence_length", type=int, default=None, help="Sequence length")
+    parser.add_argument("--dropout_rate", type=float, default=0.1, help="Dropout rate")
+    
+    parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint")
+    parser.add_argument("--output_file", type=str, required=True, help="Output file path for embeddings")
+    
+    parser.add_argument("--model_type", type=str, default="dino", help="Model type")
+    parser.add_argument("--pre_trained_model", type=str, default=None, help="Path to pre-trained model")
+    parser.add_argument("--model_num_frames", type=int, default=1, help="Number of frames for model (different from dataloader num_frames)")
+    parser.add_argument("--image_maj_vote", action="store_true", help="Whether to use image majority vote")
+
+    args = parser.parse_args()
+    main(args)

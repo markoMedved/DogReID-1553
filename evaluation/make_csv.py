@@ -398,7 +398,7 @@ def main():
     if checkpoint_path and checkpoint_path.exists():
         print(f"-> Reading checkpoint: {checkpoint_path}")
         raw_checkpoint = torch.load(checkpoint_path, map_location="cpu")
-        state_dict = raw_checkpoint.get('model', raw_checkpoint.get('state_dict', raw_checkpoint))
+        state_dict = raw_checkpoint.get('model', raw_checkpoint.get('state_dict', raw_checkpoint.get('model_state_dict', raw_checkpoint)))
 
         # Check for num_classes in state_dict
         detected_classes = detect_num_classes_from_state_dict(state_dict)

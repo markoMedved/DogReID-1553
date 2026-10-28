@@ -1,0 +1,128 @@
+# MetaN main configuration:
+# TransReID + SCFG frequency normalization + NFC reciprocal-neighbor training.
+
+MODEL:
+  PRETRAIN_CHOICE: "imagenet"
+  PRETRAIN_PATH: "pretrained/jx_vit_base_p16_224-80ecf9dd.pth"
+  NAME: "transformer"
+  TRANSFORMER_TYPE: "vit_base_patch16_224_TransReID"
+  STRIDE_SIZE: [16, 16]
+  DIST_TRAIN: True
+  METRIC_LOSS_TYPE: "triplet"
+  ID_LOSS_WEIGHT: 1.0
+  TRIPLET_LOSS_WEIGHT: 1.0
+
+CHANGE:
+  METHODS:
+    FREQ_NORM_ENABLED: True
+    FREQ_NORM_KIND: "scfg"
+    FREQ_NORM_BASE: "in"
+    FREQ_NORM_POSITIONS: [0, 4, 8]
+    FREQ_NORM_POS0_KIND: "scfg"
+    SCNORM_FG_RATIO: 0.4
+    SCNORM_FG_MASK_TEMP: 0.15
+    SCFG_CONSTRAINED: True
+    SCFG_MIN_FG_NORM: 0.05
+    SCFG_MIN_BG_GAP: 0.10
+    SCFG_MAX_NORM: 0.95
+    SCNORM_BEFORE_BNNECK: True
+    SCNORM_BNNECK_BASE: "ln"
+
+    NFC_TRAINING: True
+    NFC_QUEUE_SIZE: 4096
+    NFC_K1: 8
+    NFC_K2: 8
+    NFC_EMA_MOMENTUM: 0.993
+    NFC_FEATURE_DIM: 768
+    NFC_WARMUP_EPOCHS: 3
+    NFC_TEMPERATURE: 0.07
+    NFC_LOSS_WEIGHT: 3.0
+    NFC_DUAL_COSINE_ALIGN: False
+    NFC_FREQ_ALIGN_WEIGHT: 0.0
+    NFC_CROSS_SPECIES: True
+    NFC_CROSS_SPECIES_K1: 4
+    NFC_CROSS_SPECIES_K2: 4
+    NFC_CROSS_SPECIES_WEIGHT: 3.0
+    NFC_CROSS_SPECIES_MARGIN: 1.0
+    NFC_CROSS_SPECIES_METRIC: "cosine"
+
+OUTPUT_DIR: "outputs/w10k29_to_full12_scfg"
+RESUME: ""
+
+INPUT:
+  SIZE_TRAIN: [256, 256]
+  SIZE_TEST: [256, 256]
+  PROB: 0.5
+  RE_PROB: 0.0
+  PADDING: 10
+  PIXEL_MEAN: [0.5, 0.5, 0.5]
+  PIXEL_STD: [0.5, 0.5, 0.5]
+
+DATASETS:
+  NAMES: "combine"
+  COMBINE_PID: True
+  TRAIN_COMBINE_NAMES: ["wildlifereid10k_species"]
+  TRAIN_ROOTS: ["data/WildlifeReID-10K"]
+  WILDLIFEREID10K:
+    TRAIN_SPLIT_MODE: "all"
+  WILDLIFE71:
+    WILDLIFE_NAMES: [
+      "AmvrakikosTurtles",
+      "CatIndividualImages",
+      "Chicks4FreeID",
+      "CowDataset",
+      "DogFaceNet",
+      "NDD20",
+      "MultiCamCows2024",
+      "PolarBearVidID",
+      "PrimFace",
+      "ReunionTurtles",
+      "SeaStarReID2023",
+      "SouthernProvinceTurtles",
+      "ZakynthosTurtles",
+      "AAUZebraFish",
+      "AerialCattle2017",
+      "BelugaID",
+      "BirdIndividualID",
+      "Cows2021",
+      "CTai",
+      "CZoo",
+      "FriesianCattle2015",
+      "FriesianCattle2017",
+      "Giraffes",
+      "MPDD",
+      "NyalaData",
+      "OpenCows2020",
+      "SMALST",
+      "StripeSpotter",
+      "ZindiTurtleRecall"
+    ]
+
+DATALOADER:
+  SAMPLER: "softmax_triplet"
+  NUM_INSTANCE: 4
+  NUM_WORKERS: 8
+
+SOLVER:
+  OPTIMIZER_NAME: "SGD"
+  MAX_EPOCHS: 60
+  BASE_LR: 0.004
+  IMS_PER_BATCH: 128
+  WARMUP_METHOD: "linear"
+  LARGE_FC_LR: False
+  CHECKPOINT_PERIOD: 5
+  LOG_PERIOD: 400
+  EVAL_PERIOD: 60
+  WEIGHT_DECAY: 1e-4
+  WEIGHT_DECAY_BIAS: 1e-4
+  BIAS_LR_FACTOR: 2
+  MARGIN: 0.7
+  SEED: 1
+
+TEST:
+  EVAL: False
+  IMS_PER_BATCH: 64
+  RE_RANKING: False
+  WEIGHT: ""
+  NECK_FEAT: "before"
+  FEAT_NORM: "yes"
