@@ -2,7 +2,7 @@
 #SBATCH --job-name=v_scl_attn
 #SBATCH --output=logs_scl/video_scl_attn_%j.out
 #SBATCH --error=logs_scl/video_scl_attn_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --time=10:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1

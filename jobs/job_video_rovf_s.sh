@@ -8,6 +8,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=60G
+#SBATCH -x gwn04
 
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate project
@@ -26,12 +27,12 @@ RUN_NAME="rovf_s"
 OUTPUT_DIR="checkpoints/rovf_s/${RUN_NAME}"
 WORLD="closed"
 BATCH_SIZE=30   # 10 mined triplets = 30 clips per step
-CLIP_LEN=5      # Exact RoVF num_frames = 5
+CLIP_LEN=8      # RoVF num_frames = 8
 EPOCHS=10       # Exact RoVF epochs = 10 (5,000 episodes/epoch = 500 steps/ep -> 5,000 total steps)
 LR=1e-04
 WEIGHT_DECAY=0.01
 VAL_SPLIT=0
-EVAL_PERIOD=5
+EVAL_PERIOD=1
 NUM_WORKERS=6
 
 PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"

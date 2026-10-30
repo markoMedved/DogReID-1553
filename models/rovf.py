@@ -29,7 +29,7 @@ class RoVFVideoModel(nn.Module):
       - is_append_avg_emb: True
       - embedding_dim: 384, latent_dim: 384, output_dim: 384
       - num_heads: 8, num_latents: 257, num_tf_layers: 2, dropout_rate: 0.1
-      - num_frames: 5
+      - num_frames: 8
     """
 
     def __init__(self, cfg=None):
@@ -40,7 +40,7 @@ class RoVFVideoModel(nn.Module):
         freeze_image_model = bool(getattr(cfg, "rovf_freeze_image_model", True))
         is_append_avg_emb = bool(getattr(cfg, "rovf_is_append_avg_emb", True))
         perceiver_type = str(getattr(cfg, "rovf_perceiver_type", "v2")).lower()
-        self.num_frames = int(getattr(cfg, "clip_len", 5) or 5)
+        self.num_frames = int(getattr(cfg, "clip_len", 8) or 8)
 
         perceiver_config = {
             "raw_input_dim": None,

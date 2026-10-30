@@ -359,7 +359,7 @@ class Config:
             self.use_id_loss = False
             self.embedding_dim = dim
             self.img_size = (224, 224)
-            self.clip_len = 5
+            self.clip_len = 8
             self.batch_size = 30
             self.k = 3
             self.num_ids = 10
