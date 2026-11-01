@@ -15,52 +15,7 @@ if str(OPENANIMALS_DIR) not in sys.path:
 
 from openanimals.config import get_cfg
 from openanimals.modeling import build_model as build_oa_model
-from openanimals.modeling.backbones.build import BACKBONE_REGISTRY
-from .reid_model import DINOv2Adapter, TemporalPool
-
-
-class DINOv2OpenAnimalsBackbone(nn.Module):
-    def __init__(self, variant="vitb14_reg", unfreeze_blocks=2):
-        super().__init__()
-        self.adapter = DINOv2Adapter(variant)
-        self.unfreeze_blocks = unfreeze_blocks
-        self._init_freeze()
-
-    def _init_freeze(self):
-        # Freeze patch embedding
-        for p in self.adapter.net.patch_embed.parameters():
-            p.requires_grad = False
-        # Freeze leading transformer blocks
-        total_blocks = len(self.adapter.net.blocks)
-        split = max(total_blocks - self.unfreeze_blocks, 0)
-        for block in self.adapter.net.blocks[:split]:
-            for p in block.parameters():
-                p.requires_grad = False
-        # Trainable top blocks + norm
-        for block in self.adapter.net.blocks[split:]:
-            for p in block.parameters():
-                p.requires_grad = True
-        for p in self.adapter.net.norm.parameters():
-            p.requires_grad = True
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-        with torch.no_grad():
-            tokens = self.adapter.net.prepare_tokens_with_masks(x, None)
-        tokens = self.adapter._run_blocks(tokens, self.adapter.net.blocks, self.unfreeze_blocks)
-        norm_tokens = self.adapter.net.norm(tokens)
-        cls_token = norm_tokens[:, 0]  # DINOv2 pre-trained [CLS] token
-        # Reshape to 4D tensor (B, 768, 1, 1) for identity pooling in OpenAnimals heads
-        return cls_token.view(B, 768, 1, 1)
-
-
-def _build_dinov2_backbone(cfg):
-    variant = getattr(cfg.MODEL.BACKBONE, "VARIANT", "vitb14_reg")
-    unfreeze_blocks = getattr(cfg.MODEL.BACKBONE, "UNFREEZE_BLOCKS", 2)
-    return DINOv2OpenAnimalsBackbone(variant, unfreeze_blocks=unfreeze_blocks)
-
-
-BACKBONE_REGISTRY._obj_map["build_dinov2_backbone"] = _build_dinov2_backbone
+from .reid_model import TemporalPool
 
 
 class OpenAnimalsVideoModel(nn.Module):
@@ -75,26 +30,13 @@ class OpenAnimalsVideoModel(nn.Module):
         "oa_bot": "OpenAnimals/configs/DogReID/bot.yml",
         "openanimals_bot": "OpenAnimals/configs/DogReID/bot.yml",
 
-        "dinov2_bot": "OpenAnimals/configs/DogReID/bot.yml",
-        "oa_dinov2": "OpenAnimals/configs/DogReID/bot.yml",
-        "oa_dinov2_bot": "OpenAnimals/configs/DogReID/bot.yml",
-        "openanimals_dinov2_bot": "OpenAnimals/configs/DogReID/bot.yml",
-
         "agw": "OpenAnimals/configs/DogReID/agw.yml",
         "oa_agw": "OpenAnimals/configs/DogReID/agw.yml",
         "openanimals_agw": "OpenAnimals/configs/DogReID/agw.yml",
 
-        "dinov2_agw": "OpenAnimals/configs/DogReID/agw.yml",
-        "oa_dinov2_agw": "OpenAnimals/configs/DogReID/agw.yml",
-        "openanimals_dinov2_agw": "OpenAnimals/configs/DogReID/agw.yml",
-
         "sbs": "OpenAnimals/configs/DogReID/sbs.yml",
         "oa_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
         "openanimals_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
-
-        "dinov2_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
-        "oa_dinov2_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
-        "openanimals_dinov2_sbs": "OpenAnimals/configs/DogReID/sbs.yml",
 
         "mgn": "OpenAnimals/configs/DogReID/mgn.yml",
         "oa_mgn": "OpenAnimals/configs/DogReID/mgn.yml",
@@ -103,14 +45,6 @@ class OpenAnimalsVideoModel(nn.Module):
         "arbase": "OpenAnimals/configs/DogReID/arbase.yml",
         "oa_arbase": "OpenAnimals/configs/DogReID/arbase.yml",
         "openanimals_arbase": "OpenAnimals/configs/DogReID/arbase.yml",
-
-        "dinov2_arbase": "OpenAnimals/configs/DogReID/arbase.yml",
-        "oa_dinov2_arbase": "OpenAnimals/configs/DogReID/arbase.yml",
-        "openanimals_dinov2_arbase": "OpenAnimals/configs/DogReID/arbase.yml",
-
-        "arbase_mb": "OpenAnimals/configs/DogReID/mgn.yml",
-        "oa_arbase_mb": "OpenAnimals/configs/DogReID/mgn.yml",
-        "arbase_mgn": "OpenAnimals/configs/DogReID/mgn.yml",
     }
 
     def __init__(self, model_name: str, pooling_type: str = "attention", num_classes: int = 0, chunk_size: int = 32, unfreeze_blocks: int = 2, freeze_epochs: int = None):
@@ -135,84 +69,25 @@ class OpenAnimalsVideoModel(nn.Module):
             oa_cfg.MODEL.FREEZE_LAYERS = []
             oa_cfg.SOLVER.FREEZE_ITERS = 0
 
-        is_dinov2 = "dinov2" in clean_name
-        if is_dinov2:
-            oa_cfg.MODEL.BACKBONE.NAME = "build_dinov2_backbone"
-            oa_cfg.MODEL.BACKBONE.FEAT_DIM = 768
-            oa_cfg.MODEL.BACKBONE.UNFREEZE_BLOCKS = unfreeze_blocks
-            oa_cfg.MODEL.BACKBONE.WITH_NL = False
-            oa_cfg.MODEL.BACKBONE.WITH_IBN = False
-            oa_cfg.MODEL.HEADS.IN_FEAT = 768
-            oa_cfg.MODEL.HEADS.POOL_LAYER = "FastGlobalAvgPool"  # Exact CLS identity pass-through
-            oa_cfg.INPUT.SIZE_TRAIN = [224, 224]
-            oa_cfg.INPUT.SIZE_TEST = [224, 224]
-
-            # Metric space: spherical L2-normalized embeddings
-            oa_cfg.MODEL.LOSSES.TRI.NORM_FEAT = True
-
-            # Model-specific head and loss configurations:
-            if "sbs" in clean_name:
-                oa_cfg.MODEL.HEADS.NECK_FEAT = "after"
-                oa_cfg.MODEL.HEADS.CLS_LAYER = "CircleSoftmax"
-                oa_cfg.MODEL.HEADS.SCALE = 64
-                oa_cfg.MODEL.HEADS.MARGIN = 0.35
-                oa_cfg.MODEL.LOSSES.TRI.MARGIN = 0.0
-                oa_cfg.MODEL.LOSSES.TRI.HARD_MINING = True
-                oa_cfg.MODEL.FREEZE_LAYERS = ["backbone"]
-                oa_cfg.SOLVER.SCHED = "CosineAnnealingLR"
-                oa_cfg.SOLVER.DELAY_EPOCHS = 25
-                oa_cfg.SOLVER.ETA_MIN_LR = 7e-08
-            elif "agw" in clean_name:
-                oa_cfg.MODEL.HEADS.NECK_FEAT = "before"
-                oa_cfg.MODEL.HEADS.CLS_LAYER = "Linear"
-                oa_cfg.MODEL.LOSSES.TRI.MARGIN = 0.0
-                oa_cfg.MODEL.LOSSES.TRI.HARD_MINING = False  # Non-hard weighted soft margin!
-                oa_cfg.SOLVER.SCHED = "MultiStepLR"
-                oa_cfg.SOLVER.STEPS = [25, 35]
-                oa_cfg.SOLVER.GAMMA = 0.1
-            elif "arbase" in clean_name:
-                oa_cfg.MODEL.HEADS.NECK_FEAT = "before"
-                oa_cfg.MODEL.HEADS.CLS_LAYER = "Linear"
-                oa_cfg.MODEL.LOSSES.TRI.MARGIN = 0.3
-                oa_cfg.MODEL.LOSSES.TRI.HARD_MINING = True
-                oa_cfg.INPUT.REA.ENABLED = False
-                oa_cfg.SOLVER.SCHED = "CosineAnnealingLR"
-                oa_cfg.SOLVER.DELAY_EPOCHS = 25
-                oa_cfg.SOLVER.ETA_MIN_LR = 7e-08
-            else:  # dinov2_bot
-                oa_cfg.MODEL.HEADS.NECK_FEAT = "before"
-                oa_cfg.MODEL.HEADS.CLS_LAYER = "Linear"
-                oa_cfg.MODEL.LOSSES.TRI.MARGIN = 0.3
-                oa_cfg.MODEL.LOSSES.TRI.HARD_MINING = True
-                oa_cfg.SOLVER.SCHED = "MultiStepLR"
-                oa_cfg.SOLVER.STEPS = [25, 35]
-                oa_cfg.SOLVER.GAMMA = 0.1
-
-            oa_cfg.SOLVER.OPT = "Adam"
-            oa_cfg.SOLVER.BASE_LR = 3.5e-04
-            oa_cfg.SOLVER.WEIGHT_DECAY = 5e-04
-            oa_cfg.SOLVER.MAX_EPOCH = 50
-            oa_cfg.SOLVER.WARMUP_FACTOR = 0.1
+        oa_cfg.SOLVER.OPT = "Adam"
+        oa_cfg.SOLVER.BASE_LR = 3.0e-05 if "arbase" in clean_name else 1.2e-04
+        oa_cfg.SOLVER.WEIGHT_DECAY = 5e-04
+        oa_cfg.SOLVER.MAX_EPOCH = 35
+        oa_cfg.SOLVER.WARMUP_FACTOR = 0.1
+        if any(k in clean_name for k in ("arbase", "sbs", "mgn")):
+            oa_cfg.SOLVER.SCHED = "CosineAnnealingLR"
+            oa_cfg.SOLVER.DELAY_EPOCHS = 5 if "arbase" in clean_name else 15
+            oa_cfg.SOLVER.ETA_MIN_LR = 7e-07
         else:
-            oa_cfg.SOLVER.OPT = "Adam"
-            oa_cfg.SOLVER.BASE_LR = 3.0e-05 if "arbase" in clean_name else 1.2e-04
-            oa_cfg.SOLVER.WEIGHT_DECAY = 5e-04
-            oa_cfg.SOLVER.MAX_EPOCH = 35
-            oa_cfg.SOLVER.WARMUP_FACTOR = 0.1
-            if any(k in clean_name for k in ("arbase", "sbs", "mgn")):
-                oa_cfg.SOLVER.SCHED = "CosineAnnealingLR"
-                oa_cfg.SOLVER.DELAY_EPOCHS = 5 if "arbase" in clean_name else 15
-                oa_cfg.SOLVER.ETA_MIN_LR = 7e-07
-            else:
-                oa_cfg.SOLVER.SCHED = "MultiStepLR"
-                oa_cfg.SOLVER.STEPS = [15, 25]
-                oa_cfg.SOLVER.GAMMA = 0.1
-                oa_cfg.SOLVER.DELAY_EPOCHS = 0
+            oa_cfg.SOLVER.SCHED = "MultiStepLR"
+            oa_cfg.SOLVER.STEPS = [15, 25]
+            oa_cfg.SOLVER.GAMMA = 0.1
+            oa_cfg.SOLVER.DELAY_EPOCHS = 0
 
         self.oa_cfg = oa_cfg
         self.is_openanimals = True
         self.oa_model = build_oa_model(oa_cfg)
-        self.is_mgn = "mgn" in clean_name or "arbase_mb" in clean_name or "arbase_mgn" in clean_name
+        self.is_mgn = "mgn" in clean_name
         self.chunk_size = chunk_size
         self.num_classes = oa_cfg.MODEL.HEADS.NUM_CLASSES
         self.pooling_type = pooling_type
@@ -224,7 +99,7 @@ class OpenAnimalsVideoModel(nn.Module):
             )
             self.embed_dim = 2048 * 8
         else:
-            self.embed_dim = 768 if is_dinov2 else oa_cfg.MODEL.BACKBONE.FEAT_DIM
+            self.embed_dim = oa_cfg.MODEL.BACKBONE.FEAT_DIM
             self.temporal_pool = TemporalPool(self.embed_dim, mode=pooling_type)
 
     # ------------------------------------------------------------------

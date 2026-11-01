@@ -159,11 +159,10 @@ def find_checkpoint_in_dir(directory: Path):
     if not directory.exists() or not directory.is_dir():
         return None
 
-    # Priority 1: latest_model.pth or best_model.pth
-    for priority_name in ("latest_model.pth", "best_model.pth"):
-        p = directory / priority_name
-        if p.exists():
-            return p
+    # Priority 1: latest_model.pth
+    p = directory / "latest_model.pth"
+    if p.exists():
+        return p
 
     # Priority 2: highest numbered epoch checkpoint
     epoch_ckpts = []
@@ -217,11 +216,7 @@ def auto_discover_checkpoint(model_name: str, run_name: str = None):
         ROOT_DIR / "checkpoints_baseline",
         ROOT_DIR / "checkpoints_resnet",
         ROOT_DIR / "checkpoints_dinov2",
-        ROOT_DIR / "checkpoints_dinov2_oa",
         ROOT_DIR / "checkpoints_tfclip",
-        ROOT_DIR / "checkpoints_resnet_og_params",
-        ROOT_DIR / "trained_models_neurips",
-        ROOT_DIR / "trained_models",
     ]
 
     exact_matches = []

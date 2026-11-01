@@ -1,261 +1,277 @@
 # 🐶 DogReID-1553: Large-Scale Dog Re-Identification Video Dataset and Benchmark
 
-**DogReID-1553** is a large-scale dataset designed for **individual dog re-identification (Re-ID)** using video data.  
-The dataset contains video clips and extracted frames of dogs captured across different environments, viewpoints, and lighting conditions.
+**DogReID-1553** is a large-scale video dataset designed for **individual dog re-identification (Re-ID)** in real-world scenarios.  
+The dataset contains video sequences and extracted image frames of dogs captured across diverse outdoor and indoor environments, varying viewpoints, natural poses, and dynamic lighting conditions.
 
 This dataset supports research in:
-* **Animal biometrics**
-* **Lost pet reunification**
-* **Automated animal welfare monitoring**
-* **Video-based re-identification systems**
-* **Fine-grained recognition**
+* **Animal biometrics and fine-grained recognition**
+* **Lost pet identification and reunification**
+* **Automated wildlife and animal welfare monitoring**
+* **Multi-frame video-based and static image-to-video re-identification**
 
-The dataset is introduced as part of **Project Puppies**, which aims to enable new research directions in **animal identity recognition using computer vision**. 
+The dataset is introduced as part of **Project Puppies**, which aims to advance animal biometrics using modern computer vision and deep metric learning.
 
-------------------------------------------------------------------------
+---
 
 ## 📦 Dataset Overview
 
 DogReID-1553 contains:
 
--   **1,553 individual dogs** and a total of **7463 videos(images)**
-    -   **Video clips format: .mp4** 
-    -   **Extracted images format: .jpg**
--   **Bounding Boxes**: For the dogs in the first frame of videos / Images dataset provided in `bounding_boxes.csv`.
--   **Train / Query / Gallery splits** provided in `splits.csv`
--   **User provided breeds** in `breeds.csv`
+- **1,553 individual dogs** across **7,463 video clips** (and corresponding extracted frame images)
+  - **Video clips format**: `.mp4` (8-frame temporal video sequences for video-to-video retrieval)
+  - **Static images format**: `.jpg` (bounding-box crops for image-to-video retrieval)
+- **Bounding Boxes**: Ground-truth bounding boxes for dogs across frames provided in `bounding_boxes.csv`.
+- **Identity Splits**: Closed-World and Open-World train, query, and gallery splits provided in `splits.csv`.
+- **Breed Annotations**: User-verified dog breed metadata provided in `breeds.csv`.
 
-Identities appear across **multiple videos and environments**, making the dataset suitable for **video-based (and image-based) Re-ID benchmarking**.
+Identities appear across **multiple cameras, dates, and backgrounds**, enabling rigorous benchmarking in both **Video-to-Video (V2V)** and **Image-to-Video (I2V)** settings.
 
 ---
 
 ## 🏆 Leaderboard
-To track the progress of the community and foster continued innovation in animal biometrics, we maintain an official **DogReID-1553 Leaderboard**. 
 
-We highly encourage researchers, developers, and practitioners to evaluate their novel architectures using our provided evaluation pipeline and submit their results. The leaderboard tracks state-of-the-art performance across both our **Closed-World** (mAP, Rank-1, Rank-5) and **Open-World** (DIR @ FAR) evaluation protocols. 
+To track community progress and foster reproducible innovation in animal biometrics, we host the official **DogReID-1553 Leaderboard**.
 
-------------------------------------------------------------------------
-## 🚀 Baseline Methods
-In this repository, we provide the **benchmark baseline methods** used to evaluate the dataset. This includes the complete training and evaluation pipeline for three state-of-the-art transformer-based architectures (DINOv2, SwinV2, and ViT). By providing the source code of these baselines, we aim to:
-1. **Ensure Reproducibility:** Allow researchers to replicate our benchmark results exactly.
-2. **Standardize Evaluation:** Provide the official implementation of our Closed-World and Open-World evaluation protocols.
-3. **Facilitate Development:** Provide a modular framework that can be easily extended to test new methodologies.
+Researchers are encouraged to evaluate their architectures using our standardized evaluation protocols:
+* **Closed-World Evaluation**: Mean Average Precision (**mAP**), Cumulative Matching Characteristics (**Rank-1**, **Rank-5**, **Rank-10**) with 95% bootstrap confidence intervals.
+* **Open-World Evaluation**: Detection and Identification Rate (**DIR @ FAR = 1%**, **5%**, **10%**) across varying verification distance thresholds.
+
+---
+
+## 🚀 Benchmark Baselines & Architectures
+
+This repository provides reproducible implementations for all baseline architectures evaluated in our benchmark:
+
+1. **Baselines using vision foundational models**:
+   - **DINOv2** (ViT-B/14 with registers): Self-supervised transformer with top-block adaptation and temporal attention pooling.
+   - **CLIP** (ViT-B/16): Contrastively pre-trained vision-language foundation backbone.
+   - **MegaDescriptor** (MegaDescriptor-B-224): Wildlife-foundation model pre-trained on diverse animal species.
+2. **Specialized Animal & Video Re-ID Frameworks**:
+   - **TF-CLIP** (*AAAI 2024*): Text-free CLIP video Re-ID with sequence-specific prompts and temporal memory diffusion.
+   - **RoVF** (*CVPR 2024*): Recurrence over Video Frames using Perceiver-based temporal recurrence on top of DINOv2.
+   - **AdaFreq** (*ECCV 2024*): Adaptive high-frequency transformer isolating species textures from wilderness background clutter.
+   - **SCL / MetaN** (*ECCV 2024*): Semantic Consistency Learning using cross-species spectral normalization and neighborhood alignment.
+3. **ResNet-50  Baselines from OpenAnimals** (*ICCV 2025*) :
+   - **BoT** (Bag of Tricks for Re-ID)
+   - **AGW** (Attention Generalized Weighting with non-local attention and generalized mean pooling)
+   - **SBS** (Stronger Baseline with Circle Loss and cosine decay)
+   - **MGN** (Multiple Granularity Network with multi-branch stripe pooling)
+   - **ARBase** (Animal Re-ID Base tailored for animal biometrics)
 
 ---
 
 ## 🔗 Links
-* **📄 Paper:** (Under review) — Read the full research paper detailing the creation of DogReID-1553, the methodology, and our baseline findings.
-* **📊 Leaderboard:** https://project-puppies.com/leaderboard — View the current state-of-the-art models, compare metrics, and find instructions on how to submit your own model's results.
-* **💾 Dataset:** Link currently removed for anonymity reasons, since our paper is under review — Access and download the dataset
 
-------------------------------------------------------------------------
-------------------------------------------------------------------------
+* **📄 Paper:** *(Under review)* — Full research paper describing dataset curation, identity verification protocols, and extensive benchmark evaluations.
+* **📊 Leaderboard:** https://project-puppies.com/leaderboard — Compare models, inspect confidence intervals, and submit new results.
+* **💾 Dataset Download:** *(Link temporarily omitted during peer-review for double-blind anonymity)*.
+
+---
+
 # 🚀 Quick Start
 
 ## 1️⃣ Clone the Repository
 
-``` bash
+```bash
 git clone [repository_name]
 cd DogReID-1553
 ```
 
-------------------------------------------------------------------------
+---
 
-## ⚙️ Environment Setup
+## 2️⃣ Environment Setup
 
-We recommend using **Conda** to create an isolated environment.
-
-### Create Environment
+We recommend using **Conda** for an isolated, reproducible environment.
 
 ```bash
-conda create -n dog_reid python=3.10 -y
-conda activate dog_reid
-```
+# Create and activate environment
+conda create -n dogreid python=3.10 -y
+conda activate dogreid
 
-### Install Base Dependencies
+# Install PyTorch with CUDA support (e.g. CUDA 12.4/12.6)
+pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
 
-```bash
+# Install Core Dependencies
 pip install -r requirements.txt
+
+# Install Metric Learning and Detection Packages
+pip install pytorch-metric-learning==2.9.0 ultralytics==8.4.41 timm
 ```
 
-### Install PyTorch (separately)
+---
 
-Install PyTorch based on your system.
-Examples:
+## 3️⃣ Dataset Directory Structure
 
-**CUDA 12.6:**
-
-```bash
-pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-```
-
-**CPU only:**
-
-```bash
-pip install torch torchvision torchaudio
-```
-
-### Install Torch-dependent Libraries
-
-```bash
-pip install pytorch-metric-learning timm ultralytics
-```
-
-------------------------------------------------------------------------
-
-
-## 📥 Dataset Download
-
-Download the dataset from:
-
-Link currently removed since paper is under review for anonymity.
-
-After downloading, unzip Videos.zip and Images.zip into:
-
-    DogReID-1553/
-
-Ensure the folders match the structure described below.
-
-------------------------------------------------------------------------
-## 📂 Dataset Structure
-
-After downloading and extracting the dataset, the repository should have
-the following structure:
+Extract the dataset archives into the repository root so the layout matches:
 
 ```text
 DogReID-1553/
 │
-├── configs/                   # Training configuration files
-│   └── config.py
+├── configs/                   # Training configuration definitions (configs/config.py)
+├── data/                      # Multi-frame video dataloaders & transforms
+├── engine/                    # Specialized trainers (DINOv2, AdaFreq, RoVF, SCL)
+├── evaluation/                # Evaluation pipeline, distance matrix CSV generator & notebooks
+│   ├── evaluate_closed_world.ipynb
+│   ├── evaluate_open_world.ipynb
+│   ├── evaluate_ablations.ipynb
+│   ├── make_csv.py
+│   └── evaluation_utils.py
+├── models/                    # Model factory, wrappers & adapter modules
+├── losses/                    # Batch-hard triplet, soft triplet, and cross-entropy losses
+├── solver/                    # Warmup schedulers (CosineAnnealingLR, MultiStepLR) & optimizers
+├── jobs/                      # HPC SLURM batch submission scripts
 │
-├── data/                      # Dataset loading and preprocessing scripts
+├── bounding_boxes.csv         # Dog bounding box annotations
+├── breeds.csv                 # Dog breed annotations
+├── splits.csv                 # Closed-world and open-world identity splits
 │
-├── engine/                    # Training and optimization logic
+├── Images/                    # Extracted static frame images (.jpg)
+├── Videos/                    # Video clip sequences (.mp4)
 │
-├── evaluation/                # Evaluation scripts and metrics
-│
-├── Images/                    # Extracted image frames (.jpg)
-│
-├── Videos/                    # Video clips (.mp4)
-│
-├── models/                    # Model architectures
-│
-├── bounding_boxes.csv         # Bounding box annotations
-│
-├── breeds.csv                 # Dog breed metadata
-│
-├── splits.csv                 # Train / Query / Gallery splits
-│
-├── train.py                   # Main training script
-│
-├── requirements.txt           # Python dependencies
-│
+├── train.py                   # Unified training script for all architectures
+├── requirements.txt           # Python package requirements
 └── README.md
 ```
-------------------------------------------------------------------------
+
+---
+
+## 📁 Checkpoints Organization
+
+Trained model checkpoints are automatically organized into distinct directories based on `--world` (`closed` vs. `open`) and `--val_split`:
+
+| Directory | Purpose | Training Set |
+| :--- | :--- | :--- |
+| **`checkpoints/`** | **Final closed-world benchmark models** (`--val_split 0.0`). | 100% of closed-world training identities |
+| **`checkpoints_validation/`** | **Closed-world hyperparameter & ablation models** (`--val_split 0.2`, default). | 80% train / 20% validation split |
+| **`checkpoints_open_results/`** | **Final open-world benchmark models** (`--world open --val_split 0.0`). | 100% of open-world training identities |
+| **`checkpoints_experiments/`** | **Historical archives** of exploratory runs and parameter sweeps. | Archival |
+
+> [!NOTE]
+> **Validation Split vs. Final Benchmark Runs**: By default (`--val_split 0.2`), `train.py` holds out 20% of the training identities for validation monitoring during hyperparameter tuning and ablations. Passing `--val_split 0.0` trains on 100% of the training identities and evaluates directly on the test set (`query` and `gallery`) during the run; this option is **strictly intended for final benchmark runs** once all hyperparameters and design decisions have been fixed.
+
+---
 
 ## 🏋️ Training
 
-Training parameters can be modified inside:
+All architectures are trained through the unified `train.py` entrypoint. Model-specific defaults (resolution, optimizer, learning rate, schedule, and epochs) are configured automatically in `configs/config.py` when `--model` is specified, and any parameter can be overridden via CLI flags.
 
-    configs/config.py
-
-### Start Training
-
-``` bash
-python train.py  # Can also specify parameters here
+### 1. Foundation Vision Transformers (`baseline` / `dinov2`, `clip_baseline`, `megadescriptor`)
+```bash
+# DINOv2 ViT-B/14 (or replace --model with clip_baseline or megadescriptor)
+python train.py \
+    --model baseline \
+    --pooling_type attention \
+    --unfreeze_blocks 6 \
+    --epochs 51 \
+    --batch_size 32 \
+    --lr 2e-5 \
+    --lr_sched cosine \
+    --lr_delay_epochs 25 \
+    --val_split 0.0
 ```
-------------------------------------------------------------------------
 
+### 2. OpenAnimals ResNet-50 Baselines (`bot`, `agw`, `sbs`, `mgn`, `arbase`)
+```bash
+# Train any OpenAnimals ResNet-50 baseline (bot, agw, sbs, mgn, arbase)
+python train.py \
+    --model bot \
+    --pooling_type attention \
+    --val_split 0.0
+```
+
+### 3. Specialized Animal & Video Re-ID Architectures (`tfclip`, `rovf`, `adafreq`, `scl`)
+```bash
+# TF-CLIP (AAAI 2024)
+python train.py --model tfclip --pooling_type attention --val_split 0.0
+
+# RoVF (CVPR 2024: rovf_s or rovf_base)
+python train.py --model rovf_s --epochs 10 --val_split 0.0
+
+# AdaFreq (ECCV 2024)
+python train.py --model adafreq --pooling_type attention --epochs 150 --val_split 0.0
+
+# SCL / MetaN (ECCV 2024)
+python train.py --model scl --pooling_type attention --epochs 60 --val_split 0.0
+```
+
+---
 
 ## 📊 Evaluation
 
-Evaluating a trained model is a two-step process: generating a distance matrix CSV, and then running bootstrap sampling to calculate the final metrics.
+Evaluation is performed in two decoupled stages: **feature extraction & distance matrix calculation** (`evaluation/make_csv.py`), followed by **statistical bootstrap confidence estimation** (interactive Jupyter notebooks or programmatic calls).
 
-### 1. Generate the Distance Matrix
+### Step 1: Generate Distance Matrix CSV
 
-You can generate the distance matrix directly from the terminal using command-line arguments. There is no need to manually edit the script for supported models. Note however that prior to this, you need to have a saved trained model (complete training on the entire training dataset). 
+Use `evaluation/make_csv.py` to run inference across queries and galleries:
 
-Run `make_csv.py` and configure your run using the following flags:
-
-* **`--model_name`**: The identifier for your architecture (choices: `dinov2`, `swin`, `vit`).
-* **`--world_type`**: The evaluation framework to use (choices: `closed` or `open`).
-* **`--use_images`**: Include this flag to use images as the query set. Omit it for using videos.
-
-**Example Command:**
 ```bash
-python make_csv.py --model_name dinov2 --world_type open --use_images
+# Closed-World Video-to-Video Evaluation (DINOv2)
+python evaluation/make_csv.py \
+    --model_name baseline \
+    --world_type closed
+
+# Closed-World Image-to-Video Evaluation (Static Query Crop)
+python evaluation/make_csv.py \
+    --model_name baseline \
+    --world_type closed \
+    --use_images
+
+# Open-World Video-to-Video Evaluation
+python evaluation/make_csv.py \
+    --model_name baseline \
+    --world_type open
 ```
-This will run inference to extract the features and automatically save a distance matrix CSV to `evaluation/csvs/<model_name>_<world_type>/`.
 
-> **Note for Custom Architectures:** If you are evaluating a brand-new model architecture not included in the default parser choices, you will need to open `make_csv.py` to manually define your `MODEL_CLASS` and provide the exact `MODEL_PATH` and `OUTPUT_FOLDER`.
+**Key CLI Options:**
+* `--model_name`: Architecture identifier (`baseline`, `clip`, `megadescriptor`, `bot`, `agw`, `sbs`, `mgn`, `arbase`, `tfclip`, `rovf`, `scl`, `adafreq`).
+* `--checkpoint_path`: Explicit path to a `latest_model.pth`. If omitted, the script automatically resolves the checkpoint from `checkpoints/`.
+* `--world_type`: `closed` or `open`.
+* `--use_images`: Query modality — set for Image-to-Video (I2V); omit for Video-to-Video (V2V).
+* `--chunk_size`: Max frames processed simultaneously per GPU forward pass (defaults to 16 for memory efficiency).
 
-This will save a distance matrix CSV to `evaluation/csvs/<MODEL_NAME>_<WORLD_TYPE>/`.
+Distance matrices and metadata are saved under `evaluation/csvs_<world_type>_results/<model>_<modality>/`.
 
-### 2. Calculate Metrics (Bootstrap Evaluation)
+### Step 2: Calculate Metrics & 95% Confidence Intervals
 
-Once the distance matrix is ready, use the bootstrap evaluation to calculate statistically robust metrics. This process resamples the data with replacement to provide mean scores and **95% Confidence Intervals**.
+Open the dedicated evaluation notebooks to calculate bootstrap metrics and generate publication-ready tables and plots:
+
+* **Closed-World Evaluation**: `evaluation/evaluate_closed_world.ipynb`
+* **Open-World Evaluation**: `evaluation/evaluate_open_world.ipynb`
+* **Ablation Studies**: `evaluation/evaluate_ablations.ipynb`
+
+Alternatively, run bootstrap calculation programmatically:
 
 ```python
-from evaluation_utils import bootstrap_from_csv
+from evaluation.evaluation_utils import bootstrap_from_csv
 
-# Path to the CSV generated in Step 1
-csv_file = "evaluation/csvs/dinov2_closed/closed_dist_matrix.csv"
+# Closed-world bootstrap (m=100 resamples)
+results = bootstrap_from_csv(
+    csv_path="evaluation/csvs_closed_results/baseline_vid2vid/closed_dist_matrix.csv",
+    m=100,
+    mode="closed"
+)
 
-# m=100 is recommended for stable confidence intervals
-results = bootstrap_from_csv(csv_path=csv_file, m=100, mode="closed")
+print(f"mAP: {results['mAP_boot_mean']*100:.1f} ± {results['mAP_std']*100:.1f}%")
+print(f"Rank-1: {results['cmc_boot_mean'][0]*100:.1f}% [95% CI: {results['cmc_ci_lower'][0]*100:.1f}-{results['cmc_ci_upper'][0]*100:.1f}%]")
 ```
----------
 
-### Understanding the Return Values
-
-The `results` dictionary provides different data depending on the `mode` you select. In both modes, the dictionary always includes a **`full_set`** key, which contains the point estimate metrics calculated on the exact original dataset (without bootstrapping). The remaining keys provide the bootstrap statistics. For an example of use, you can check our `closed_set_plots.ipynb` and `open_set_plots.ipynb` notebooks.
-
-
-
-#### **Closed-World Setting (`mode="closed"`)**
-
-**1. `full_set` Dictionary (Original Dataset Metrics)**
-* **`mAP`**: The overall Mean Average Precision point estimate.
-* **`cmc`**: An array containing the exact accuracy at each rank (Rank-1, Rank-2, etc.) for the full dataset.
-
-**2. Bootstrap Statistics (Uncertainty Quantification)**
-* **`mAP_boot_mean` / `mAP_std`**: The bootstrap mean and standard deviation for the Mean Average Precision.
-* **`mAP_ci`**: A tuple containing the `(lower, upper)` 95% confidence bounds for mAP.
-* **`cmc_boot_mean`**: An array containing the mean accuracy at each rank across bootstrap iterations.
-* **`cmc_ci_lower` / `cmc_ci_upper`**: Arrays representing the lower and upper 95% confidence boundaries for the CMC curve.
-
-
-#### **Open-World Setting (`mode="open"`)**
-
-**1. `full_set` Dictionary (Original Dataset Metrics)**
-* **`fars`**: An array representing the exact False Alarm Rates (FAR) calculated across all evaluated distance thresholds.
-* **`dirs_r1` / `dirs_r5`**: Arrays representing the exact Detection and Identification Rates (DIR) at Rank-1 and Rank-5 across all thresholds.
-* **`r1_{target}` / `r5_{target}`** *(e.g., `r1_0.01`, `r5_0.1`)*: The exact DIR scores at specific targeted FAR points (like 1%, 5%, and 10%) for the full dataset. Returns `NaN` if the exact FAR point could not be achieved within the tolerance.
-
-**2. Bootstrap Statistics (Uncertainty Quantification)**
-* **`fars_boot_mean`**: The X-axis data array representing the mean False Alarm Rate across bootstrap iterations.
-* **`dirs_r1_boot_mean` / `dirs_r5_boot_mean`**: The Y-axis data arrays representing the mean DIR at Rank-1 and Rank-5.
-* **`dirs_r1_ci` / `dirs_r5_ci`**: Tuples formatted as `(lower_array, upper_array)` containing the 95% confidence envelopes for the Rank-1 and Rank-5 DIR vs FAR curves.
-* **`{target}_boot_stats`** *(e.g., `r1_0.01_boot_stats`, `r5_0.1_boot_stats`)*: Dynamically generated dictionaries for the targeted FAR points. Each dictionary contains:
-    * **`mean`**: The bootstrap mean DIR score at that specific FAR.
-    * **`ci`**: A tuple `(lower, upper)` for the 95% confidence interval at that specific point.
-
-------------------------------------------------------------------------
+---
 
 ## 🙏 Acknowledgments
 
-We express our sincere appreciation to the authors and open-source contributors of the following projects, whose models and codebases were adapted and used as part of our benchmark evaluation:
+We gratefully acknowledge the authors and open-source contributors of the following works and codebases adapted in our benchmark:
 
-- **[OpenAnimals](https://github.com/hshustc/OpenAnimals)** ([Hou et al.](https://arxiv.org/abs/2404.09241)): A versatile benchmark and framework investigating person re-identification methods for animal re-ID.
-- **[TF-CLIP](https://github.com/AsuradaYuci/TF-CLIP)** ([Yu et al., AAAI 2024](https://arxiv.org/abs/2404.14811)): A state-of-the-art text-free CLIP framework designed for video-based person re-identification.
+- **[OpenAnimals](https://github.com/hshustc/OpenAnimals)** — Hou et al., *"OpenAnimals: Revisiting Person Re-Identification for Animals Towards Better Generalization"*, ECCV 2024. [[arXiv:2410.00204](https://arxiv.org/abs/2410.00204)]
+- **[TF-CLIP](https://github.com/AsuradaYuci/TF-CLIP)** — Yu et al., *"TF-CLIP: Learning Text-Free CLIP for Video-Based Person Re-Identification"*, AAAI 2024. [[arXiv:2312.09627](https://arxiv.org/abs/2312.09627)]
+- **[RoVF](https://github.com/mitch-rogers/RoVF-Meerkat-Reidentification)** — Rogers et al., *"Recurrence over Video Frames (RoVF) for Animal Re-identification"*, CVPR 2024 (CV4Animals Workshop). [[arXiv:2406.13002](https://arxiv.org/abs/2406.13002)]
+- **[AdaFreq](https://github.com/JigglypuffStitch/AdaFreq)** — Li, Chen, & Ye, *"Adaptive High-Frequency Transformer for Diverse Wildlife Re-Identification"*, ECCV 2024. [[arXiv:2410.06977](https://arxiv.org/abs/2410.06977)]
+- **[ECCV-26 SCL](https://github.com/Kemalau/ECCV-26-SCL)** — *"Cross-Species Animal Re-Identification with Semantic Consistency Learning"*, ECCV 2024. [[arXiv:2609.09705](https://arxiv.org/abs/2609.09705)]
+---
 
-------------------------------------------------------------------------
+## 📜 Citation
 
-# 📜 Citation
-
-If you use this dataset in your research, please cite:
+If you find DogReID-1553 or this codebase helpful in your research, please cite:
 
 ```bibtex
-Paper under review
+Paper currently under review
 ```
