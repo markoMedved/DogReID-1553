@@ -270,20 +270,36 @@ class CLIPAdapter(nn.Module):
 class MegaDescriptorAdapter(nn.Module):
     """MegaDescriptor backbone (Swin-B pre-trained by BVRA for animal re-ID) loaded via timm."""
 
-    def __init__(self, model_name: str = "hf-hub:BVRA/MegaDescriptor-B-224"):
+    def __init__(
+        self,
+        model_name: str = "hf-hub:BVRA/MegaDescriptor-B-224",
+        representation_type: str = "cls",
+        gem_p: float = 3.0,
+    ):
         super().__init__()
         import timm
         self.net = timm.create_model(model_name, pretrained=True)
         self.dim = getattr(self.net, "num_features", 1024)
         self.model_name = model_name
+        self.representation_type = (representation_type or "cls").lower()
+        if self.representation_type in ("patch_gem", "gem"):
+            self.gem_p = nn.Parameter(torch.ones(1) * float(gem_p))
+
+    def _pool_spatial(self, feats):
+        if self.representation_type in ("patch_gem", "gem"):
+            B = feats.shape[0]
+            flat = feats.view(B, -1, feats.shape[-1])  # [B, 49, 1024]
+            p = self.gem_p.clamp(min=1.0)
+            return (flat.clamp(min=1e-6).pow(p).mean(dim=1)).pow(1.0 / p)
+        return self.net.forward_head(feats, pre_logits=True)
 
     def pooled(self, x, n_grad=None):
         if n_grad == 0:
             with torch.no_grad():
                 feats = self.net.forward_features(x)
-                return self.net.forward_head(feats, pre_logits=True)
+                return self._pool_spatial(feats)
         feats = self.net.forward_features(x)
-        return self.net.forward_head(feats, pre_logits=True)
+        return self._pool_spatial(feats)
 
 
 def build_backbone(cfg):
@@ -301,6 +317,8 @@ def build_backbone(cfg):
     if name in ("megadescriptor", "megadescriptor_b", "megadescriptor_base"):
         return MegaDescriptorAdapter(
             model_name=getattr(cfg, "megadescriptor_variant", "hf-hub:BVRA/MegaDescriptor-B-224"),
+            representation_type=getattr(cfg, "representation_type", "cls"),
+            gem_p=getattr(cfg, "gem_p", 3.0),
         )
 
     if name in ("clip_baseline", "baseline_clip"):
@@ -377,7 +395,11 @@ class VideoReID(nn.Module):
 
             # --- Chunked Forward Pass ---
             chunks = torch.split(frames, self.chunk_size, dim=0)
-            per_chunk = [self._frame_features(c) for c in chunks]
+            if self.training and self.n_grad is None:
+                from torch.utils.checkpoint import checkpoint
+                per_chunk = [checkpoint(self._frame_features, c, use_reentrant=False) for c in chunks]
+            else:
+                per_chunk = [self._frame_features(c) for c in chunks]
 
             # Restore temporal structure (B, T, D), then aggregate
             branch_feats = [

@@ -94,10 +94,7 @@ ${PYTHON_BIN} train.py \
     --resume
 
 if [ $? -eq 0 ]; then
-    CKPT="${OUTPUT_DIR}/best_model.pth"
-    if [ ! -f "${CKPT}" ]; then
-        CKPT="${OUTPUT_DIR}/latest_model.pth"
-    fi
+    CKPT="${OUTPUT_DIR}/latest_model.pth"
     if [ -f "${CKPT}" ]; then
         echo "=========================================================="
         echo "Running Closed-World Test-Set Evaluations for MegaDescriptor (FULL FINE-TUNE)..."

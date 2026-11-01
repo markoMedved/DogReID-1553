@@ -252,8 +252,6 @@ def train_adafreq(cfg, model, train_loader, query_loader, gallery_loader):
                 "rank10": r10,
             }
             torch.save(payload, cfg.output_dir / "latest_model.pth")
-            if is_best:
-                torch.save(payload, cfg.output_dir / "best_model.pth")
 
             best_str = " [BEST]" if is_best else ""
             print(

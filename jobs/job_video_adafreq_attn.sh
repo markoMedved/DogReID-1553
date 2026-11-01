@@ -6,7 +6,7 @@
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=16
 #SBATCH --mem=80G
 #SBATCH -x gwn04
 
@@ -35,7 +35,7 @@ LR=0.001        # Exact paper setup: SGD lr=0.001 with Cosine decay
 WEIGHT_DECAY=1e-4
 VAL_SPLIT=0
 EVAL_PERIOD=5
-NUM_WORKERS=6
+NUM_WORKERS=12
 
 PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
 

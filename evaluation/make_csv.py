@@ -206,6 +206,13 @@ def auto_discover_checkpoint(model_name: str, run_name: str = None):
         search_names.append(f"oa_{clean_name}")
 
     candidate_root_dirs = [
+        ROOT_DIR / "checkpoints",
+        ROOT_DIR / "checkpoints_validation",
+        ROOT_DIR / "checkpoints_open_results",
+        ROOT_DIR / "checkpoints_open_validation",
+        ROOT_DIR / "checkpoints_experiments" / "checkpoints_baseline_results",
+        ROOT_DIR / "checkpoints_experiments" / "checkpoints_baseline_archive",
+        ROOT_DIR / "checkpoints_experiments" / "checkpoints_resnet_og_params",
         ROOT_DIR / "checkpoints_baseline_results",
         ROOT_DIR / "checkpoints_baseline",
         ROOT_DIR / "checkpoints_resnet",
@@ -213,7 +220,6 @@ def auto_discover_checkpoint(model_name: str, run_name: str = None):
         ROOT_DIR / "checkpoints_dinov2_oa",
         ROOT_DIR / "checkpoints_tfclip",
         ROOT_DIR / "checkpoints_resnet_og_params",
-        ROOT_DIR / "checkpoints",
         ROOT_DIR / "trained_models_neurips",
         ROOT_DIR / "trained_models",
     ]

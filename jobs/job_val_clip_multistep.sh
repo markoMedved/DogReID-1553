@@ -65,7 +65,7 @@ ${PYTHON_BIN} train.py \
     --no_full_finetune \
     --unfreeze_blocks 6 \
     --lr_sched multistep \
-    --lr_milestones 25 35 \
+    --lr_milestones "25,35" \
     --run_name ${RUN_NAME} \
     --output_dir ${OUTPUT_DIR} \
     --world ${WORLD} \
@@ -80,7 +80,6 @@ ${PYTHON_BIN} train.py \
     --backbone_lr_factor ${BACKBONE_LR_FACTOR} \
     --weight_decay ${WEIGHT_DECAY} \
     --optimizer ${OPTIMIZER} \
-    --lr_sched ${LR_SCHED} \
     --lr_delay_epochs ${LR_DELAY_EPOCHS} \
     --warmup_epochs ${WARMUP_EPOCHS} \
     --warmup_factor ${WARMUP_FACTOR} \

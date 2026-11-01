@@ -417,8 +417,6 @@ def train_rovf(cfg, model, train_loader, query_loader, gallery_loader):
             torch.save(ckpt_payload, cfg.output_dir / "latest_model.pth")
             if epoch in (5, 10):
                 torch.save(ckpt_payload, cfg.output_dir / f"checkpoint_epoch_{epoch}.pth")
-            if is_best:
-                torch.save(ckpt_payload, cfg.output_dir / "best_model.pth")
 
             best_str = " [BEST]" if is_best else ""
             print(

@@ -548,16 +548,12 @@ class Config:
         clean_oa = bb.replace("openanimals_", "").replace("oa_", "")
         is_resnet_model = ("resnet" in bb) or (clean_oa in ("bot", "arbase", "agw", "sbs", "mgn", "arbase_mb", "arbase_mgn") and "dinov2" not in bb)
         is_tfclip_model = ("tfclip" in bb or "tf_clip" in bb or bb == "clip")
-        if bb in ("baseline", "dinov2_baseline", "dinov2") or "baseline" in bb:
-            ckpt_dir_name = "checkpoints_baseline"
-        elif "dinov2" in bb:
-            ckpt_dir_name = "checkpoints_dinov2"
-        elif is_resnet_model:
-            ckpt_dir_name = "checkpoints_resnet"
-        elif is_tfclip_model:
-            ckpt_dir_name = "checkpoints_tfclip"
+        is_open = str(getattr(self, "world", "closed")).lower() == "open"
+        is_val = float(getattr(self, "val_split", 0.0) or 0.0) > 0.0
+        if is_open:
+            ckpt_dir_name = "checkpoints_open_validation" if is_val else "checkpoints_open_results"
         else:
-            ckpt_dir_name = "checkpoints"
+            ckpt_dir_name = "checkpoints_validation" if is_val else "checkpoints"
         model_folder = self.run_name
 
         # Multi-run subfolder support:
