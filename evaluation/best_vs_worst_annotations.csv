@@ -1,5 +1,5 @@
 Group,Short ID,mAP (%),Rank-1 (%),N_q,N_g,Full DOG_ID,Distinctive visual features,Occlusion,Blurriness / low resolution,Lighting,Viewpoint variation
-Best 10 (Random 100% mAP),a6c4d7b5...,100.0,100.0,1,4,a6c4d7b5-08ff-4530-8b51-c1470cbe35ac,,,,,
+Best 10 (Random 100% mAP),a6c4d7b5...,100.0,100.0,1,4,a6c4d7b5-08ff-4530-8b51-c1470cbe35ac,Yes,No,No,Good,
 Best 10 (Random 100% mAP),1985e9b0...,100.0,100.0,2,3,1985e9b0-d386-4cd3-ac64-4fc0621dd795,,,,,
 Best 10 (Random 100% mAP),05468985...,100.0,100.0,3,2,05468985-0eb6-4493-8cad-970e51ca9128,,,,,
 Best 10 (Random 100% mAP),ba5d57d7...,100.0,100.0,3,1,ba5d57d7-6916-456a-8707-83c570a63394,,,,,
