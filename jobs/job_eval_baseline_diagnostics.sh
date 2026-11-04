@@ -8,6 +8,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
+#SBATCH -x gwn04
 
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate project
@@ -20,7 +21,7 @@ OUTPUT_BASE="evaluation/csvs_diagnostics"
 mkdir -p log_baseline_results "${OUTPUT_BASE}"
 
 PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
-CKPT="checkpoints_baseline_results/baseline/final_baseline_cos_d25_unfreeze6/latest_model.pth"
+CKPT="checkpoints/baseline/closed_baseline_ep50/latest_model.pth"
 
 echo "=========================================================="
 echo "Starting DINOv2 Baseline Diagnostic Evaluations"

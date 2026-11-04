@@ -451,7 +451,7 @@ class Config:
         is_open = str(getattr(self, "world", "closed")).lower() == "open"
         is_val = float(getattr(self, "val_split", 0.0) or 0.0) > 0.0
         if is_open:
-            ckpt_dir_name = "checkpoints_open_validation" if is_val else "checkpoints_open_results"
+            ckpt_dir_name = "checkpoints_open_validation" if is_val else "checkpoints_open"
         else:
             ckpt_dir_name = "checkpoints_validation" if is_val else "checkpoints"
         model_folder = self.run_name

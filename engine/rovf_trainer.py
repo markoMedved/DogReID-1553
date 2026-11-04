@@ -101,11 +101,16 @@ def _extract_dataset_tokens(model, dataset, cfg, desc="Extracting DINOv2-small t
     orig_is_train = getattr(base_ds, "is_train", False)
     base_ds.is_train = False
 
-    cache_dir = Path(cfg.project_root) / "checkpoints" / "rovf_token_cache"
+    env_cache = os.environ.get("ROVF_CACHE_DIR")
+    if env_cache:
+        cache_dir = Path(env_cache)
+    else:
+        cache_dir = Path(cfg.project_root) / "checkpoints" / "rovf_token_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     mask_tag = "_masked" if getattr(cfg, "mask_dog", False) else ""
+    world_tag = f"_{getattr(cfg, 'world', 'closed')}"
     dino_tag = str(getattr(cfg, "rovf_dino_model_name", "dinov2")).split("/")[-1].replace("-", "_")
-    cache_file = cache_dir / f"{dino_tag}_tokens_T{cfg.clip_len}_{cfg.img_size[0]}x{cfg.img_size[1]}{mask_tag}.pt"
+    cache_file = cache_dir / f"{dino_tag}_tokens_T{cfg.clip_len}_{cfg.img_size[0]}x{cfg.img_size[1]}{world_tag}{mask_tag}.pt"
 
     cached_dict = {}
     if cache_file.exists():

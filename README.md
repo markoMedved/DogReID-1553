@@ -48,10 +48,10 @@ This repository provides reproducible implementations for all baseline architect
    - **MegaDescriptor** (MegaDescriptor-B-224): Wildlife-foundation model pre-trained on diverse animal species.
 2. **Specialized Animal & Video Re-ID Frameworks**:
    - **TF-CLIP** (*AAAI 2024*): Text-free CLIP video Re-ID with sequence-specific prompts and temporal memory diffusion.
-   - **RoVF** (*CVPR 2024*): Recurrence over Video Frames using Perceiver-based temporal recurrence on top of DINOv2.
+   - **RoVF** (*IJCV 2026*): Recurrence over Video Frames using Perceiver-based temporal recurrence on top of DINOv2.
    - **AdaFreq** (*ECCV 2024*): Adaptive high-frequency transformer isolating species textures from wilderness background clutter.
-   - **SCL / MetaN** (*ECCV 2024*): Semantic Consistency Learning using cross-species spectral normalization and neighborhood alignment.
-3. **ResNet-50  Baselines from OpenAnimals** (*ICCV 2025*) :
+   - **SCL / MetaN** (*ECCV 2026*): Cross-species Animal Re-Identification with Semantic Consistency Learning.
+3. **ResNet-50 Baselines from OpenAnimals** (*ICCV 2025*):
    - **BoT** (Bag of Tricks for Re-ID)
    - **AGW** (Attention Generalized Weighting with non-local attention and generalized mean pooling)
    - **SBS** (Stronger Baseline with Circle Loss and cosine decay)
@@ -143,7 +143,7 @@ Trained model checkpoints are automatically organized into distinct directories 
 | :--- | :--- | :--- |
 | **`checkpoints/`** | **Final closed-world benchmark models** (`--val_split 0.0`). | 100% of closed-world training identities |
 | **`checkpoints_validation/`** | **Closed-world hyperparameter & ablation models** (`--val_split 0.2`, default). | 80% train / 20% validation split |
-| **`checkpoints_open_results/`** | **Final open-world benchmark models** (`--world open --val_split 0.0`). | 100% of open-world training identities |
+| **`checkpoints_open/`** | **Final open-world benchmark models** (`--world open --val_split 0.0`). | 100% of open-world training identities |
 | **`checkpoints_experiments/`** | **Historical archives** of exploratory runs and parameter sweeps. | Archival |
 
 > [!NOTE]
@@ -184,13 +184,13 @@ python train.py \
 # TF-CLIP (AAAI 2024)
 python train.py --model tfclip --pooling_type attention --val_split 0.0
 
-# RoVF (CVPR 2024: rovf_s or rovf_base)
+# RoVF (IJCV 2026: rovf_s or rovf_base)
 python train.py --model rovf_s --epochs 10 --val_split 0.0
 
 # AdaFreq (ECCV 2024)
 python train.py --model adafreq --pooling_type attention --epochs 150 --val_split 0.0
 
-# SCL / MetaN (ECCV 2024)
+# SCL / MetaN (ECCV 2026)
 python train.py --model scl --pooling_type attention --epochs 60 --val_split 0.0
 ```
 
@@ -257,15 +257,16 @@ print(f"Rank-1: {results['cmc_boot_mean'][0]*100:.1f}% [95% CI: {results['cmc_ci
 
 ---
 
-## 🙏 Acknowledgments
+## 🙏 Acknowledgments & References
 
-We gratefully acknowledge the authors and open-source contributors of the following works and codebases adapted in our benchmark:
+We gratefully acknowledge the authors and open-source contributors of the following works and codebases integrated into our benchmark:
 
-- **[OpenAnimals](https://github.com/hshustc/OpenAnimals)** — Hou et al., *"OpenAnimals: Revisiting Person Re-Identification for Animals Towards Better Generalization"*, ECCV 2024. [[arXiv:2410.00204](https://arxiv.org/abs/2410.00204)]
-- **[TF-CLIP](https://github.com/AsuradaYuci/TF-CLIP)** — Yu et al., *"TF-CLIP: Learning Text-Free CLIP for Video-Based Person Re-Identification"*, AAAI 2024. [[arXiv:2312.09627](https://arxiv.org/abs/2312.09627)]
-- **[RoVF](https://github.com/mitch-rogers/RoVF-Meerkat-Reidentification)** — Rogers et al., *"Recurrence over Video Frames (RoVF) for Animal Re-identification"*, CVPR 2024 (CV4Animals Workshop). [[arXiv:2406.13002](https://arxiv.org/abs/2406.13002)]
-- **[AdaFreq](https://github.com/JigglypuffStitch/AdaFreq)** — Li, Chen, & Ye, *"Adaptive High-Frequency Transformer for Diverse Wildlife Re-Identification"*, ECCV 2024. [[arXiv:2410.06977](https://arxiv.org/abs/2410.06977)]
-- **[ECCV-26 SCL](https://github.com/Kemalau/ECCV-26-SCL)** — *"Cross-Species Animal Re-Identification with Semantic Consistency Learning"*, ECCV 2024. [[arXiv:2609.09705](https://arxiv.org/abs/2609.09705)]
+- **[RoVF](https://github.com/Strong-AI-Lab/RoVF-Meerkat-Reidentification)** — Rogers et al., *"Recurrence over Video Frames (RoVF) for Animal Re-identification"*, *International Journal of Computer Vision* (IJCV), 2026.
+- **[ECCV-26 SCL](https://github.com/Kemalau/ECCV-26-SCL)** — Chen, Li, & Ye, *"Cross-species Animal Re-identification with Semantic Consistency Learning"*, *European Conference on Computer Vision* (ECCV), 2026.
+- **[AdaFreq](https://github.com/JigglypuffStitch/AdaFreq)** — Li, Chen, & Ye, *"Adaptive high-frequency transformer for diverse wildlife re-identification"*, *European Conference on Computer Vision* (ECCV), 2024.
+- **[TF-CLIP](https://github.com/AsuradaYuci/TF-CLIP)** — Yu et al., *"Tf-clip: Learning text-free clip for video-based person re-identification"*, *Proceedings of the AAAI Conference on Artificial Intelligence* (AAAI), 2024.
+- **[OpenAnimals](https://github.com/hshustc/OpenAnimals)** — Hou et al., *"Openanimals: Revisiting person re-identification for animals towards better generalization"*, *IEEE/CVF International Conference on Computer Vision* (ICCV), 2025.
+
 ---
 
 ## 📜 Citation

@@ -8,25 +8,27 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=60G
+#SBATCH -x gwn04
 
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate project
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTHONUNBUFFERED=1
 export PYTHONPATH=.:$PYTHONPATH
+export ROVF_CACHE_DIR="/d/hpc/home/mm12755/.cache/rovf_token_cache"
 
 cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
-mkdir -p log_open_results checkpoints_open_results/rovf evaluation/csvs_open_results
+mkdir -p log_open_results checkpoints_open/rovf checkpoints/rovf_s checkpoints/rovf evaluation/csvs_open_results
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
-# --- Experiment Settings: Open-World RoVF-S-ST (Exact Original RoVF Hyperparameters) ---
-MODEL="rovf"
+# --- Experiment Settings: Open-World RoVF-st (Paper Defaults + CLIP_LEN=8) ---
+MODEL="rovf_s"
 RUN_NAME="open_rovf_s_st"
-OUTPUT_DIR="checkpoints_open_results/rovf/${RUN_NAME}"
+OUTPUT_DIR="checkpoints_open/rovf/${RUN_NAME}"
 WORLD="open"
 BATCH_SIZE=30   # 10 mined triplets = 30 clips per step
-CLIP_LEN=5      # Exact RoVF num_frames = 5
+CLIP_LEN=8      # 8 frames per clip (consistent with other video models)
 EPOCHS=10       # Exact RoVF epochs = 10 (5,000 episodes/epoch = 500 steps/ep -> 5,000 total steps)
 LR=1e-04
 WEIGHT_DECAY=0.01
@@ -37,8 +39,8 @@ NUM_WORKERS=6
 PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
 
 echo "=========================================================="
-echo "Starting Open-World Video Training: RoVF-S-ST"
-echo "  Model        : ${MODEL} (facebook/dinov2-small + PerceiverV2 + avg skip)"
+echo "Starting Open-World Video Training: RoVF-st (Paper Defaults + CLIP_LEN=8)"
+echo "  Model        : ${MODEL} (facebook/dinov2-small 384-d + PerceiverV2 384-d, skip_avg=True)"
 echo "  Run Name     : ${RUN_NAME}"
 echo "  Output Dir   : ${OUTPUT_DIR}"
 echo "  World        : ${WORLD}"
@@ -65,14 +67,16 @@ ${PYTHON_BIN} train.py \
     --force_yolo
 
 if [ $? -eq 0 ]; then
+    ln -sfn "../../checkpoints_open/rovf/${RUN_NAME}" "checkpoints/rovf_s/${RUN_NAME}"
+    ln -sfn "../../checkpoints_open/rovf/${RUN_NAME}" "checkpoints/rovf/${RUN_NAME}"
     CKPT="${OUTPUT_DIR}/latest_model.pth"
     if [ -f "${CKPT}" ]; then
         echo "=========================================================="
-        echo "Running Open-World Test-Set Evaluations for RoVF-S-ST..."
+        echo "Running Open-World Test-Set Evaluations for RoVF-st..."
         echo "=========================================================="
         # 1. Open-World Video-to-Video
         ${PYTHON_BIN} evaluation/make_csv.py \
-            --model rovf \
+            --model rovf_s \
             --checkpoint "${CKPT}" \
             --world open \
             --clip_len ${CLIP_LEN} \
@@ -81,7 +85,7 @@ if [ $? -eq 0 ]; then
 
         # 2. Open-World Image-to-Video
         ${PYTHON_BIN} evaluation/make_csv.py \
-            --model rovf \
+            --model rovf_s \
             --checkpoint "${CKPT}" \
             --world open \
             --clip_len ${CLIP_LEN} \
@@ -89,7 +93,7 @@ if [ $? -eq 0 ]; then
             --output_dir "evaluation/csvs_open_results/rovf_img2vid" \
             --batch_size 32
     fi
-    echo "Open-World RoVF-S-ST job complete!"
+    echo "Open-World RoVF-st job complete!"
 else
     echo "[ERROR] Training failed! Skipping evaluation."
     exit 1

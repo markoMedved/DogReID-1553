@@ -16,14 +16,14 @@ export PYTHONUNBUFFERED=1
 export PYTHONPATH=.:$PYTHONPATH
 
 cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
-mkdir -p log_open_results checkpoints_open_results evaluation/csvs_open_results
+mkdir -p log_open_results checkpoints_open evaluation/csvs_open_results
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
 # --- Experiment Settings (Open-World TF-CLIP: Text-Free CLIP with TMD + SSP) ---
 MODEL="tfclip"
 RUN_NAME="open_v1_tfclip_vitb16"
-OUTPUT_DIR="checkpoints_open_results/tfclip/${RUN_NAME}"
+OUTPUT_DIR="checkpoints_open/tfclip/${RUN_NAME}"
 WORLD="open"
 BATCH_SIZE=16   # P×K = 16 (P=4, K=4, matching base TF-CLIP paper)
 K=4

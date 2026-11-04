@@ -47,8 +47,9 @@ __pycache__/
 *~
 *.tmp
 
+
 # --- Scratch & Notes ---
 notes.txt
 renaming_mapping.csv
 
-jobs
+jobsRoVF-Meerkat-Reidentification_raw/

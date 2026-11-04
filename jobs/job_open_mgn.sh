@@ -16,14 +16,14 @@ export PYTHONUNBUFFERED=1
 export PYTHONPATH=OpenAnimals:$PYTHONPATH
 
 cd /d/hpc/projects/FRI/mm12755/DogReID-1553/DogReID-1553
-mkdir -p log_open_results checkpoints_open_results evaluation/csvs_open_results
+mkdir -p log_open_results checkpoints_open evaluation/csvs_open_results
 
 echo "Running on $(hostname) with GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'Unknown')"
 
 # --- Experiment Settings (Open-World MGN - ResNet-50-IBN-a + 8 Stripe Heads, 384x384, 35 epochs, CosineAnnealingLR delay 15) ---
 MODEL="mgn"
 RUN_NAME="open_lr1.2e-4_ep35_cos_d15_bb1x"
-OUTPUT_DIR="checkpoints_open_results/mgn/${RUN_NAME}"
+OUTPUT_DIR="checkpoints_open/mgn/${RUN_NAME}"
 POOLING="attention"
 WORLD="open"
 BATCH_SIZE=64   # P×K = 64 (P=16, K=4)

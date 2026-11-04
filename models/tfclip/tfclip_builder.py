@@ -250,6 +250,9 @@ class TFCLIPVideoModel(nn.Module):
         if x.dim() == 4:
             x = x.unsqueeze(1)
         B, T, C, H, W = x.shape
+        if T == 1 and getattr(self.cfg, "clip_len", 1) > 1:
+            x = x.repeat(1, self.cfg.clip_len, 1, 1, 1)
+            B, T, C, H, W = x.shape
         x_flat = x.view(-1, C, H, W)
 
         # 1. Forward through CLIP ViT-B/16 (chunked by chunk_size to prevent CUDA OOM)

@@ -206,8 +206,9 @@ def auto_discover_checkpoint(model_name: str, run_name: str = None):
 
     candidate_root_dirs = [
         ROOT_DIR / "checkpoints",
+        ROOT_DIR / "checkpoints_ablations",
         ROOT_DIR / "checkpoints_validation",
-        ROOT_DIR / "checkpoints_open_results",
+        ROOT_DIR / "checkpoints_open",
         ROOT_DIR / "checkpoints_open_validation",
         ROOT_DIR / "checkpoints_experiments" / "checkpoints_baseline_results",
         ROOT_DIR / "checkpoints_experiments" / "checkpoints_baseline_archive",
