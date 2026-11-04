@@ -1,3 +1,4 @@
+import gc
 import importlib.util
 import os
 import random
@@ -133,11 +134,12 @@ def _extract_dataset_tokens(model, dataset, cfg, desc="Extracting DINOv2-small t
 
     if needed_keys:
         print(f"[RoVF] Extracting frozen DINOv2-small tokens for {len(needed_keys)} clips ({desc})...")
+        extract_workers = min(int(getattr(cfg, "num_workers", 4)), 4)
         loader = DataLoader(
             dataset,
             batch_size=32,
             shuffle=False,
-            num_workers=cfg.num_workers,
+            num_workers=extract_workers,
             pin_memory=True,
         )
         model.eval()
@@ -148,6 +150,11 @@ def _extract_dataset_tokens(model, dataset, cfg, desc="Extracting DINOv2-small t
                 for j, (d_id, v_id) in enumerate(zip(dog_ids, video_ids)):
                     k = f"{d_id}_{v_id}"
                     cached_dict[k] = tokens[j]
+
+        del loader
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # Save updated cache atomically
         tmp_file = cache_file.with_suffix(f".tmp.{os.getpid()}.pt")

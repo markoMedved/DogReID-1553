@@ -395,7 +395,8 @@ class VideoReID(nn.Module):
 
             # --- Chunked Forward Pass ---
             chunks = torch.split(frames, self.chunk_size, dim=0)
-            if self.training and self.n_grad is None:
+            use_grad_checkpoint = self.training and (self.n_grad is None or self.n_grad >= 8)
+            if use_grad_checkpoint:
                 from torch.utils.checkpoint import checkpoint
                 per_chunk = [checkpoint(self._frame_features, c, use_reentrant=False) for c in chunks]
             else:

@@ -6,9 +6,8 @@
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=12
-#SBATCH --mem=80G
-#SBATCH -C h100
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
 #SBATCH -x gwn04
 
 source $(conda info --base)/etc/profile.d/conda.sh
