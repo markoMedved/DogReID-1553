@@ -83,15 +83,7 @@ if [ $? -eq 0 ]; then
             --output_dir "evaluation/csvs_open_results/rovf_vid2vid" \
             --batch_size 32
 
-        # 2. Open-World Image-to-Video
-        ${PYTHON_BIN} evaluation/make_csv.py \
-            --model rovf_s \
-            --checkpoint "${CKPT}" \
-            --world open \
-            --clip_len ${CLIP_LEN} \
-            --query_images \
-            --output_dir "evaluation/csvs_open_results/rovf_img2vid" \
-            --batch_size 32
+        # Note: RoVF is strictly a video-to-video method; skipping img2vid evaluation.
     fi
     echo "Open-World RoVF-st job complete!"
 else

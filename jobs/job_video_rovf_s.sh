@@ -84,15 +84,7 @@ if [ $? -eq 0 ]; then
                 --output_dir "evaluation/csvs_closed_results/rovf_s_ep${EP}_vid2vid" \
                 --batch_size 32
 
-            # 2. Closed-World Image-to-Video (Epoch ${EP})
-            ${PYTHON_BIN} evaluation/make_csv.py \
-                --model rovf_s \
-                --checkpoint "${CKPT}" \
-                --world closed \
-                --clip_len ${CLIP_LEN} \
-                --query_images \
-                --output_dir "evaluation/csvs_closed_results/rovf_s_ep${EP}_img2vid" \
-                --batch_size 32
+            # Note: RoVF is strictly a video-to-video method; skipping img2vid evaluation.
         fi
     done
     echo "Closed-World RoVF-st job complete!"

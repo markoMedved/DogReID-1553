@@ -6,9 +6,9 @@
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=60G
-#SBATCH -x gwn04
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=80G
+#SBATCH -w gwn09
 
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate project
@@ -51,7 +51,7 @@ TRIPLET_TYPE="hard"
 VAL_SPLIT=0.0
 EVAL_PERIOD=50
 ACCUM_STEPS=2
-NUM_WORKERS=8
+NUM_WORKERS=12
 
 PYTHON_BIN="/d/hpc/home/mm12755/.conda/envs/project/bin/python"
 
