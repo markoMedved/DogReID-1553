@@ -148,61 +148,43 @@ class DOGVideoREIDDataset(Dataset):
         self.mask_dog = mask_dog
         self.force_yolo = force_yolo
 
-        # Load YOLO model only if explicitly requested
         self.yolo = load_yolo(yolo_model, device=torch.device("cpu")) if (self.force_yolo and yolo_model) else None
 
-        # --- Load Ground Truth Bounding Boxes (for images) ---
         self.gt_bboxes = {}
         if bbox_file is not None:
             if not os.path.exists(bbox_file):
-                # Crash immediately if the file is missing
                 raise FileNotFoundError(f"CRITICAL: bbox_file was requested but not found at: {bbox_file}")
             
             try:
                 bbox_df = pd.read_csv(bbox_file)
                 for _, row in bbox_df.iterrows():
-                    # Convert (x_top_left, y_top_left, width, height) -> (x1, y1, x2, y2)
                     x1 = int(row["x_top_left"])
                     y1 = int(row["y_top_left"])
                     x2 = x1 + int(row["width"])
                     y2 = y1 + int(row["height"])
-                    
-                    
                     self.gt_bboxes[(str(row["DOG_ID"]), str(row["VIDEO_ID"]))] = (x1, y1, x2, y2)
-                
-                # Print a confirmation to your SLURM logs
                 print(f"-> [SUCCESS] Loaded {len(self.gt_bboxes)} ground truth boxes from {bbox_file}")
-                
             except Exception as e:
-                # Catch pandas reading errors or missing column errors
-                raise RuntimeError(f"CRITICAL: Failed to parse bbox_file. Are the columns correct? Error: {e}")
+                raise RuntimeError(f"CRITICAL: Failed to parse bbox_file. Error: {e}")
 
-        # --- Load Split Data ---
         df = pd.read_csv(split_file)
-
-        # --- Select Split Column Based on World Setting ---
         split_col = "SPLIT_CLOSED_SET" if world == "closed" else "SPLIT_OPEN_SET"
         df = df[df[split_col] == split]
 
-        # --- Remove Identities with Only One Sample ---
         if self.split == "train":
             counts = df["DOG_ID"].value_counts()
             valid_ids = counts[counts > 1].index
             df = df[df["DOG_ID"].isin(valid_ids)]
         
         self.df = df.reset_index(drop=True)
-
-        # --- Store Dog IDs for External Access ---
         self.dog_ids = self.df["DOG_ID"].tolist()
 
-        # --- Build Dog ID to Label Mapping ---
         if label_map is None:
             dog_ids = sorted(self.df["DOG_ID"].unique())
             self.id_map = {dog_id: i for i, dog_id in enumerate(dog_ids)}
         else:
             self.id_map = label_map
 
-        # --- Assign Integer Labels for Training ---
         self._labels = self.df["DOG_ID"].map(
             lambda x: self.id_map.get(x, -1)
         ).tolist()
@@ -228,24 +210,20 @@ class DOGVideoREIDDataset(Dataset):
         if not os.path.exists(path):
             raise FileNotFoundError(f"Missing: {path}")
 
-        # --- Data Loading ---
         if self.use_videos:
             clip = load_video_clip(path, self.clip_len, is_training=self.is_train)
         else:
             img = Image.open(path).convert("RGB")
             clip = [np.array(img)]
 
-        # --- Bounding Box Resolution & Crop/Mask ---
         pil_frames = [Image.fromarray(f) for f in clip]
         boxes = [None] * len(pil_frames)
 
-        # Check GT first if not force_yolo
         if not self.force_yolo:
             gt_box = self.gt_bboxes.get((dog_id, video_id))
             if gt_box is not None:
                 boxes = [gt_box] * len(pil_frames)
 
-        # Use YOLO if boxes are not already found and yolo is available
         if any(b is None for b in boxes) and self.yolo is not None:
             if not self.use_videos:
                 boxes = [detect_dog_box(self.yolo, pil_frames[0])]
@@ -262,7 +240,6 @@ class DOGVideoREIDDataset(Dataset):
 
         clip = processed_clip
 
-        # --- Transformation Pipeline ---
         if self.transform:
             pil_clip = [Image.fromarray(frame) for frame in clip]
             if hasattr(self.transform, "frame_tf"):

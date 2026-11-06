@@ -4,78 +4,67 @@ from pathlib import Path
 
 
 class Config:
-    """
-    Dog Re-ID training configuration.
-    """
+    """Dog Re-ID training configuration."""
     
-    # --- Experiment Settings ---
-    model         = "dinov2"       # Options: 'dinov2', 'baseline', 'tfclip', 'bot', 'arbase', 'agw', 'sbs', 'mgn'
-    backbone      = "dinov2"       # Options: 'dinov2', 'baseline', 'tfclip', 'bot', 'arbase', 'agw', 'sbs', 'mgn'
-    reid_method   = "bot"          # Options: None, 'bot'
-    world         = "closed"       # Options: 'closed', 'open'
-    pooling_type  = "attention"    # Options: 'attention', 'mean', 'max'
+    model         = "dinov2"
+    backbone      = "dinov2"
+    reid_method   = "bot"
+    world         = "closed"
+    pooling_type  = "attention"
     full_finetune = False
-    use_id_loss   = True           # Identity Classification Loss for baselines
-    unfreeze_blocks = 2            # Trailing backbone blocks to train when not full fine-tuning
+    use_id_loss   = True
+    unfreeze_blocks = 2
 
-    # --- Image & Model Architecture ---
     img_size        = (224, 224)
     representation_type = "cls"
     gem_p           = 3.0
     embedding_dim   = 768
-    num_classes     = 0            # Populated dynamically in train.py from dataset
+    num_classes     = 0
     dinov2_variant  = "vitb14_reg"
-    fuse_layers     = 1            # Number of trailing transformer layers to fuse (default: 1 = final layer only)
-    use_bnneck      = True         # BN-Neck in ReID feature head
-    label_smoothing = 0.1          # Label smoothing for identity classification loss
+    fuse_layers     = 1
+    use_bnneck      = True
+    label_smoothing = 0.1
 
-    # --- Directory Paths ---
     project_root = Path(__file__).resolve().parent.parent
     data_root    = project_root 
     split_file   = project_root / "splits.csv"
 
-    # --- Hardware & Compute ---
     device      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     num_workers = 12
     chunk_size  = 16
-    amp         = "bf16"           # 'bf16', 'fp16' or None. CUDA only.
+    amp         = "bf16"
 
-    # --- Batch Sampling (PK Strategy) ---
     batch_size = 32
     k          = 4
     num_ids    = batch_size // k
     clip_len   = 8               
     val_split  = 0.2
 
-    # --- Training & Optimization ---
-    epochs         = 51            # 51 epochs total (matches dinov2_bot_closed_attention_finetune_False)
-    warmup_epochs  = 5             # 5-epoch linear warmup
-    lr_milestones  = (25, 35)      # decay LR by 0.1 at epoch 25 and 35
+    epochs         = 50
+    warmup_epochs  = 5
+    lr_milestones  = (25, 35)
     lr_gamma       = 0.1
     lr_sched       = "multistep"
-    optimizer      = "adamw"       # 'adam', 'adamw', or 'sgd'
+    optimizer      = "adamw"
     weight_decay   = 1e-05
-    margin         = 0.3           # Triplet loss margin α
-    triplet_type   = "hard"        # 'hard' (hinge margin), 'soft' (softplus batch-hard), 'weighted' (AGW WRT)
+    margin         = 0.3
+    triplet_type   = "hard"
     id_loss_weight = 1.0
-    lr             = 2e-05         # base LR (2e-5 for head, 2e-6 for backbone)
-    backbone_lr_factor = 0.1       # 0.1x backbone LR factor
-    warmup_factor  = 0.01          # linear warmup from 0.01x to 1.0x
-    accum_steps    = 2             # gradient accumulation = 2 (effective batch size 64)
-    save_period    = 0             # 0 disables periodic checkpoints (saves only latest_model.pth)
-    backbone_drop_epoch = None     # Epoch at which backbone LR drops (e.g. 5)
-    backbone_drop_factor = 0.1     # Multiplier for backbone LR after drop epoch
+    lr             = 2e-05
+    backbone_lr_factor = 0.1
+    warmup_factor  = 0.01
+    accum_steps    = 2
+    save_period    = 0
+    backbone_drop_epoch = None
+    backbone_drop_factor = 0.1
 
-    # --- Data Augmentation ---
     aug_pad = 10
     re_prob = 0.5
     autoaug_prob = 0.0
 
-    # --- Evaluation ---
     eval_period = 5
     eval_only   = False  
 
-    # Experiment for background noise
     mask_dog = False 
     bbox_file = project_root / "bounding_boxes.csv"
     use_gt_for_query_mask = False
@@ -86,10 +75,7 @@ class Config:
         self.update_model_settings()
 
     def update_model_settings(self):
-        """
-        Call this after updating self.model / self.backbone via CLI args.
-        Adjusts dimensions, image sizes, and output directories.
-        """
+        """Adjust architecture dimensions, image resolution, and optimization defaults for the selected model."""
         if hasattr(self, "model") and self.model:
             self.model = self.model.lower()
             self.backbone = self.model
@@ -208,7 +194,6 @@ class Config:
             if getattr(self, "reid_method", None) is None:
                 self.reid_method = "bot"
         elif "dinov2" in self.backbone or self.backbone in ("baseline", "clip_baseline", "baseline_clip"):
-            # Exact settings from trained_models_neurips/dinov2_bot_closed_attention_finetune_False/model_params.json
             self.reid_method = "bot"
             rep_type = str(getattr(self, "representation_type", "cls")).lower()
             self.embedding_dim = 1536 if rep_type in ("cls_mean", "cls_gem") else 768
@@ -229,7 +214,7 @@ class Config:
             self.weight_decay = 1e-05
             self.margin = 0.3
             self.id_loss_weight = 1.0
-            self.epochs = 51
+            self.epochs = 50
             self.warmup_epochs = 5
             self.warmup_factor = 0.01
             self.lr_sched = "multistep"
@@ -257,7 +242,7 @@ class Config:
             self.weight_decay = 1e-05
             self.margin = 0.3
             self.id_loss_weight = 1.0
-            self.epochs = 51
+            self.epochs = 50
             self.warmup_epochs = 5
             self.warmup_factor = 0.01
             self.lr_sched = "cosine"

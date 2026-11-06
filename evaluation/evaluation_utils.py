@@ -7,7 +7,6 @@ from torch.nn import functional as F
 from pathlib import Path
 
 def _to_scalar(x):
-    """Get scalar"""
     return x.item() if hasattr(x, "item") else x
 
 
@@ -16,9 +15,7 @@ def extract_features_with_ids(
     dataloader: torch.utils.data.DataLoader,
     device: torch.device,
 ) -> tuple[torch.Tensor, list[str]]:
-    """Extract features of the samples from the provided ids"""
-
-    # If the model was training, to restore back after
+    """Extract normalized embeddings and `<DOG_ID>_<VIDEO_ID>` keys from a dataloader."""
     was_training = model.training
     model.eval()
 
@@ -29,7 +26,6 @@ def extract_features_with_ids(
 
     try:
         with torch.no_grad():
-            # --- Test loop ---
             for batch in tqdm(dataloader):
                 videos, _labels, dog_ids, video_ids = batch
 
@@ -38,7 +34,6 @@ def extract_features_with_ids(
                     for d, v in zip(dog_ids, video_ids)
                 ]
 
-                # Normalize on device unless model specifies raw Euclidean distance (e.g. RoVF)
                 raw_out = model(videos.to(device))
                 if getattr(model, "use_raw_euclidean", False):
                     embeddings = raw_out.cpu()
@@ -48,7 +43,7 @@ def extract_features_with_ids(
                 all_embeddings.append(embeddings)
                 all_ids.extend(item_ids)
     finally:
-        model.train(was_training)  # always restore original mode
+        model.train(was_training)
 
     return torch.cat(all_embeddings), all_ids
 
@@ -60,9 +55,7 @@ def generate_distance_csv(
     cfg,
     filename: str = "dist_matrix.csv",
 ) -> Path:
-    """Generate a distance csv from features gotten with model inference"""
-
-    # --- Get the features for gallery and query samples ---
+    """Compute pairwise query-to-gallery distances and save to CSV."""
     q_feat, q_ids = extract_features_with_ids(model, query_loader, cfg.device)
     del query_loader
     import gc
@@ -76,7 +69,6 @@ def generate_distance_csv(
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    # --- Compute the distance matrix ---
     print("-> Computing Distance Matrix...")
     dist_mat = torch.cdist(
         q_feat.to(cfg.device),
@@ -84,11 +76,9 @@ def generate_distance_csv(
         p=2,
     ).cpu().numpy()
 
-    # --- Construct the appropriate csv --- 
     df = pd.DataFrame(dist_mat, columns=g_ids)
     df.insert(0, "queryId", q_ids)
 
-    # --- Create the output path ---
     output_path = Path(cfg.output_dir) / filename
     df.to_csv(output_path, index=False)
     print(f"-> Distance CSV saved: {output_path}")

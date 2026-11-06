@@ -8,37 +8,28 @@ import json
 import torch.nn as nn
 
 class Trainer:
-    "Class that has the training logic"
+    """Training and evaluation loop for video Re-ID models."""
     def __init__(self, model, train_loader, query_loader, gallery_loader, optimizer, cfg, loss_fn, miner,
                  scheduler=None, oa_sched_dict=None):
-        # --- Move Model to Compute Device ---
         self.model = model.to(cfg.device)
-
-        # --- Dataloaders ---
         self.train_loader = train_loader
-        self.query_loader = query_loader # Validation
-        self.gallery_loader = gallery_loader # Validation
+        self.query_loader = query_loader
+        self.gallery_loader = gallery_loader
 
-        # --- Training Configuration ---
         self.optimizer = optimizer
-        self.scheduler = scheduler # Stepped once per epoch, may be None
+        self.scheduler = scheduler
         self.oa_sched_dict = oa_sched_dict
         self.total_iters = 0
         self.device = cfg.device
         self.cfg = cfg
 
-        # --- Metric Learning Components ---
         self.loss_fn = loss_fn
         self.miner = miner
 
-        # --- Identity Loss ---
-        # Used only when the model exposes a classifier (cfg.num_classes > 0)
         label_smooth = getattr(cfg, 'label_smoothing', 0.1)
         self.id_loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=label_smooth)
         self.id_loss_weight = getattr(cfg, 'id_loss_weight', 1.0)
 
-        # --- Mixed Precision ---
-        # Only active on CUDA. bfloat16 needs no gradient scaler; float16 does.
         amp = getattr(cfg, 'amp', 'bf16')
         if amp == 'bf16' and self.device.type == 'cuda' and not torch.cuda.is_bf16_supported():
             print("[amp] CUDA device does not support hardware bf16 (e.g. V100); falling back to fp16")
@@ -52,7 +43,6 @@ class Trainer:
         if self.amp_enabled:
             print(f"[amp] mixed precision enabled ({amp})")
 
-        # --- History Tracking & Checkpointing ---
         self.history = {
             "epochs": [],
             "losses": [],
@@ -71,7 +61,6 @@ class Trainer:
         self.best_r1 = 0.0
         self.start_epoch = 0
 
-        # --- Checkpoint Detection & Automatic Resume ---
         latest_path = self.cfg.output_dir / "latest_model.pth"
         explicit_overwrite = getattr(cfg, "overwrite", False)
 
@@ -89,7 +78,6 @@ class Trainer:
                         pass
             print(f"[trainer] Explicit overwrite requested. Cleared prior files in {self.cfg.output_dir}")
 
-        # --- Resume Checkpoint if Requested or Auto-detected ---
         if getattr(cfg, "resume", False):
             latest_path = self.cfg.output_dir / "latest_model.pth"
             if not latest_path.exists() and not getattr(self.cfg, "custom_run_name", None):
@@ -157,30 +145,24 @@ class Trainer:
 
 
     def train(self):
-        """Train the model"""
-        # --- Get the validation split ratio ---
         val_split = getattr(self.cfg, 'val_split', 0)
 
-        # --- TF-CLIP Stage 1: Precompute CLIP-Memory bank if needed ---
         raw_model = getattr(self.model, "module", self.model)
         if getattr(raw_model, "is_tfclip", False):
             if not bool(getattr(raw_model, "memory_initialized", False)):
                 raw_model.compute_clip_memory(self.train_loader, self.device)
 
-        # --- Main Training Loop ---
         for epoch in range(self.start_epoch, self.cfg.epochs):
             self.current_epoch = epoch
 
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            # Run one full training epoch
             avg_loss, avg_cls, avg_tri = self.train_epoch(epoch)
 
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            # One learning rate per parameter group: deduplicate unique LRs
             unique_lrs = []
             for g in self.optimizer.param_groups:
                 lr_str = f"{g['lr']:.2e}"
@@ -189,7 +171,6 @@ class Trainer:
             lrs = " / ".join(unique_lrs)
             print(f"Epoch {epoch} | Train Loss: {avg_loss:.4f} | LR: {lrs}")
 
-            # Save history entry for this epoch
             current_lr = self.optimizer.param_groups[0]["lr"]
             self.history["epochs"].append(epoch)
             self.history["losses"].append(float(avg_loss))
@@ -199,8 +180,6 @@ class Trainer:
                 self.history["cls_losses"].append(float(avg_cls))
                 self.history["tri_losses"].append(float(avg_tri))
 
-            # --- Learning Rate Schedule ---
-            # Stepped per epoch, matching the warmup and milestone units
             if self.oa_sched_dict and "lr_sched" in self.oa_sched_dict:
                 oa_cfg = getattr(self.model, "oa_cfg", None)
                 delay_epochs = oa_cfg.SOLVER.DELAY_EPOCHS if oa_cfg else 0
@@ -213,14 +192,12 @@ class Trainer:
             elif self.scheduler is not None:
                 self.scheduler.step()
 
-            # Save latest_model.pth atomically right after training epoch (before evaluation)
             self.cfg.output_dir.mkdir(parents=True, exist_ok=True)
             latest_path = self.cfg.output_dir / "latest_model.pth"
             tmp_path = self.cfg.output_dir / "latest_model.pth.tmp"
             torch.save(self._training_state(epoch), tmp_path)
             os.replace(tmp_path, latest_path)
 
-            # --- Validation Evaluation (runs every epoch if eval_period=1) ---
             if self.cfg.world == "closed" and self.query_loader is not None:
                 if (epoch + 1) % self.cfg.eval_period == 0 or (epoch + 1) == self.cfg.epochs:
                     r1, r5, mAP, val_loss, val_pos_dist = self.evaluate()
@@ -231,7 +208,6 @@ class Trainer:
                     self.history["rank5"].append(float(r5 * 100))
                     self.history["mAP"].append(float(mAP * 100))
 
-                    # Track best metrics in memory/logs (only latest_model.pth is saved to disk)
                     if mAP > self.best_mAP:
                         self.best_mAP = mAP
                         self.best_r1 = r1
@@ -240,17 +216,12 @@ class Trainer:
                     torch.save(self._training_state(epoch), tmp_path)
                     os.replace(tmp_path, latest_path)
 
-            # Update live training curves PNG and history JSON
             self._save_and_plot_history()        
 
         print(f"Training complete. Final model saved to: {self.cfg.output_dir / 'latest_model.pth'}")
 
     def train_epoch(self, epoch):
-        """Train for one epoch"""
-        # --- Put into train mode ---
         self.model.train()
-
-        # Gradient accumulation helps simulate larger batch sizes
         accum_steps = getattr(self.cfg, 'accum_steps', 8) 
 
         running_loss = 0.0
@@ -259,21 +230,14 @@ class Trainer:
         has_sub = False
         self.optimizer.zero_grad()
 
-        # Initialize progress bar
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
 
-        # --- Batch Processing Loop ---
         for i, (videos, labels, dog_ids, video_ids) in enumerate(pbar):
-
-            # Move data to the active device
             videos = videos.to(self.device)
             labels = labels.to(self.device)
 
-            # OpenAnimals freeze training (SBS: backbone frozen for FREEZE_ITERS iterations,
-            # with its BN layers in eval mode -- mirrors hooks.LayerFreeze + freeze optimizer)
             frozen_params = self._apply_layer_freeze()
 
-            # Forward Pass & Loss Computation
             with torch.autocast(device_type=self.device.type,
                                 dtype=self.amp_dtype,
                                 enabled=self.amp_enabled):
@@ -452,28 +416,20 @@ class Trainer:
 
     @torch.no_grad()
     def evaluate(self):
-        # --- Switch Model to Inference Mode ---
         self.model.eval()
-        
-        # --- Feature Extraction ---
-        # Extracts normalized embeddings for both query and gallery sets
         q_f, q_pids = self._get_features(self.query_loader, "Querying")
         g_f, g_pids = self._get_features(self.gallery_loader, "Gallerying")
 
-        # --- Closed-World Evaluation ---
-        # Assumes every query identity exists within the gallery
         if self.cfg.world == "closed":
-            dist_mat = 1.0 - torch.mm(q_f, g_f.t())  # Calculate cosine distance
+            dist_mat = 1.0 - torch.mm(q_f, g_f.t())
             dist_np = dist_mat.numpy()
             q_np = q_pids.numpy()
             g_np = g_pids.numpy()
 
-            # Compute validation matching distances
             match_mask = (q_np[:, None] == g_np[None, :])
             val_pos_dist = float(dist_np[match_mask].mean()) if np.any(match_mask) else 0.0
             val_neg_dist = float(dist_np[~match_mask].mean()) if np.any(~match_mask) else 0.0
 
-            # Compute Validation Triplet Ranking Loss (batch-hard retrieval loss)
             valid_queries = match_mask.any(axis=1)
             if np.any(valid_queries):
                 pos_dists = np.where(match_mask, dist_np, -np.inf)
@@ -504,7 +460,6 @@ class Trainer:
 
 
     def _get_features(self, loader, name):
-        """Extract Embeddings from Dataloader"""
         feats, pids = [], []
 
         with torch.autocast(device_type=self.device.type,
@@ -514,13 +469,9 @@ class Trainer:
                 clips = batch[0].to(self.device)
                 labels = batch[1]
 
-                # Forward pass to get features
                 f = self.model(clips)
-
                 if isinstance(f, tuple):
                     f = f[0]
-
-                # Normalize embeddings -> Allows cosine similarity via dot product
                 f = F.normalize(f, p=2, dim=1)
 
                 feats.append(f.cpu())
@@ -533,46 +484,31 @@ class Trainer:
 
     def calculate_cmc_map(self, distmat, q_pids, g_pids):
         num_q, num_g = distmat.shape
-
-        # Sort the gallery indices by distance for each query
         indices = np.argsort(distmat, axis=1)
-
-        # Create a binary matrix indicating true matches
         matches = (g_pids[indices] == q_pids[:, np.newaxis]).astype(np.int32)
 
         all_cmc, all_AP = [], []
 
         for i in range(num_q):
-
             row_matches = matches[i]
-
-            # Skip calculation if the query has no correct match in the gallery
             if not np.any(row_matches):
                 continue
 
-            # Find the position of the first correct match
             index = np.where(row_matches == 1)[0][0]
             all_cmc.append(index)
 
-            # --- Average Precision (AP) Computation ---
             cum_matches = np.cumsum(row_matches)
             prec = cum_matches / (np.arange(num_g) + 1)
             all_AP.append(np.sum(prec * row_matches) / np.sum(row_matches))
 
         cmc = np.zeros(num_g)
-
-        # Accumulate counts for CMC curve
         for rank in all_cmc:
             cmc[rank:] += 1
 
-        # Normalize to get probabilities
         cmc /= len(all_cmc) if len(all_cmc) > 0 else 1
-
         return cmc[0], cmc[4], np.mean(all_AP)
 
     def save_checkpoint(self, filename):
-
-        # --- Directory Configuration ---
         val_split = getattr(self.cfg, 'val_split', 0)
         target_dir = self.cfg.output_dir
             
@@ -582,8 +518,6 @@ class Trainer:
         path = os.path.join(target_dir, filename)
         meta_path = path.replace(".pth", "_params.json")
 
-        # --- Model State Extraction ---
-        # Handle models wrapped in DataParallel
         state_dict = self.model.module.state_dict() if hasattr(self.model, 'module') else self.model.state_dict()
 
         checkpoint_data = {
@@ -592,33 +526,22 @@ class Trainer:
             'val_split': val_split
         }
 
-        # Save weights
         torch.save(checkpoint_data, path)
 
-        # --- Metadata Saving ---
-        # Save specific config parameters alongside the model for reproducibility
-        # Everything needed to reproduce the run and to fill in the settings
-        # column of a results table
         allowed_keys = ['lr', 'margin', 'weight_decay', 'batch_size',
                         'k', 'num_ids', 'model', 'world', 'clip_len', 'epochs',
                         "accum_steps", "num_workers", "chunk_size",
-                        # Re-ID method and architecture
                         "backbone", "reid_method", "pooling_type", "img_size",
                         "num_classes", "dinov2_variant",
-                        # Optimization
                         "full_finetune", "unfreeze_blocks", "id_loss_weight",
                         "warmup_epochs", "warmup_factor", "lr_milestones",
                         "lr_gamma", "amp",
-                        # Augmentation
                         "aug_pad", "re_prob", "run_name"]
 
         params_to_save = {}
-
         for key in allowed_keys:
-
             if hasattr(self.cfg, key):
                 params_to_save[key] = getattr(self.cfg, key)
-
             elif isinstance(self.cfg, dict) and key in self.cfg:
                 params_to_save[key] = self.cfg[key]
 

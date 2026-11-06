@@ -3,6 +3,8 @@ import sys
 import json
 import argparse
 from pathlib import Path
+import matplotlib
+matplotlib.use("Agg")
 from IPython.core.interactiveshell import InteractiveShell
 
 def run_notebook(nb_path: Path):

@@ -119,7 +119,7 @@ def build_scheduler(optimizer, cfg):
         delay = getattr(cfg, "lr_delay_epochs", 25 if ("dinov2" in model_name or model_name == "baseline") else (15 if "sbs" in model_name else 25))
         return WarmupCosineAnnealingLR(
             optimizer,
-            max_epochs=getattr(cfg, "epochs", 51),
+            max_epochs=getattr(cfg, "epochs", 50),
             delay_epochs=delay,
             eta_min=getattr(cfg, "lr_eta_min", getattr(cfg, "eta_min", 7e-8)),
             warmup_factor=getattr(cfg, "warmup_factor", 0.01),

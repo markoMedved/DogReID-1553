@@ -82,18 +82,14 @@ def build_transforms(cfg, is_train: bool):
         norm_std = CLIP_STD if is_clip_bb else IMAGENET_STD
 
     if not is_train:
-        # --- Deterministic Evaluation Transforms ---
         return transforms.Compose([
             transforms.Resize(size, interpolation=transforms.InterpolationMode.BICUBIC),
             transforms.ToTensor(),
             transforms.Normalize(norm_mean, norm_std),
         ])
 
-    # --- Training Augmentations ---
     pad = getattr(cfg, "aug_pad", 10)
     if is_adafreq_bb:
-        # Exact AdaFreq paper training augmentations:
-        # Resize 256x256, RandomRotation(15 deg), Brightness(50% prob), Contrast(50% prob), Pad(10) + RandomCrop(256x256)
         ro_deg = float(getattr(cfg, "adafreq_ro_degree", 15))
         return transforms.Compose([
             transforms.Resize(size, interpolation=transforms.InterpolationMode.BICUBIC),
@@ -108,7 +104,6 @@ def build_transforms(cfg, is_train: bool):
     tfs = []
     autoaug_prob = getattr(cfg, "autoaug_prob", 0.0)
     if autoaug_prob > 0:
-        # OpenAnimals applies AutoAugment first, before resizing (SBS: p=0.1)
         import sys
         from pathlib import Path
         oa_dir = str(Path(__file__).resolve().parent.parent / "OpenAnimals")

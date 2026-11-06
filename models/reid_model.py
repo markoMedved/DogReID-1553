@@ -372,11 +372,9 @@ class VideoReID(nn.Module):
         self.num_classes = getattr(cfg, "num_classes", 0)
         self.embed_dim = self.backbone.dim
 
-        # --- Activation Memory ---
         self.n_grad = (None if getattr(cfg, "full_finetune", False)
                        else getattr(cfg, "unfreeze_blocks", 2))
 
-        # --- Branch Configuration (BoT Single Branch) ---
         self.n_branches = 1
         pooling = getattr(cfg, "pooling_type", "attention")
         use_bnneck = getattr(cfg, "use_bnneck", True)
@@ -393,7 +391,6 @@ class VideoReID(nn.Module):
             B, T, C, H, W = x.shape
             frames = x.view(B * T, C, H, W)
 
-            # --- Chunked Forward Pass ---
             chunks = torch.split(frames, self.chunk_size, dim=0)
             use_grad_checkpoint = self.training and (self.n_grad is None or self.n_grad >= 8)
             if use_grad_checkpoint:
@@ -402,7 +399,6 @@ class VideoReID(nn.Module):
             else:
                 per_chunk = [self._frame_features(c) for c in chunks]
 
-            # Restore temporal structure (B, T, D), then aggregate
             branch_feats = [
                 torch.cat([chunk[i] for chunk in per_chunk], dim=0).view(B, T, -1)
                 for i in range(self.n_branches)
@@ -413,15 +409,12 @@ class VideoReID(nn.Module):
         else:
             branch_feats = self._frame_features(x)
 
-        # --- BN-Neck Application ---
         tri, ret, logit = self.heads[0](branch_feats[0])
 
-        # --- Training Mode with Identity Head ---
         if self.training and self.num_classes > 0 and logit is not None:
             return F.normalize(tri, dim=-1), logit
         elif self.training:
             return F.normalize(tri, dim=-1)
 
-        # --- Inference Mode ---
         return ret
 

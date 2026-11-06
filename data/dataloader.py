@@ -85,12 +85,10 @@ def _build_pk_sampler(cfg, labels, dataset_len):
 
 
 def build_dataloaders(cfg):
-    """Build the train and validation dataloaders for our experiments"""
-    
+    """Build train and validation/test dataloaders."""
     train_tf = build_video_transforms(cfg, is_train=True)
     eval_tf = build_video_transforms(cfg, is_train=False)
 
-    # --- Shared Dataset Parameters ---
     dataset_kwargs = {
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
@@ -102,16 +100,13 @@ def build_dataloaders(cfg):
         "bbox_file": getattr(cfg, "bbox_file", None),
     }
 
-    # --- Base Training Dataset (SPLIT='train') ---
-    # label_map=None -> contiguous labels over the training identities only, so the
-    # classifier has #train-ID outputs (as in OpenAnimals), not one per dog in the dataset.
+    # label_map=None assigns contiguous labels over training identities only
     base_train_dataset = DOGVideoREIDDataset(split="train", transform=train_tf, label_map=None, **dataset_kwargs)
 
     loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
     if cfg.num_workers > 0:
         loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
 
-    # --- Full-train mode: train on the whole train split, evaluate on the test split ---
     if getattr(cfg, "val_split", 0) <= 0:
         sampler = _build_pk_sampler(cfg, base_train_dataset.labels, len(base_train_dataset))
         train_loader = DataLoader(
@@ -128,28 +123,20 @@ def build_dataloaders(cfg):
     base_val_dataset = DOGVideoREIDDataset(split="train", is_train=False, transform=eval_tf,
                                            label_map=base_train_dataset.id_map, **dataset_kwargs)
 
-    # --- Split Dog IDs for Validation ---
-    # Avoids identity leakage between training and validation sets
+    # Disjoint identity split for validation
     unique_train_dog_ids = np.array(sorted(list(set(base_train_dataset.dog_ids))))
-    
     np.random.seed(42)
     np.random.shuffle(unique_train_dog_ids)
-    
-    # Get the amount of validation ids, as specified in the config file
+
     val_id_count = int(len(unique_train_dog_ids) * cfg.val_split)
     val_dog_ids = set(unique_train_dog_ids[:val_id_count])
 
-    # --- Collect Indices ---
     train_indices = []
     val_query_indices = []
     val_gallery_indices = []
 
-    # --- Split Validation into Query/Gallery ---
-    # Utilizes 'GROUP' logic to separate query vs. gallery samples
     for i in range(len(base_train_dataset)):
         dog_id = base_train_dataset.dog_ids[i]
-
-        # Seperate into scence disjoint groups for query and gallery
         if dog_id in val_dog_ids:
             group_val = base_train_dataset.df.iloc[i]['GROUP']
             if group_val == 1:
@@ -159,18 +146,13 @@ def build_dataloaders(cfg):
         else:
             train_indices.append(i)
 
-    # --- Create PyTorch Subsets ---
     train_dataset = Subset(base_train_dataset, train_indices)
     val_query_dataset = Subset(base_val_dataset, val_query_indices)
     val_gallery_dataset = Subset(base_val_dataset, val_gallery_indices)
 
-    # --- PK Sampler Initialization ---
-    # Ensures batches contain 'P' identities with 'K' clips each
     subset_labels = [base_train_dataset.labels[i] for i in train_indices]
-    
     sampler = _build_pk_sampler(cfg, subset_labels, len(train_dataset))
 
-    # --- Construct DataLoaders ---
     loader_kwargs = dict(num_workers=cfg.num_workers, pin_memory=True)
     if cfg.num_workers > 0:
         loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
@@ -184,13 +166,12 @@ def build_dataloaders(cfg):
     if cfg.num_workers > 0:
         val_loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
 
-    # For validation we need query and gallery dataloaders
     val_batch_size = min(cfg.batch_size, 32)
     val_query_loader = DataLoader(
         val_query_dataset, batch_size=val_batch_size,
         shuffle=False, **val_loader_kwargs
     )
-    
+
     val_gallery_loader = DataLoader(
         val_gallery_dataset, batch_size=val_batch_size,
         shuffle=False, **val_loader_kwargs
@@ -210,14 +191,11 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
         gallery_images = images
 
     eval_tf = build_video_transforms(cfg, is_train=False)
-    
     full_df = pd.read_csv(cfg.split_file)
-    
-    # --- Global DOG_ID Mapping ---
+
     all_unique_ids = sorted(full_df["DOG_ID"].unique())
     global_id_map = {dog_id: i for i, dog_id in enumerate(all_unique_ids)}
 
-    # --- Shared Dataset Parameters ---
     dataset_kwargs = {
         "root_dir": cfg.data_root,
         "split_file": cfg.split_file,
@@ -228,11 +206,10 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
         "bbox_file": getattr(cfg, "bbox_file", None),
     }
 
-    # --- Query Configuration ---
     query_kwargs = dataset_kwargs.copy()
     query_kwargs["use_videos"] = not query_images
     query_kwargs["clip_len"] = 1 if query_images else cfg.clip_len
-    
+
     use_gt_query = getattr(cfg, "use_gt_for_query_mask", False)
     if query_images and use_gt_query:
         print("-> [INFO] Special Config Active: Query set will use Ground Truth boxes.")
@@ -240,11 +217,10 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
     else:
         query_kwargs["force_yolo"] = getattr(cfg, "force_yolo", False)
 
-    # --- Gallery Configuration ---
     gallery_kwargs = dataset_kwargs.copy()
     gallery_kwargs["use_videos"] = not gallery_images
     gallery_kwargs["clip_len"] = 1 if gallery_images else cfg.clip_len
-    
+
     use_gt_gallery = getattr(cfg, "use_gt_for_gallery_mask", False)
     if gallery_images and use_gt_gallery:
         print("-> [INFO] Special Config Active: Gallery set will use Ground Truth boxes.")
@@ -252,23 +228,14 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
     else:
         gallery_kwargs["force_yolo"] = getattr(cfg, "force_yolo", False)
 
-    query_dataset = DOGVideoREIDDataset(
-        split="query", 
-        **query_kwargs
-    )
-    
-    gallery_dataset = DOGVideoREIDDataset(
-        split="gallery", 
-        **gallery_kwargs
-    )
+    query_dataset = DOGVideoREIDDataset(split="query", **query_kwargs)
+    gallery_dataset = DOGVideoREIDDataset(split="gallery", **gallery_kwargs)
 
-    # --- Construct Test DataLoaders ---
     test_workers = min(cfg.num_workers, 8)
     loader_kwargs = dict(num_workers=test_workers, pin_memory=True)
     if test_workers > 0:
         loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
 
-    # Respect test_batch_size if specified (e.g. for long clips to prevent host RAM OOM)
     test_batch_size = min(getattr(cfg, "test_batch_size", cfg.batch_size), 32)
     query_loader = DataLoader(
         query_dataset, batch_size=test_batch_size,
@@ -280,10 +247,9 @@ def build_test_loaders(cfg, query_images=False, gallery_images=False, images=Non
         shuffle=False, **loader_kwargs
     )
 
-    # --- Print Stats & Mode ---
     q_mode = "Image" if query_images else "Video"
     g_mode = "Image" if gallery_images else "Video"
-    
+
     print(f"--- Test Loaders Ready ---")
     print(f"Mode: {q_mode}-to-{g_mode}")
     print(f"Query: {len(query_dataset)} | Gallery: {len(gallery_dataset)}")

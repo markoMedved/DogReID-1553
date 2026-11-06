@@ -5,11 +5,9 @@ import json
 import argparse
 from pathlib import Path
 from collections import OrderedDict
+import numpy as np
 import torch
 
-# =================================================================
-# --- PATH CONFIGURATION ---
-# =================================================================
 CURRENT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = CURRENT_DIR.parent
 
@@ -300,7 +298,6 @@ def detect_num_classes_from_state_dict(state_dict):
 def main():
     args = parse_args()
 
-    # --- 1. Checkpoint Resolution ---
     checkpoint_path = None
     checkpoint_dir = None
 
@@ -320,7 +317,6 @@ def main():
         if checkpoint_path is not None:
             checkpoint_dir = checkpoint_path.parent
 
-    # --- 2. Load Config from JSON if Available ---
     saved_cfg = {}
     if checkpoint_dir and (checkpoint_dir / "config.json").exists():
         try:
@@ -330,20 +326,16 @@ def main():
         except Exception as e:
             print(f"-> [INFO] Could not parse config.json: {e}")
 
-    # Determine Model Name
     model_name = args.model_name
     if args.checkpoint and "model" in saved_cfg and args.model_name == "dinov2":
         model_name = saved_cfg["model"]
 
-    # Determine Pooling Type
     pooling_type = args.pooling_type or saved_cfg.get("pooling_type") or "attention"
     if pooling_type == "attn":
         pooling_type = "attention"
 
-    # Determine World Type
     world_type = args.world_type or saved_cfg.get("world") or "closed"
 
-    # Derive Run Name for Folders
     if args.run_name:
         run_name = args.run_name
     elif checkpoint_dir and checkpoint_dir.name != model_name:
@@ -359,7 +351,6 @@ def main():
     print(f"  Checkpoint         : {checkpoint_path if checkpoint_path else 'None (random weights)'}")
     print("==========================================================")
 
-    # --- 3. Configuration Setup ---
     cfg = Config()
     cfg.model = model_name
     cfg.backbone = model_name
@@ -373,19 +364,15 @@ def main():
     elif "clip_len" in saved_cfg:
         target_clip_len = saved_cfg["clip_len"]
 
-    # Auto-adjust model settings (sets correct resolution: 384x384 for arbase/mgn, 256x128 for bot/agw, etc.)
     cfg.update_model_settings()
 
-    # Apply clip_len AFTER update_model_settings so it is not overwritten
     if target_clip_len is not None:
         cfg.clip_len = target_clip_len
     print(f"-> Active Clip Length: {cfg.clip_len} frames")
 
-    # If config.json had a specific img_size, respect it
     if "img_size" in saved_cfg:
         cfg.img_size = tuple(saved_cfg["img_size"])
 
-    # Modality Resolution
     query_images = args.query_images or args.use_images
     gallery_images = args.gallery_images or args.use_images
     cfg.query_images = query_images
@@ -395,14 +382,12 @@ def main():
     cfg.use_gt_for_gallery_mask = args.use_gt_boxes or args.use_gt_for_gallery_mask
     cfg.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # --- 4. Read State Dict & Auto-Detect num_classes ---
     state_dict = None
     if checkpoint_path and checkpoint_path.exists():
         print(f"-> Reading checkpoint: {checkpoint_path}")
         raw_checkpoint = torch.load(checkpoint_path, map_location="cpu")
         state_dict = raw_checkpoint.get('model', raw_checkpoint.get('state_dict', raw_checkpoint.get('model_state_dict', raw_checkpoint)))
 
-        # Check for num_classes in state_dict
         detected_classes = detect_num_classes_from_state_dict(state_dict)
         if args.num_classes > 0:
             cfg.num_classes = args.num_classes
@@ -412,7 +397,6 @@ def main():
         else:
             cfg.num_classes = 0
 
-        # Auto-detect representation_type, use_bnneck, and fuse_layers for DINOv2 / baseline
         if model_name.lower() in ("dinov2", "baseline", "dinov2_baseline", "clip_baseline", "baseline_clip"):
             bn_dim = None
             has_bn = False
@@ -450,11 +434,9 @@ def main():
             cfg.embedding_dim = 1536 if cfg.representation_type in ("cls_mean", "cls_gem") else 768
             print(f"-> DINOv2 representation_type: '{cfg.representation_type}' (embedding_dim={cfg.embedding_dim}, use_bnneck={getattr(cfg, 'use_bnneck', True)}, fuse_layers={getattr(cfg, 'fuse_layers', 1)})")
 
-    # --- 5. Instantiate Architecture via Model Factory ---
     print(f"-> Building model architecture '{model_name}' (resolution={cfg.img_size}, num_classes={cfg.num_classes})...")
     model = build_model(cfg)
 
-    # --- 6. Load Weights ---
     if state_dict is not None:
         new_state_dict = OrderedDict()
         for k, v in state_dict.items():
@@ -484,7 +466,6 @@ def main():
     model.to(cfg.device)
     model.eval()
 
-    # --- 7. Setup Output Paths ---
     q_type = "img" if query_images else "vid"
     g_type = "img" if gallery_images else "vid"
     modality_tag = f"{q_type}2{g_type}"
@@ -509,7 +490,6 @@ def main():
     cfg.output_dir = output_folder
     csv_filename = f"{world_type}_dist_matrix.csv"
 
-    # --- 8. Build Query / Gallery Dataloaders ---
     print(f"-> Preparing {world_type.upper()} dataloaders ({modality_tag.upper()}, batch_size={args.batch_size})...")
     query_loader, gallery_loader = build_test_loaders(
         cfg,
@@ -517,7 +497,6 @@ def main():
         gallery_images=gallery_images
     )
 
-    # --- 9. Run Inference & Save Distance Matrix ---
     print(f"-> Running inference...")
     csv_path = generate_distance_csv(
         model,
@@ -527,7 +506,6 @@ def main():
         filename=csv_filename
     )
 
-    # --- 10. Bootstrap Evaluation ---
     if not args.skip_bootstrap:
         print(f"\n==========================================")
         print(f"Running Bootstrap Evaluation on {csv_path.name} (mode={world_type})...")

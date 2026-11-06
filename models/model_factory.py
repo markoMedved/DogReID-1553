@@ -1,18 +1,11 @@
-# --- Import Available Model Architectures ---
 from .reid_model import VideoReID
 
 
 def build_model(cfg):
-    """
-    Factory function to instantiate the requested model architecture
-    based on the provided configuration parameters.
-    """
-
+    """Instantiate the requested model architecture from `cfg`."""
     model_type = getattr(cfg, "backbone", getattr(cfg, "model", None))
     model_type_str = str(model_type).lower() if model_type else ""
 
-
-    # OpenAnimals architectures (default for bot, agw, sbs, mgn, arbase)
     oa_names = {
         "bot", "oa_bot", "openanimals_bot",
         "agw", "oa_agw", "openanimals_agw",
@@ -31,30 +24,23 @@ def build_model(cfg):
             freeze_epochs=getattr(cfg, "freeze_epochs", None),
         )
 
-    # TF-CLIP (Text-Free CLIP Video Re-ID)
     if model_type_str in ("tfclip", "tf_clip", "tf-clip", "clip"):
         from .tfclip import TFCLIPVideoModel
         return TFCLIPVideoModel(cfg)
 
-    # RoVF (Recurrent Operations on Video Frames)
     if model_type_str.startswith("rovf"):
         from .rovf import RoVFVideoModel
         return RoVFVideoModel(cfg)
 
-    # ECCV-26-SCL (MetaN: TransReID + SCFG + NFC)
     if model_type_str in ("scl", "metan", "eccv_scl"):
         from .scl import SCLVideoModel
         return SCLVideoModel(cfg)
 
-    # ECCV-24 AdaFreq (Adaptive High-Frequency Transformer for Wildlife Re-ID)
     if model_type_str in ("adafreq", "ada_freq", "eccv_adafreq"):
         from .adafreq import AdaFreqVideoModel
         return AdaFreqVideoModel(cfg)
 
-    # --- DINOv2 / CLIP / MegaDescriptor BoT Video Re-ID Baseline ---
     if getattr(cfg, "reid_method", None) == "bot" or model_type_str in ("dinov2", "baseline", "dinov2_baseline", "clip_baseline", "baseline_clip", "megadescriptor", "megadescriptor_b", "megadescriptor_base"):
         return VideoReID(cfg)
 
-    else:
-        # Fallback for unsupported or misspelled model configurations
-        raise ValueError(f"Unknown model architecture requested: {model_type}")
+    raise ValueError(f"Unknown model architecture requested: {model_type}")

@@ -33,8 +33,8 @@ Identities appear across **multiple cameras, dates, and backgrounds**, enabling 
 To track community progress and foster reproducible innovation in animal biometrics, we host the official **DogReID-1553 Leaderboard**.
 
 Researchers are encouraged to evaluate their architectures using our standardized evaluation protocols:
-* **Closed-World Evaluation**: Mean Average Precision (**mAP**), Cumulative Matching Characteristics (**Rank-1**, **Rank-5**, **Rank-10**) with 95% bootstrap confidence intervals.
-* **Open-World Evaluation**: Detection and Identification Rate (**DIR @ FAR = 1%**, **5%**, **10%**) across varying verification distance thresholds.
+* **Closed-World Evaluation**: Mean Average Precision (**mAP**), Cumulative Matching Characteristics (**Rank-1**, **Rank-5**) with 95% bootstrap confidence intervals.
+* **Open-World Evaluation**: Detection and Identification Rate (**DIR @ FAR = 1%**, **5%**, **10%**) for Rank-1 and Rank-5 with 95% bootstrap confidence intervals across verification distance thresholds.
 
 ---
 
@@ -81,45 +81,49 @@ cd DogReID-1553
 
 ## 2️⃣ Environment Setup
 
-We recommend using **Conda** for an isolated, reproducible environment.
+We recommend using **Conda** (Python 3.10 or 3.11) for an isolated, reproducible environment:
 
 ```bash
-# Create and activate environment
-conda create -n dogreid python=3.10 -y
-conda activate dogreid
+# 1. Create and activate Conda environment
+conda create -n dog_reid python=3.11 -y
+conda activate dog_reid
 
-# Install PyTorch with CUDA support (e.g. CUDA 12.4/12.6)
-pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+# 2. Install PyTorch with CUDA support (adjust cu124 to match your CUDA driver)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
-# Install Core Dependencies
+# 3. Install all benchmark dependencies
 pip install -r requirements.txt
-
-# Install Metric Learning and Detection Packages
-pip install pytorch-metric-learning==2.9.0 ultralytics==8.4.41 timm
 ```
+
+> [!NOTE]
+> **Pretrained Weights**:
+> - **DINOv2**, **CLIP**, **MegaDescriptor**, **RoVF**, and **OpenAnimals ResNet-50** weights are downloaded automatically on first run via `torch.hub`, `timm`, or `huggingface_hub`.
+> - For **AdaFreq** and **SCL**, place the ImageNet-pretrained ViT-B/16 checkpoint `jx_vit_base_p16_224-80ecf9dd.pth` at `ECCV-26-SCL/pretrained/jx_vit_base_p16_224-80ecf9dd.pth`.
 
 ---
 
-## 3️⃣ Dataset Directory Structure
+## 3️⃣ Dataset & Repository Directory Structure
 
 Extract the dataset archives into the repository root so the layout matches:
 
 ```text
 DogReID-1553/
 │
-├── configs/                   # Training configuration definitions (configs/config.py)
-├── data/                      # Multi-frame video dataloaders & transforms
-├── engine/                    # Specialized trainers (DINOv2, AdaFreq, RoVF, SCL)
+├── configs/config.py          # Training configuration & model-specific defaults
+├── data/                      # Multi-frame video dataloaders, PK samplers & transforms
+├── engine/                    # Specialized trainers (standard Re-ID, AdaFreq, RoVF, SCL)
 ├── evaluation/                # Evaluation pipeline, distance matrix CSV generator & notebooks
 │   ├── evaluate_closed_world.ipynb
 │   ├── evaluate_open_world.ipynb
 │   ├── evaluate_ablations.ipynb
+│   ├── failure_case/
+│   │   └── evaluate_identity_and_confusion.ipynb
 │   ├── make_csv.py
-│   └── evaluation_utils.py
+│   ├── evaluation_utils.py
+│   └── run_notebooks.py
 ├── models/                    # Model factory, wrappers & adapter modules
-├── losses/                    # Batch-hard triplet, soft triplet, and cross-entropy losses
-├── solver/                    # Warmup schedulers (CosineAnnealingLR, MultiStepLR) & optimizers
-├── jobs/                      # HPC SLURM batch submission scripts
+├── solver/warmup.py           # Warmup schedulers (CosineAnnealingLR, MultiStepLR)
+├── tests/                     # Pipeline & preflight verification tests
 │
 ├── bounding_boxes.csv         # Dog bounding box annotations
 ├── breeds.csv                 # Dog breed annotations
@@ -144,7 +148,7 @@ Trained model checkpoints are automatically organized into distinct directories 
 | **`checkpoints/`** | **Final closed-world benchmark models** (`--val_split 0.0`). | 100% of closed-world training identities |
 | **`checkpoints_validation/`** | **Closed-world hyperparameter & ablation models** (`--val_split 0.2`, default). | 80% train / 20% validation split |
 | **`checkpoints_open/`** | **Final open-world benchmark models** (`--world open --val_split 0.0`). | 100% of open-world training identities |
-| **`checkpoints_experiments/`** | **Historical archives** of exploratory runs and parameter sweeps. | Archival |
+| **`checkpoints_open_validation/`** | **Open-world validation models** (`--world open --val_split 0.2`). | 80% train / 20% validation split |
 
 > [!NOTE]
 > **Validation Split vs. Final Benchmark Runs**: By default (`--val_split 0.2`), `train.py` holds out 20% of the training identities for validation monitoring during hyperparameter tuning and ablations. Passing `--val_split 0.0` trains on 100% of the training identities and evaluates directly on the test set (`query` and `gallery`) during the run; this option is **strictly intended for final benchmark runs** once all hyperparameters and design decisions have been fixed.
@@ -153,46 +157,48 @@ Trained model checkpoints are automatically organized into distinct directories 
 
 ## 🏋️ Training
 
-All architectures are trained through the unified `train.py` entrypoint. Model-specific defaults (resolution, optimizer, learning rate, schedule, and epochs) are configured automatically in `configs/config.py` when `--model` is specified, and any parameter can be overridden via CLI flags.
+All 12 benchmark architectures are trained through the unified `train.py` entrypoint. Model-specific defaults (resolution, optimizer, learning rate, schedule, and epochs) are configured automatically in `configs/config.py` when `--model` is specified, and any parameter can be overridden via CLI flags.
+
+All commands below are formatted as **single-line commands** so you can safely copy and paste them directly into Windows PowerShell, Command Prompt, or Linux/macOS bash.
 
 ### 1. Foundation Vision Transformers (`baseline` / `dinov2`, `clip_baseline`, `megadescriptor`)
+
 ```bash
-# DINOv2 ViT-B/14 (or replace --model with clip_baseline or megadescriptor)
-python train.py \
-    --model baseline \
-    --pooling_type attention \
-    --unfreeze_blocks 6 \
-    --epochs 51 \
-    --batch_size 32 \
-    --lr 2e-5 \
-    --lr_sched cosine \
-    --lr_delay_epochs 25 \
-    --val_split 0.0
+# DINOv2 ViT-B/14 (Closed-World)
+python train.py --model baseline --world closed --pooling_type attention --unfreeze_blocks 6 --epochs 50 --batch_size 32 --lr 2e-5 --lr_sched cosine --lr_delay_epochs 25 --val_split 0.0
+
+# CLIP ViT-B/16 (Closed-World)
+python train.py --model clip_baseline --world closed --pooling_type attention --unfreeze_blocks 6 --epochs 50 --batch_size 32 --lr 2e-5 --lr_sched cosine --lr_delay_epochs 25 --val_split 0.0
+
+# MegaDescriptor-B-224 (Closed-World)
+python train.py --model megadescriptor --world closed --pooling_type attention --unfreeze_blocks 6 --epochs 50 --batch_size 32 --lr 1e-4 --lr_sched cosine --lr_delay_epochs 25 --val_split 0.0
 ```
 
 ### 2. OpenAnimals ResNet-50 Baselines (`bot`, `agw`, `sbs`, `mgn`, `arbase`)
+
 ```bash
-# Train any OpenAnimals ResNet-50 baseline (bot, agw, sbs, mgn, arbase)
-python train.py \
-    --model bot \
-    --pooling_type attention \
-    --val_split 0.0
+# Train any OpenAnimals ResNet-50 baseline (replace --model with: bot | agw | sbs | mgn | arbase)
+python train.py --model bot --world closed --pooling_type attention --val_split 0.0
 ```
 
 ### 3. Specialized Animal & Video Re-ID Architectures (`tfclip`, `rovf`, `adafreq`, `scl`)
+
 ```bash
 # TF-CLIP (AAAI 2024)
-python train.py --model tfclip --pooling_type attention --val_split 0.0
+python train.py --model tfclip --world closed --val_split 0.0
 
 # RoVF (IJCV 2026: rovf_s or rovf_base)
-python train.py --model rovf_s --epochs 10 --val_split 0.0
+python train.py --model rovf_s --world closed --epochs 10 --val_split 0.0
 
 # AdaFreq (ECCV 2024)
-python train.py --model adafreq --pooling_type attention --epochs 150 --val_split 0.0
+python train.py --model adafreq --world closed --pooling_type attention --epochs 150 --val_split 0.0
 
 # SCL / MetaN (ECCV 2026)
-python train.py --model scl --pooling_type attention --epochs 60 --val_split 0.0
+python train.py --model scl --world closed --pooling_type attention --epochs 60 --val_split 0.0
 ```
+
+* **Open-World Training**: Add `--world open` to any command above to train on the Open-World split.
+* **Ablation Studies**: Customize DINOv2 ablations using `--unfreeze_blocks {0,1,2,4,6,8,10,12}` (or `--full_finetune`), `--pooling_type {attention,mean,max}`, `--clip_len {1,4,8,16,32,64}`, and `--mask_dog`.
 
 ---
 
@@ -200,44 +206,43 @@ python train.py --model scl --pooling_type attention --epochs 60 --val_split 0.0
 
 Evaluation is performed in two decoupled stages: **feature extraction & distance matrix calculation** (`evaluation/make_csv.py`), followed by **statistical bootstrap confidence estimation** (interactive Jupyter notebooks or programmatic calls).
 
-### Step 1: Generate Distance Matrix CSV
+### Step 1: Generate Distance Matrix CSV (`evaluation/make_csv.py`)
 
-Use `evaluation/make_csv.py` to run inference across queries and galleries:
+Use `evaluation/make_csv.py` to extract features, save the query-to-gallery distance matrix CSV, and compute bootstrap metrics.
+
+> [!TIP]
+> In **Windows PowerShell**, use backticks (`` ` ``) instead of backslashes (`\`) for line continuations, or run commands on a single line.
 
 ```bash
-# Closed-World Video-to-Video Evaluation (DINOv2)
-python evaluation/make_csv.py \
-    --model_name baseline \
-    --world_type closed
+# 1. Closed-World Video-to-Video (V2V)
+python evaluation/make_csv.py --model baseline --checkpoint checkpoints/baseline/closed_baseline_ep50/latest_model.pth --world closed --output_dir evaluation/csvs_closed_results/baseline_vid2vid
 
-# Closed-World Image-to-Video Evaluation (Static Query Crop)
-python evaluation/make_csv.py \
-    --model_name baseline \
-    --world_type closed \
-    --use_images
+# 2. Closed-World Image-to-Video (I2V: single image query -> video gallery)
+python evaluation/make_csv.py --model baseline --checkpoint checkpoints/baseline/closed_baseline_ep50/latest_model.pth --world closed --query_images --output_dir evaluation/csvs_closed_results/baseline_img2vid
 
-# Open-World Video-to-Video Evaluation
-python evaluation/make_csv.py \
-    --model_name baseline \
-    --world_type open
+# 3. Open-World Video-to-Video (V2V)
+python evaluation/make_csv.py --model baseline --checkpoint checkpoints_open/baseline/open_baseline/latest_model.pth --world open --output_dir evaluation/csvs_open_results/baseline_vid2vid
+
+# 4. Open-World Image-to-Video (I2V: single image query -> video gallery)
+python evaluation/make_csv.py --model baseline --checkpoint checkpoints_open/baseline/open_baseline/latest_model.pth --world open --query_images --output_dir evaluation/csvs_open_results/baseline_img2vid
 ```
 
 **Key CLI Options:**
-* `--model_name`: Architecture identifier (`baseline`, `clip`, `megadescriptor`, `bot`, `agw`, `sbs`, `mgn`, `arbase`, `tfclip`, `rovf`, `scl`, `adafreq`).
-* `--checkpoint_path`: Explicit path to a `latest_model.pth`. If omitted, the script automatically resolves the checkpoint from `checkpoints/`.
-* `--world_type`: `closed` or `open`.
-* `--use_images`: Query modality — set for Image-to-Video (I2V); omit for Video-to-Video (V2V).
-* `--chunk_size`: Max frames processed simultaneously per GPU forward pass (defaults to 16 for memory efficiency).
+* `--model` / `--model_name`: Architecture identifier (`baseline`/`dinov2`, `clip_baseline`, `megadescriptor`, `bot`, `agw`, `sbs`, `mgn`, `arbase`, `tfclip`, `rovf`, `scl`, `adafreq`).
+* `--checkpoint` / `--checkpoint_path`: Direct path to a `.pth` checkpoint or directory. If omitted, `make_csv.py` auto-discovers the checkpoint from `checkpoints/` or `checkpoints_open/`.
+* `--world` / `--world_type`: `closed` or `open`.
+* `--query_images`: Evaluate single-image queries against the video gallery (Image-to-Video, I2V); omit for Video-to-Video (V2V).
+* `--clip_len`: Override the number of sampled frames per video clip during inference (e.g., `1`, `4`, `8`, `16`, `32`, `64`).
+* `--mask_dog` / `--use_gt_for_query_mask`: Diagnostic flags for subject masking and ground-truth bounding box crop evaluation.
 
-Distance matrices and metadata are saved under `evaluation/csvs_<world_type>_results/<model>_<modality>/`.
+### Step 2: Calculate Metrics, Tables & Figures (Evaluation Notebooks)
 
-### Step 2: Calculate Metrics & 95% Confidence Intervals
+Open the evaluation notebooks (or run `python evaluation/run_notebooks.py --all`) to compute 100-iteration bootstrap confidence intervals and generate all benchmark tables and diagnostic figures:
 
-Open the dedicated evaluation notebooks to calculate bootstrap metrics and generate publication-ready tables and plots:
-
-* **Closed-World Evaluation**: `evaluation/evaluate_closed_world.ipynb`
-* **Open-World Evaluation**: `evaluation/evaluate_open_world.ipynb`
-* **Ablation Studies**: `evaluation/evaluate_ablations.ipynb`
+* **Closed-World Evaluation (`evaluation/evaluate_closed_world.ipynb`)**: Computes and displays the Closed-World V2V and I2V benchmark tables reporting **mAP (%)**, **Rank-1 (%)**, and **Rank-5 (%)** with 95% bootstrap confidence intervals across all 12 models.
+* **Open-World Evaluation (`evaluation/evaluate_open_world.ipynb`)**: Computes and displays the Open-World V2V and I2V benchmark tables reporting **Rank-1 DIR** and **Rank-5 DIR** at **FAR = 1%, 5%, and 10%** with 95% bootstrap confidence intervals across all 12 models.
+* **Ablation Studies (`evaluation/evaluate_ablations.ipynb`)**: Evaluates and plots (1) **Backbone Adaptation Depth Scaling** (`0, 2, 4, 6, 8, 10, 12` unfrozen transformer blocks), (2) **Subject Masking & Crop Quality Diagnostics** (unmasked vs. YOLO-masked vs. GT-cropped V2V/I2V tables), (3) **Temporal Frame Scaling** (`1, 4, 8, 16, 32, 64` frames table & scaling curve), and (4) **Temporal Aggregation Ablations** (Attention vs. Mean vs. Max pooling table).
+* **Failure-Case & Gallery Sensitivity Analysis (`evaluation/failure_case/evaluate_identity_and_confusion.ipynb`)**: Computes per-identity mAP across all 680 closed-world test dogs, generates the **Best-10 vs. Worst-10 Query–Gallery Condition Prevalence** grouped bar chart and video count summary table, evaluates **Mutual & Unidirectional Confusion Pairs** and plots the **Visual Confounding Factors Breakdown** bar chart across the top 20 confused pairs, and plots the **Gallery Size Sensitivity** curves (both Video Volume Scaling and Distractor Identity Scaling).
 
 Alternatively, run bootstrap calculation programmatically:
 

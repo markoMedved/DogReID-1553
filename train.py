@@ -11,9 +11,6 @@ from solver.warmup import build_scheduler
 
 
 def main():
-    # ------------------------------------------------
-    # ARGUMENT PARSING
-    # ------------------------------------------------
     parser = argparse.ArgumentParser(description="Dog Re-ID Training")
 
     parser.add_argument('--lr', type=float, default=None, help='Learning rate')
@@ -21,15 +18,15 @@ def main():
     parser.add_argument('--weight_decay', type=float, default=None, help='L2 regularization')
     parser.add_argument('--batch_size', type=int, default=None, help='Batch size (P*K)')
     parser.add_argument('--k', type=int, default=None, help='Clips per dog ID')
-    parser.add_argument('--model', type=str, default=None, help="Model/backbone: 'dinov2', 'bot', 'arbase', 'agw', 'sbs', 'mgn', 'tfclip'")
+    parser.add_argument('--model', type=str, default=None, help="Model architecture: 'dinov2', 'clip_baseline', 'megadescriptor', 'bot', 'agw', 'sbs', 'mgn', 'arbase', 'tfclip', 'rovf', 'adafreq', 'scl'")
     parser.add_argument('--world', type=str, default=None, help="'closed' or 'open'")
     parser.add_argument('--clip_len', type=int, default=None, help='Frames per video clip')
-    parser.add_argument('--use_images', action='store_true', default=False, help='Train on static images instead of video clips (Image-to-Image training)')
+    parser.add_argument('--use_images', action='store_true', default=False, help='Train on static images instead of video clips')
     parser.add_argument('--epochs', type=int, default=None, help='Number of training epochs')
-    parser.add_argument('--val_split', type=float, default=None, help='Validation split ratio (e.g., 0.2 for 20%% validation)')
-    parser.add_argument('--eval_period', type=int, default=None, help='Evaluation frequency in epochs (default from config: 1)')
+    parser.add_argument('--val_split', type=float, default=None, help='Validation split ratio (e.g., 0.2 for 20%% validation, 0 for full train)')
+    parser.add_argument('--eval_period', type=int, default=None, help='Evaluation frequency in epochs')
     parser.add_argument('--num_workers', type=int, default=None, help='Number of dataloader workers')
-    parser.add_argument('--img_size', type=int, nargs='+', default=None, help='Image resolution as H W, e.g. 256 128 or 384 384')
+    parser.add_argument('--img_size', type=int, nargs='+', default=None, help='Image resolution as H W')
 
     # Re-ID methodology flags
     parser.add_argument(
@@ -269,12 +266,8 @@ def main():
 
     args = parser.parse_args()
 
-    # ------------------------------------------------
-    # LOAD DEFAULT CONFIG
-    # ------------------------------------------------
     cfg = Config()
 
-    # --- Pre-update Model & Finetune Flags ---
     if args.model is not None:
         cfg.model = args.model
         cfg.backbone = args.model
@@ -289,7 +282,6 @@ def main():
 
     cfg.update_model_settings()
 
-    # --- Command-Line Overrides (applied after model defaults) ---
     if args.resume:
         cfg.resume = True
     if args.overwrite:
@@ -350,12 +342,8 @@ def main():
     cfg.display()
     cfg.save_config()
 
-    # ------------------------------------------------
-    # BUILD DATA LOADERS
-    # ------------------------------------------------
     train_loader, query_loader, gallery_loader = build_dataloaders(cfg)
 
-    # Dynamic num_classes calculation
     if hasattr(train_loader.dataset, 'dataset') and hasattr(train_loader.dataset.dataset, 'id_map'):
         cfg.num_classes = len(train_loader.dataset.dataset.id_map)
     elif hasattr(train_loader.dataset, 'dog_ids'):
@@ -371,43 +359,32 @@ def main():
 
     print(f"--> Total training dog identities (num_classes): {cfg.num_classes}")
 
-    # If id_loss is disabled for baseline, reset num_classes = 0 so the classifier head isn't built
     if not cfg.use_id_loss and cfg.reid_method != 'bot':
         cfg.num_classes = 0
 
-    # ------------------------------------------------
-    # BUILD MODEL
-    # ------------------------------------------------
     model = build_model(cfg).to(cfg.device)
 
-    # RoVF uses its own recurrent Perceiver training loop with online anchor_fn_hard mining
     if str(getattr(cfg, "backbone", "")).lower().startswith("rovf"):
         print(trainable_report(model))
         from engine.rovf_trainer import train_rovf
         train_rovf(cfg, model, train_loader, query_loader, gallery_loader)
         return
 
-    # ECCV-26-SCL (MetaN: TransReID + SCFG + NFC + EMA Teacher)
     if getattr(model, "is_scl", False):
         print(trainable_report(model))
         from engine.scl_trainer import train_scl
         train_scl(cfg, model, train_loader, query_loader, gallery_loader)
         return
 
-    # ECCV-24 AdaFreq (Adaptive High-Frequency Transformer)
     if getattr(model, "is_adafreq", False):
         print(trainable_report(model))
         from engine.adafreq_trainer import train_adafreq
         train_adafreq(cfg, model, train_loader, query_loader, gallery_loader)
         return
 
-    # Apply freezing
     model = apply_freezing(model, cfg)
     print(trainable_report(model))
 
-    # ------------------------------------------------
-    # OPTIMIZER & SCHEDULER
-    # ------------------------------------------------
     oa_sched_dict = None
 
     def is_pretrained(name):
@@ -477,13 +454,11 @@ def main():
         optimizer = torch.optim.Adam(param_groups, weight_decay=cfg.weight_decay)
         print(f"[optim] Using Adam optimizer (weight_decay={cfg.weight_decay})")
 
-    # --- BUILD SCHEDULER ---
     scheduler = None
     oa_sched_dict = None
     if getattr(model, "is_openanimals", False):
         try:
             from openanimals.solver.build import build_lr_scheduler
-            # Align warmup iters and schedule parameters to cfg
             iters_per_epoch = len(train_loader)
             warmup_epochs = getattr(cfg, "warmup_epochs", 5)
             model.oa_cfg.SOLVER.MAX_EPOCH = int(getattr(cfg, "epochs", model.oa_cfg.SOLVER.MAX_EPOCH))
@@ -513,15 +488,9 @@ def main():
     else:
         scheduler = build_scheduler(optimizer, cfg)
 
-    # ------------------------------------------------
-    # METRIC LEARNING SETUP
-    # ------------------------------------------------
     miner = miners.BatchHardMiner()
     loss_fn = losses.TripletMarginLoss(margin=cfg.margin)
 
-    # ------------------------------------------------
-    # TRAINER OBJECT
-    # ------------------------------------------------
     trainer = Trainer(
         model=model,
         train_loader=train_loader,
