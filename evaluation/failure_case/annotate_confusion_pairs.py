@@ -17,10 +17,10 @@ For each confused pair (Dog A <-> Dog B):
       6. Key discriminating feature missed / Notes (text)
 
 Saves all annotations to:
-  evaluation/confusion_pairs_annotations.csv
+  evaluation/failure_case/confusion_pairs_annotations.csv
 
 Usage:
-  python evaluation/annotate_confusion_pairs.py --port 8055
+  python evaluation/failure_case/annotate_confusion_pairs.py --port 8055
 """
 
 import argparse
@@ -41,8 +41,9 @@ from typing import Dict, List, Any
 import pandas as pd
 from PIL import Image
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-CONF_CSV_PATH = ROOT_DIR / "evaluation" / "confusion_pairs_annotations.csv"
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(__file__).resolve().parents[2]
+CONF_CSV_PATH = SCRIPT_DIR / "confusion_pairs_annotations.csv"
 DIST_MATRIX_CSV = ROOT_DIR / "evaluation" / "csvs_closed_results" / "baseline_vid2vid" / "closed_dist_matrix.csv"
 SPLITS_PATH = ROOT_DIR / "splits.csv"
 BBOX_PATH = ROOT_DIR / "bounding_boxes.csv"
@@ -496,7 +497,7 @@ def generate_html(pairs_data: List[Dict[str, Any]]) -> str:
     <div>
       <h1 style="font-size: 1.3rem;">🎬 Inter-Identity Similarity & Confusion Video Annotator (Top 20 Pairs)</h1>
       <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">
-        Side-by-Side Synchronized Video Playback &bull; Auto-saves to <code>evaluation/confusion_pairs_annotations.csv</code>
+        Side-by-Side Synchronized Video Playback &bull; Auto-saves to <code>evaluation/failure_case/confusion_pairs_annotations.csv</code>
       </p>
     </div>
     <div style="display: flex; gap: 8px; align-items: center;">
@@ -864,7 +865,7 @@ def generate_html(pairs_data: List[Dict[str, Any]]) -> str:
       .then(res => res.json())
       .then(d => {{
         statusLbl.innerText = "✓ Saved to CSV";
-        if (showNotice) alert("Successfully saved annotations to evaluation/confusion_pairs_annotations.csv!");
+        if (showNotice) alert("Successfully saved annotations to evaluation/failure_case/confusion_pairs_annotations.csv!");
       }})
       .catch(e => {{
         statusLbl.innerText = "✗ Save failed!";

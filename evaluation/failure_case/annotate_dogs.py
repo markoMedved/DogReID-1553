@@ -12,10 +12,10 @@ Annotates each video clip (84 total: 53 query, 31 gallery) across the 20 target 
   6. Free-form Notes (optional text)
 
 All video-level annotations are saved directly to:
-  evaluation/best_vs_worst_video_annotations.csv
+  evaluation/failure_case/best_vs_worst_video_annotations.csv
 
 Usage:
-  python evaluation/annotate_dogs.py --port 8050
+  python evaluation/failure_case/annotate_dogs.py --port 8050
 """
 
 import argparse
@@ -36,9 +36,10 @@ import pandas as pd
 from PIL import Image
 
 # Setup root path
-ROOT_DIR = Path(__file__).resolve().parent.parent
-VIDEO_ANNOT_CSV = ROOT_DIR / "evaluation" / "best_vs_worst_video_annotations.csv"
-DOG_ANNOT_CSV = ROOT_DIR / "evaluation" / "best_vs_worst_annotations.csv"
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(__file__).resolve().parents[2]
+VIDEO_ANNOT_CSV = SCRIPT_DIR / "best_vs_worst_video_annotations.csv"
+DOG_ANNOT_CSV = SCRIPT_DIR / "best_vs_worst_annotations.csv"
 SPLITS_PATH = ROOT_DIR / "splits.csv"
 BBOX_PATH = ROOT_DIR / "bounding_boxes.csv"
 IMAGES_DIR = ROOT_DIR / "Images"
@@ -677,7 +678,7 @@ def generate_html(dogs_data: List[Dict[str, Any]], standalone: bool = False) -> 
   <header>
     <div class="header-left">
       <h1>🎬 DogReID Per-Video Attribute Annotator</h1>
-      <p>Annotating all 84 video clips (53 Query, 31 Gallery) across 20 target identities &bull; Auto-saves to <code>evaluation/best_vs_worst_video_annotations.csv</code></p>
+      <p>Annotating all 84 video clips (53 Query, 31 Gallery) across 20 target identities &bull; Auto-saves to <code>evaluation/failure_case/best_vs_worst_video_annotations.csv</code></p>
     </div>
     <div class="header-actions">
       <span class="badge-progress" id="progress-badge">Annotated: 0 / 84 clips (0%)</span>
@@ -1159,7 +1160,7 @@ def generate_html(dogs_data: List[Dict[str, Any]], standalone: bool = False) -> 
       .then(res => res.json())
       .then(data => {{
         statusLbl.innerText = "✓ Saved to CSV";
-        if (showNotice) alert("Successfully saved annotations to evaluation/best_vs_worst_video_annotations.csv!");
+        if (showNotice) alert("Successfully saved annotations to evaluation/failure_case/best_vs_worst_video_annotations.csv!");
       }})
       .catch(err => {{
         console.error("Save error:", err);

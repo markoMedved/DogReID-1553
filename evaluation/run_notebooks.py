@@ -69,4 +69,7 @@ if __name__ == "__main__":
     if args.ablations or args.all:
         run_notebook(eval_dir / "evaluate_ablations.ipynb")
     if args.identity or args.all:
-        run_notebook(eval_dir / "evaluate_identity_and_confusion.ipynb")
+        nb_id = eval_dir / "failure_case" / "evaluate_identity_and_confusion.ipynb"
+        if not nb_id.exists():
+            nb_id = eval_dir / "evaluate_identity_and_confusion.ipynb"
+        run_notebook(nb_id)
