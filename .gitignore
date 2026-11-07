@@ -24,6 +24,7 @@ final_models/
 log*/
 logs*/
 logs_baseline
+old_logs
 test_logs*/
 runs/
 
