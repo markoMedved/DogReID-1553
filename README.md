@@ -210,8 +210,6 @@ Evaluation is performed in two decoupled stages: **feature extraction & distance
 
 Use `evaluation/make_csv.py` to extract features, save the query-to-gallery distance matrix CSV, and compute bootstrap metrics.
 
-> [!TIP]
-> In **Windows PowerShell**, use backticks (`` ` ``) instead of backslashes (`\`) for line continuations, or run commands on a single line.
 
 ```bash
 # 1. Closed-World Video-to-Video (V2V)
