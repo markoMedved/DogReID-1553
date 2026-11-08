@@ -1,0 +1,16 @@
+Pair Index: 17
+Confusion Type: Unidirectional
+Mutual Top-1 Errors: 4
+Mutual Top-5 Errors: 14
+A to B Top-1: 0
+B to A Top-1: 4
+==================================================
+Dog A: 5e56ead4-72f4-4a23-a8ca-caa6be270aee (Breed: Maltese)
+Dog B: c28d6906-161c-4f86-88ad-df1292c00c4b (Breed: MalteseBichonfrisecross)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Similar
+Body shape: Similar
+Facial appearance: Different

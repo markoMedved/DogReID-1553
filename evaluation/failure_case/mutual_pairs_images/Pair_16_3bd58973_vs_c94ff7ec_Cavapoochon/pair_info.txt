@@ -1,0 +1,16 @@
+Pair Index: 16
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 2
+Mutual Top-5 Errors: 3
+A to B Top-1: 1
+B to A Top-1: 1
+==================================================
+Dog A: 3bd58973-8612-44c2-8a77-bd86171198b7 (Breed: Cavapoochon)
+Dog B: c94ff7ec-cfa0-4c78-863e-35ad8a0368ee (Breed: Cavapoo)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Different
+Coat pattern: Similar
+Body shape: Similar
+Facial appearance: Similar

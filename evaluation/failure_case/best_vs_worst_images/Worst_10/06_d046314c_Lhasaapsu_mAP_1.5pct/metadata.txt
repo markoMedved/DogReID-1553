@@ -1,0 +1,13 @@
+DOG_ID: d046314c-a4f3-4389-a34e-cf042993440f
+Short ID: d046314c
+Breed: Lhasaapsu
+Group: Worst 10
+mAP: 1.5%
+Rank-1: 0.0%
+N_q (Query count): 3
+N_g (Gallery count): 1
+Distinctive visual features: No
+Occlusion: No
+Blurriness / low resolution: No
+Lighting: Good
+Viewpoint variation: High

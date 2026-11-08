@@ -1,0 +1,13 @@
+DOG_ID: 51a8d009-580e-48fd-b21d-e7e54bdc138d
+Short ID: 51a8d009
+Breed: Pug
+Group: Worst 10
+mAP: 0.8%
+Rank-1: 0.0%
+N_q (Query count): 4
+N_g (Gallery count): 2
+Distinctive visual features: No
+Occlusion: No
+Blurriness / low resolution: No
+Lighting: Good
+Viewpoint variation: High

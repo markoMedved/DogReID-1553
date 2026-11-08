@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """
-Visualize videos-per-identity distributions for DogReID-1553.
+Visualize the overall videos-per-identity distribution for DogReID-1553.
 
 Generates:
-1. Overall dataset video-per-identity distribution histogram + boxplot.
-2. Breakdowns across splits (Closed-Set: Train, Query, Gallery; Open-Set: Train, Query, Gallery).
-3. Boxplot comparison across all subsets.
-4. Summary statistics table (CSV and console print).
+1. Overall dataset histogram + boxplot.
+2. Summary statistics table (CSV and console print).
 """
 
 import argparse
 from pathlib import Path
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Plot videos per identity distribution.")
+    parser = argparse.ArgumentParser(
+        description="Plot videos per identity distribution."
+    )
     parser.add_argument(
         "--splits_csv",
         type=str,
@@ -27,8 +28,8 @@ def parse_args():
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="evaluation/figs",
-        help="Directory to save figures (default: evaluation/figs)"
+        default="evaluation/figures",
+        help="Directory to save figures (default: evaluation/figures)"
     )
     return parser.parse_args()
 
@@ -50,9 +51,11 @@ def compute_stats(series, label=""):
 
 def main():
     args = parse_args()
+
     csv_path = Path(args.splits_csv)
+    project_root = Path(__file__).resolve().parent.parent
+
     if not csv_path.exists():
-        project_root = Path(__file__).resolve().parent.parent
         csv_path = project_root / args.splits_csv
 
     if not csv_path.exists():
@@ -60,197 +63,182 @@ def main():
 
     out_dir = Path(args.output_dir)
     if not out_dir.is_absolute():
-        project_root = Path(__file__).resolve().parent.parent
-        out_dir = project_root / args.output_dir
+        out_dir = project_root / out_dir
+
     out_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(csv_path)
-    print(f"Loaded {len(df)} video records across {df['DOG_ID'].nunique()} dogs from {csv_path}")
+    print(
+        f"Loaded {len(df)} video records across "
+        f"{df['DOG_ID'].nunique()} dogs from {csv_path}"
+    )
 
-    # Matplotlib styling with prominent font sizes
+    # -------------------------------------------------------------
+    # Plot styling
+    # -------------------------------------------------------------
     plt.rcParams.update({
-        "font.size": 15,
-        "axes.labelsize": 16,
-        "axes.titlesize": 18,
-        "xtick.labelsize": 14,
-        "ytick.labelsize": 14,
-        "legend.fontsize": 14,
-        "figure.titlesize": 20,
-        "axes.edgecolor": "#333333",
-        "axes.grid": True,
-        "grid.color": "#e0e0e0",
-        "grid.linestyle": "--",
-        "grid.alpha": 0.7,
-        "figure.autolayout": True
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "DejaVu Sans"],
+        "font.size": 32,
+        "axes.labelsize": 32,
+        "axes.titlesize": 32,
+        "xtick.labelsize": 32,
+        "ytick.labelsize": 32,
+        "legend.fontsize": 32,
+        "axes.linewidth": 1.5,
+        "xtick.major.width": 1.5,
+        "ytick.major.width": 1.5,
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.25,
     })
 
-    stats_list = []
-
-    # 1. Overall videos per ID
+    # -------------------------------------------------------------
+    # Overall videos per identity and summary statistics
+    # -------------------------------------------------------------
     overall_counts = df.groupby("DOG_ID")["VIDEO_ID"].count()
-    stats_list.append(compute_stats(overall_counts, "Overall Dataset"))
 
-    # 2. Closed-Set splits
-    closed_train = df[df["SPLIT_CLOSED_SET"] == "train"].groupby("DOG_ID")["VIDEO_ID"].count()
-    closed_query = df[df["SPLIT_CLOSED_SET"] == "query"].groupby("DOG_ID")["VIDEO_ID"].count()
-    closed_gallery = df[df["SPLIT_CLOSED_SET"] == "gallery"].groupby("DOG_ID")["VIDEO_ID"].count()
+    stats_df = pd.DataFrame([
+        compute_stats(overall_counts, "Overall Dataset")
+    ])
 
-    stats_list.append(compute_stats(closed_train, "Closed-Set Train"))
-    stats_list.append(compute_stats(closed_query, "Closed-Set Query"))
-    stats_list.append(compute_stats(closed_gallery, "Closed-Set Gallery"))
-
-    # 3. Open-Set splits
-    open_train = df[df["SPLIT_OPEN_SET"] == "train"].groupby("DOG_ID")["VIDEO_ID"].count()
-    open_query = df[df["SPLIT_OPEN_SET"] == "query"].groupby("DOG_ID")["VIDEO_ID"].count()
-    open_gallery = df[df["SPLIT_OPEN_SET"] == "gallery"].groupby("DOG_ID")["VIDEO_ID"].count()
-
-    stats_list.append(compute_stats(open_train, "Open-Set Train"))
-    stats_list.append(compute_stats(open_query, "Open-Set Query"))
-    stats_list.append(compute_stats(open_gallery, "Open-Set Gallery"))
-
-    stats_df = pd.DataFrame(stats_list)
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 90)
     print("VIDEOS PER IDENTITY DISTRIBUTION SUMMARY")
-    print("=" * 80)
+    print("=" * 90)
     print(stats_df.to_string(index=False))
-    print("=" * 80 + "\n")
+    print("=" * 90 + "\n")
 
-    # Save summary stats to CSV
     stats_csv_path = out_dir / "videos_per_identity_summary.csv"
     stats_df.to_csv(stats_csv_path, index=False)
-    print(f"Saved stats table to: {stats_csv_path}")
+    print(f"Saved statistics: {stats_csv_path}")
 
     # -------------------------------------------------------------
-    # Plot 1: Overall Dataset Distribution (Histogram + Boxplot)
+    # Overall Dataset Distribution (Histogram + Boxplot)
     # -------------------------------------------------------------
     fig, (ax_hist, ax_box) = plt.subplots(
-        2, 1, figsize=(11, 8), sharex=True, gridspec_kw={"height_ratios": [0.75, 0.25]}
+        2,
+        1,
+        figsize=(13, 10),
+        sharex=True,
+        gridspec_kw={
+            "height_ratios": [3.2, 0.8],
+            "hspace": 0.08
+        }
     )
 
     max_val = int(overall_counts.max())
     bins = np.arange(0.5, max_val + 1.5, 1)
 
+    # Histogram
     ax_hist.hist(
         overall_counts,
         bins=bins,
-        color="#3470a3",
-        edgecolor="black",
+        color="#4778A8",
+        edgecolor="white",
         linewidth=1.0,
-        rwidth=0.85
+        rwidth=0.85,
+        alpha=0.95
     )
+
     mean_v = float(overall_counts.mean())
     med_v = float(overall_counts.median())
-    ax_hist.axvline(mean_v, color="#e74c3c", linestyle="--", linewidth=2.5, label=f"Mean: {mean_v:.2f}")
-    ax_hist.axvline(med_v, color="#2ecc71", linestyle="-", linewidth=2.5, label=f"Median: {med_v:.1f}")
-    ax_hist.set_ylabel("Number of Identities", fontsize=22)
-    ax_hist.legend(fontsize=22)
 
+    ax_hist.axvline(
+        mean_v,
+        color="#D65A4A",
+        linestyle="--",
+        linewidth=3.0,
+        label=f"Mean: {mean_v:.2f}",
+        zorder=3
+    )
+
+    ax_hist.axvline(
+        med_v,
+        color="#39845E",
+        linestyle="-",
+        linewidth=3.0,
+        label=f"Median: {med_v:.1f}",
+        zorder=3
+    )
+
+    ax_hist.set_ylabel("Number of Identities", labelpad=15)
+
+    ax_hist.legend(
+        loc="upper right",
+        frameon=True,
+        framealpha=0.95,
+        edgecolor="#DDDDDD",
+        borderpad=0.8
+    )
+
+    # Clean histogram axes
+    ax_hist.set_axisbelow(True)
+    ax_hist.grid(
+        axis="y",
+        color="#D9DDE3",
+        linestyle="--",
+        linewidth=1.0,
+        alpha=0.8
+    )
+    ax_hist.grid(axis="x", visible=False)
+
+    ax_hist.spines["top"].set_visible(False)
+    ax_hist.spines["right"].set_visible(False)
+
+    # Boxplot
     ax_box.boxplot(
         overall_counts,
         vert=False,
         patch_artist=True,
-        boxprops=dict(facecolor="#729fcf", color="black"),
-        medianprops=dict(color="red", linewidth=2.5),
-        whiskerprops=dict(color="black", linewidth=1.5),
-        capprops=dict(color="black", linewidth=1.5),
-        flierprops=dict(marker="o", color="black", alpha=0.5, markersize=5)
+        widths=0.55,
+        boxprops=dict(
+            facecolor="#91B0CD",
+            edgecolor="#333333",
+            linewidth=1.5
+        ),
+        medianprops=dict(
+            color="#D65A4A",
+            linewidth=3.0
+        ),
+        whiskerprops=dict(
+            color="#333333",
+            linewidth=1.6
+        ),
+        capprops=dict(
+            color="#333333",
+            linewidth=1.6
+        ),
+        flierprops=dict(
+            marker="o",
+            markerfacecolor="#555555",
+            markeredgecolor="white",
+            alpha=0.55,
+            markersize=6
+        )
     )
-    ax_box.set_xlabel("Number of Videos per Identity", fontsize=20)
+
+    ax_box.set_xlabel("Number of Videos per Identity", labelpad=15)
     ax_box.set_yticks([])
 
-    out_overall = out_dir / "videos_per_id_overall.png"
-    plt.savefig(out_overall, dpi=300)
-    plt.close()
-    print(f"Saved plot: {out_overall}")
-
-    # -------------------------------------------------------------
-    # Plot 2: Closed-Set vs Open-Set Comparison (Subplots)
-    # -------------------------------------------------------------
-    fig, axes = plt.subplots(2, 3, figsize=(18, 11), sharey=True)
-
-    split_configs = [
-        # Row 1: Closed-Set
-        (axes[0, 0], closed_train, "Closed-Set: Train", "#2b5c8f"),
-        (axes[0, 1], closed_query, "Closed-Set: Query", "#d95f02"),
-        (axes[0, 2], closed_gallery, "Closed-Set: Gallery", "#7570b3"),
-        # Row 2: Open-Set
-        (axes[1, 0], open_train, "Open-Set: Train", "#1b9e77"),
-        (axes[1, 1], open_query, "Open-Set: Query", "#e7298a"),
-        (axes[1, 2], open_gallery, "Open-Set: Gallery", "#66a61e"),
-    ]
-
-    for ax, counts, title, color in split_configs:
-        curr_max = int(counts.max())
-        curr_bins = np.arange(0.5, curr_max + 1.5, 1)
-        ax.hist(
-            counts,
-            bins=curr_bins,
-            color=color,
-            edgecolor="black",
-            linewidth=1.0,
-            rwidth=0.85,
-            alpha=0.85
-        )
-        m_val = float(counts.mean())
-        md_val = float(counts.median())
-        ax.axvline(m_val, color="red", linestyle="--", linewidth=2, label=f"Mean: {m_val:.2f}")
-        ax.axvline(md_val, color="darkgreen", linestyle="-", linewidth=2, label=f"Med: {md_val:.1f}")
-        ax.set_title(f"{title} (n={len(counts)})", fontsize=16, fontweight="bold", pad=8)
-        ax.set_xlabel("Videos per Dog", fontsize=15)
-        ax.set_ylabel("Count of Dogs", fontsize=15)
-        ax.legend(fontsize=13, loc="upper right")
-
-    fig.suptitle("Videos per Identity Distribution Across Closed-Set and Open-Set Splits", fontsize=20, fontweight="bold", y=1.02)
-    plt.tight_layout()
-    out_splits = out_dir / "videos_per_id_splits_breakdown.png"
-    plt.savefig(out_splits, dpi=300, bbox_inches="tight")
-    plt.close()
-    print(f"Saved plot: {out_splits}")
-
-    # -------------------------------------------------------------
-    # Plot 3: Boxplot Comparison across all subsets
-    # -------------------------------------------------------------
-    plt.figure(figsize=(13, 7))
-    subsets_data = [
-        ("Closed Train", closed_train),
-        ("Closed Query", closed_query),
-        ("Closed Gallery", closed_gallery),
-        ("Open Train", open_train),
-        ("Open Query", open_query),
-        ("Open Gallery", open_gallery),
-        ("Overall", overall_counts),
-    ]
-    labels = [s[0] for s in subsets_data]
-    data_to_plot = [s[1] for s in subsets_data]
-    colors = ["#2b5c8f", "#d95f02", "#7570b3", "#1b9e77", "#e7298a", "#66a61e", "#3470a3"]
-
-    box = plt.boxplot(
-        data_to_plot,
-        tick_labels=labels,
-        patch_artist=True,
-        showmeans=True,
-        meanprops={"marker": "^", "markerfacecolor": "white", "markeredgecolor": "black", "markersize": 10},
-        medianprops={"color": "red", "linewidth": 2.5},
-        whiskerprops={"color": "#333333", "linewidth": 1.5},
-        capprops={"color": "#333333", "linewidth": 1.5},
-        flierprops={"marker": "o", "color": "gray", "alpha": 0.4, "markersize": 5}
+    ax_box.grid(
+        axis="x",
+        color="#D9DDE3",
+        linestyle="--",
+        linewidth=1.0,
+        alpha=0.8
     )
+    ax_box.grid(axis="y", visible=False)
 
-    for patch, color in zip(box["boxes"], colors):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
+    for spine in ["top", "right", "left"]:
+        ax_box.spines[spine].set_visible(False)
 
-    plt.title("Videos per Identity Comparison Across Subsets (▲ = Mean, Red Bar = Median)", fontsize=18, fontweight="bold", pad=12)
-    plt.xlabel("Dataset Split / Subset", fontsize=16)
-    plt.ylabel("Number of Videos", fontsize=16)
-    plt.xticks(rotation=20, fontsize=14)
-    plt.yticks(fontsize=14)
-    plt.tight_layout()
 
-    out_box = out_dir / "videos_per_id_subsets_boxplot.png"
-    plt.savefig(out_box, dpi=300)
-    plt.close()
-    print(f"Saved plot: {out_box}")
+    # Save
+    out_overall = out_dir / "videos_per_id_overall.pdf"
+    fig.savefig(out_overall, format="pdf")
+    plt.close(fig)
+
+    print(f"Saved plot: {out_overall}")
 
 
 if __name__ == "__main__":

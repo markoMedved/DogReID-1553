@@ -9,6 +9,7 @@ Videos/
 *.tar
 *.tar.gz
 sampled_dataset/
+sample_dataset/
 yolo_dataset/
 Random_50_Identities_Videos/
 
@@ -47,6 +48,7 @@ __pycache__/
 *.swo
 *~
 *.tmp
+.tmp.driveupload/
 
 
 # --- Scratch & Notes ---
@@ -59,3 +61,4 @@ trained_models
 
 jobs/
 tests/
+create_sample_dataset.py

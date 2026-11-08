@@ -1,0 +1,13 @@
+DOG_ID: 59b463ad-d64c-489a-b0d5-27647cc68e44
+Short ID: 59b463ad
+Breed: Shibainumix
+Group: Best 10
+mAP: 100.0%
+Rank-1: 100.0%
+N_q (Query count): 2
+N_g (Gallery count): 2
+Distinctive visual features: Yes
+Occlusion: No
+Blurriness / low resolution: No
+Lighting: Good
+Viewpoint variation: Low

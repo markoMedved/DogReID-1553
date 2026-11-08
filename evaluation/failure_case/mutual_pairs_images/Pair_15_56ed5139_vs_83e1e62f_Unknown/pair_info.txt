@@ -1,0 +1,16 @@
+Pair Index: 15
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 2
+Mutual Top-5 Errors: 4
+A to B Top-1: 1
+B to A Top-1: 1
+==================================================
+Dog A: 56ed5139-e732-417a-be0f-af1bd88461e2 (Breed: Unknown)
+Dog B: 83e1e62f-fc8a-4318-9460-c680ed513d1d (Breed: WhiteSwisssheperd)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Similar
+Body shape: Similar
+Facial appearance: Similar

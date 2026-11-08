@@ -1,0 +1,16 @@
+Pair Index: 14
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 2
+Mutual Top-5 Errors: 5
+A to B Top-1: 1
+B to A Top-1: 1
+==================================================
+Dog A: 56f5bb5f-b20d-4dfd-abd5-e0d134de7a48 (Breed: Unknown)
+Dog B: 806a2e67-43cf-43b8-8bcf-441fc3bdbd41 (Breed: Malteseandyorkiemix)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Different breed
+Coat colour: Different
+Coat pattern: Similar
+Body shape: Similar
+Facial appearance: Different

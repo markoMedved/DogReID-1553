@@ -1,0 +1,13 @@
+DOG_ID: 521ce98a-7ce5-40ac-b7ab-ff7059857076
+Short ID: 521ce98a
+Breed: WorkingEnglishSpringerSpaniel
+Group: Worst 10
+mAP: 0.4%
+Rank-1: 0.0%
+N_q (Query count): 3
+N_g (Gallery count): 1
+Distinctive visual features: Yes
+Occlusion: Yes
+Blurriness / low resolution: Yes
+Lighting: Good
+Viewpoint variation: High

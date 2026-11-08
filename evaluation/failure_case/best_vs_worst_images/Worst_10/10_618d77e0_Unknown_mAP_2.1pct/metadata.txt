@@ -1,0 +1,13 @@
+DOG_ID: 618d77e0-4905-4df6-98c6-6c54c9414ec8
+Short ID: 618d77e0
+Breed: Unknown
+Group: Worst 10
+mAP: 2.1%
+Rank-1: 0.0%
+N_q (Query count): 2
+N_g (Gallery count): 1
+Distinctive visual features: Yes
+Occlusion: No
+Blurriness / low resolution: Yes
+Lighting: Good
+Viewpoint variation: Low

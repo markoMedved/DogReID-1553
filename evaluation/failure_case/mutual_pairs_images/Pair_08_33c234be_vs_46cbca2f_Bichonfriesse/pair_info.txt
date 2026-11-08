@@ -1,0 +1,16 @@
+Pair Index: 8
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 2
+Mutual Top-5 Errors: 7
+A to B Top-1: 1
+B to A Top-1: 1
+==================================================
+Dog A: 33c234be-b5a7-4b31-8749-e8b9a511fbff (Breed: Bichonfriesse)
+Dog B: 46cbca2f-83dd-469a-983f-31df985bf579 (Breed: BichonFrise)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Similar
+Body shape: Similar
+Facial appearance: Different

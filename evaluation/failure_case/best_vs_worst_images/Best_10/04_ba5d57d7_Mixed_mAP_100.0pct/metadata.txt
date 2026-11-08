@@ -1,0 +1,13 @@
+DOG_ID: ba5d57d7-6916-456a-8707-83c570a63394
+Short ID: ba5d57d7
+Breed: Mixed
+Group: Best 10
+mAP: 100.0%
+Rank-1: 100.0%
+N_q (Query count): 3
+N_g (Gallery count): 1
+Distinctive visual features: Yes
+Occlusion: No
+Blurriness / low resolution: No
+Lighting: Good
+Viewpoint variation: High

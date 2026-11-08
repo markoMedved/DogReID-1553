@@ -1,0 +1,16 @@
+Pair Index: 2
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 3
+Mutual Top-5 Errors: 5
+A to B Top-1: 1
+B to A Top-1: 2
+==================================================
+Dog A: 1aadfd14-525f-40df-870e-fdcdea29881a (Breed: MixofChihuahuaandJackRussellTerrier)
+Dog B: 22a635ce-db83-4109-9466-7dd2a00aa92e (Breed: Mutt)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Different breed
+Coat colour: Similar
+Coat pattern: Different
+Body shape: Similar
+Facial appearance: Similar

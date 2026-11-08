@@ -1,0 +1,16 @@
+Pair Index: 10
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 2
+Mutual Top-5 Errors: 6
+A to B Top-1: 1
+B to A Top-1: 1
+==================================================
+Dog A: 53303749-93ff-4948-955d-078dbc25ca91 (Breed: Schnauzer)
+Dog B: edd2da4e-676d-4a7e-a2d2-96d68e52d8f6 (Breed: SchnauzerMini)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Different
+Body shape: Similar
+Facial appearance: Similar

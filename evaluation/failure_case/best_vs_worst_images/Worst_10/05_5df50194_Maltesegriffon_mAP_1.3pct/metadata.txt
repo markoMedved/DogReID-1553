@@ -1,0 +1,13 @@
+DOG_ID: 5df50194-07de-4e5b-8e6a-bd383fc88e88
+Short ID: 5df50194
+Breed: Maltesegriffon
+Group: Worst 10
+mAP: 1.3%
+Rank-1: 0.0%
+N_q (Query count): 4
+N_g (Gallery count): 1
+Distinctive visual features: No
+Occlusion: No
+Blurriness / low resolution: Yes
+Lighting: Good
+Viewpoint variation: Low

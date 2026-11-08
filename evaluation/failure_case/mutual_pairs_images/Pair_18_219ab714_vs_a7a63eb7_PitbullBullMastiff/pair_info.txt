@@ -1,0 +1,16 @@
+Pair Index: 18
+Confusion Type: Unidirectional
+Mutual Top-1 Errors: 4
+Mutual Top-5 Errors: 12
+A to B Top-1: 0
+B to A Top-1: 4
+==================================================
+Dog A: 219ab714-b991-4d47-a1b9-d59d69d9fead (Breed: PitbullBullMastiff)
+Dog B: a7a63eb7-a4f7-4c6f-bfca-9a9807071e95 (Breed: StaffordshireBullterrier)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Different
+Body shape: Similar
+Facial appearance: Similar

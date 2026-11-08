@@ -1,0 +1,16 @@
+Pair Index: 4
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 3
+Mutual Top-5 Errors: 5
+A to B Top-1: 1
+B to A Top-1: 2
+==================================================
+Dog A: 77eb8911-1a36-485e-ac9d-dd03d4ac7567 (Breed: Hound)
+Dog B: fe7822e8-a18c-435d-8faa-6285921e172d (Breed: Mixed)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Similar
+Body shape: Similar
+Facial appearance: Different

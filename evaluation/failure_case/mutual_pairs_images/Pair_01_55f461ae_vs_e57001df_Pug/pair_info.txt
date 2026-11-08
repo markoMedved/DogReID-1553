@@ -1,0 +1,16 @@
+Pair Index: 1
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 4
+Mutual Top-5 Errors: 8
+A to B Top-1: 3
+B to A Top-1: 1
+==================================================
+Dog A: 55f461ae-b1f7-4ce5-95a5-49b58c7128d4 (Breed: Pug)
+Dog B: e57001df-2ebb-4661-b37a-3d1ce224c15e (Breed: Pug)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Similar
+Body shape: Similar
+Facial appearance: Similar

@@ -1,0 +1,13 @@
+DOG_ID: 88648a2a-8b4d-4ee0-b363-0b9a3724a06b
+Short ID: 88648a2a
+Breed: Unknown
+Group: Best 10
+mAP: 100.0%
+Rank-1: 100.0%
+N_q (Query count): 3
+N_g (Gallery count): 2
+Distinctive visual features: Yes
+Occlusion: No
+Blurriness / low resolution: No
+Lighting: Good
+Viewpoint variation: High

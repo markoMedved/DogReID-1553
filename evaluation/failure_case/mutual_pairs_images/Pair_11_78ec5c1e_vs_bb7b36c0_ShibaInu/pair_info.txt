@@ -1,0 +1,16 @@
+Pair Index: 11
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 2
+Mutual Top-5 Errors: 6
+A to B Top-1: 1
+B to A Top-1: 1
+==================================================
+Dog A: 78ec5c1e-7d75-449b-a355-3fb693229de1 (Breed: ShibaInu)
+Dog B: bb7b36c0-76a9-447c-afe3-cd31c8aa3f9e (Breed: Unknown)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Similar
+Body shape: Similar
+Facial appearance: Similar

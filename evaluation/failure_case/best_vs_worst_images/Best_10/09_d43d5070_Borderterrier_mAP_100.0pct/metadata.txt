@@ -1,0 +1,13 @@
+DOG_ID: d43d5070-2998-4f32-997c-b3756f7c72dc
+Short ID: d43d5070
+Breed: Borderterrier
+Group: Best 10
+mAP: 100.0%
+Rank-1: 100.0%
+N_q (Query count): 3
+N_g (Gallery count): 2
+Distinctive visual features: Yes
+Occlusion: No
+Blurriness / low resolution: No
+Lighting: Good
+Viewpoint variation: Low

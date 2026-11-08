@@ -1,0 +1,16 @@
+Pair Index: 20
+Confusion Type: Unidirectional
+Mutual Top-1 Errors: 3
+Mutual Top-5 Errors: 19
+A to B Top-1: 0
+B to A Top-1: 3
+==================================================
+Dog A: 8ade53b4-018f-4283-92d5-6a8ed3a5a95c (Breed: Spitz)
+Dog B: f340098f-83ba-4940-a1a2-1f58a5cb6567 (Breed: volpinoitaliano)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Similar
+Body shape: Similar
+Facial appearance: Different

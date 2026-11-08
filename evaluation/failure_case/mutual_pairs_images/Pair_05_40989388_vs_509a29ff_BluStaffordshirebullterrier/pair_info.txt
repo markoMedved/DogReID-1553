@@ -1,0 +1,16 @@
+Pair Index: 5
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 2
+Mutual Top-5 Errors: 8
+A to B Top-1: 1
+B to A Top-1: 1
+==================================================
+Dog A: 40989388-f0d0-4d76-aebb-bd959fd37a29 (Breed: BluStaffordshirebullterrier)
+Dog B: 509a29ff-1fcf-4d41-9c93-15815f9f068f (Breed: Pitbull)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Different
+Body shape: Similar
+Facial appearance: Different

@@ -1,0 +1,13 @@
+DOG_ID: 05468985-0eb6-4493-8cad-970e51ca9128
+Short ID: 05468985
+Breed: Toypoodle
+Group: Best 10
+mAP: 100.0%
+Rank-1: 100.0%
+N_q (Query count): 3
+N_g (Gallery count): 2
+Distinctive visual features: Yes
+Occlusion: No
+Blurriness / low resolution: No
+Lighting: Good
+Viewpoint variation: High

@@ -1,0 +1,16 @@
+Pair Index: 9
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 2
+Mutual Top-5 Errors: 7
+A to B Top-1: 1
+B to A Top-1: 1
+==================================================
+Dog A: 89b8b288-5a69-4b14-878f-378c942b0df4 (Breed: Goldenretriever)
+Dog B: c9dc8631-a218-4a7f-8658-7048672020ed (Breed: GoldenRetriever)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Different
+Body shape: Similar
+Facial appearance: Different

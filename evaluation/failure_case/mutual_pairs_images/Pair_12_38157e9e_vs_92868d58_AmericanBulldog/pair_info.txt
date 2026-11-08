@@ -1,0 +1,16 @@
+Pair Index: 12
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 2
+Mutual Top-5 Errors: 5
+A to B Top-1: 1
+B to A Top-1: 1
+==================================================
+Dog A: 38157e9e-f2a7-4207-ba5d-b75a392db31a (Breed: AmericanBulldog)
+Dog B: 92868d58-b263-4b6b-a289-0b6a497e902d (Breed: BoxerStaffordshireBullTerrierCrossbreed)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Different
+Body shape: Similar
+Facial appearance: Different

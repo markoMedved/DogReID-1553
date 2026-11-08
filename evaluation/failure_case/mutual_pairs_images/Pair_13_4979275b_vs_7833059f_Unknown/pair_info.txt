@@ -1,0 +1,16 @@
+Pair Index: 13
+Confusion Type: Mutual (Bidirectional)
+Mutual Top-1 Errors: 2
+Mutual Top-5 Errors: 5
+A to B Top-1: 1
+B to A Top-1: 1
+==================================================
+Dog A: 4979275b-1bd2-45ef-a0e7-85b023777884 (Breed: Unknown)
+Dog B: 7833059f-8985-4317-a614-1918e153eb07 (Breed: Havanese)
+==================================================
+ANNOTATED VISUAL COMPARISONS:
+Breed match: Same breed
+Coat colour: Similar
+Coat pattern: Similar
+Body shape: Similar
+Facial appearance: Different
