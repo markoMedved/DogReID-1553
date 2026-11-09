@@ -63,7 +63,7 @@ This repository provides reproducible implementations for all baseline architect
 ## 🔗 Links
 
 * **📄 Paper:** *(Under review)* — Full research paper describing dataset curation, identity verification protocols, and extensive benchmark evaluations.
-* **📊 Leaderboard:** https://project-puppies.com/leaderboard — Compare models, inspect confidence intervals, and submit new results.
+* **📊 Leaderboard:** (Link temporarily omitted during peer-review for double-blind anonymity) — Compare models, inspect confidence intervals, and submit new results.
 * **💾 Dataset Download:** *(Link temporarily omitted during peer-review for double-blind anonymity)*.
 
 ---
